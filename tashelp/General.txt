@@ -1,0 +1,42 @@
+***Timetable Automation System***
+
+**General help**
+
+*Overview*
+
+The Timetable Automation System is an overlay for JMRI that makes it easy to set up timetabled working by integrating:
+
+* a timetable that can be created in a spreadsheet;
+* a day/night cycle for layout and building lighting (optional);
+* various displays, such as recreations of real-world PIDs or signallers' displays, or displays for model operators; and
+* if desired, the automatic running of trains to that timetable (with optional randomised delays/cancellations). 
+
+The time uses JMRI's fast clock and can be integrated with a hardware fast clock if available using JMRI's existing tools for doing so. The time can be run at real speed (so that one second in reality equates to 1 second in the model world) or fast speed (so that 1 second in reality equates to 2, 4, 8 or any other number of seconds in the model world), using JMRI's built-in clock rate setting. The Timetable Automation System additionally provides a dedicated Time Warp feature that allows the time automatically to be advanced to the time that the next train is due to run (and the time that the train will actually run in the case of delay) by the press of a button, allowing operators or viewers of the layout to bypass long periods with no activity, compressing time in quiet periods while maintaining real speed at other times. This allows enhanced time-based realism even for very sparsely operated lines without the boredom that might otherwise be associated with a very low frequency timetable. To give an example, the Timetable Automation System was originally designed for and tested on a layout depicting a station served by one train per hour.
+
+The Time Warp feature also allows the Timetable Automation System to be used for layouts that are intended to run to a sequence rather than relying on timing by pausing the clock and using the Time Warp to advance to the next working whenever the operators are ready, all the time keeping the day/night cycle and any public/signallers' displays in tune with what is currently happening on the layout. 
+
+The features for the automatic running of trains work with JMRI's in-built Dispatcher interface, and add tools to integrate the JMRI Dispatcher into automated timetabled operations, including:
+
+* keeping track of trains' locations (optional: with assistance from RailCom);
+* keeping track of trains' orientations (optional: with assistance from RailCom direction sensing);
+* assigning trains identification numbers (e.g. 1A01) from the timetable that can be tracked around the layout on a Layout Editor panel using JMRI's built-in features for doing so;
+* automatically choosing appropraite and available trains from a user selected list for each working;
+* automatically choosing available transits for each working from a user selected list;
+* automatically forming a departing train from the stock of an arriving train specified in the timetable;
+* automatically waiting for a delayed arriving train before dispatching a departing train using the stock of an arriving train; and
+* automatically updating public information and signallers' displays based on whether a train has actually departed or arrived.
+
+The guiding principle of the Timetable Automation System is that the model is intended to be a simulation of the way that railways run in reality: based on carefully pre-planned timetables whose operation in the real world is sometimes disrupted by unforeseen events. It is also intended to simulate, not just that part of the railway that is depicted in the model, but just enough of the wider railway network and world at large to give both viewers and operators a strong sense of immersion. 
+
+The Timetable Automation System is also intended to be flexible: as such, it is capable of simulating the operating practices and aesthetics of multiple eras and also:
+
+* allows users to add their own logic to scripts for each working while allowing basic workings to be created through an easy user interface that requires no coding knowledge; 
+* does interfere with users' existing setups for Dispatcher, including existing transits, sections, blocks, signals, and Train Info files; and
+* is agnostic as to what, if any, signalling system should be used (as signalling is all handled by JMRI's built-in dispatcher). 
+
+
+*What you need before you start*
+
+All that you need before you start setting up the Timetable Automation System is a layout that works with JMRI's Dispatcher (and, for automatic running trains, works with JMRI's Auto Active Trains) and an idea of the timetable(s) that you wish to create for the layout. This can be based on a real-world timetable if you are modelling a real location, something entirely fictional, or a combination of the two.
+
+Consult the general JMRI documentation for information about how to set up your layout to work with Auto Active Trains. Consult the timetable section of this help system for more information about how to create a timetable.

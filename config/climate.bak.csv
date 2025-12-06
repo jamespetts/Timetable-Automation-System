@@ -1,0 +1,14 @@
+name	mean_cloud	long_amp	short_amp	noise_pp	p_clear	p_overcast	event_clear_strength	event_overcast_strength	event_duration_min	event_duration_max	clear_ceiling
+SouthWales_EarlySep	0.68	0.12	0.06	0.04	0.15	0.35	0.45	0.45	180	540	0.2
+SE_England_LateSummer	0.45	0.08	0.06	0.03	0.35	0.2	0.35	0.35	120	420	0.12
+Scottish_Highlands_Autumn	0.78	0.12	0.05	0.05	0.1	0.5	0.4	0.55	180	600	0.25
+East_Anglia_Spring	0.52	0.1	0.06	0.035	0.3	0.25	0.38	0.4	150	480	0.15
+NW_England_Winter	0.8	0.08	0.04	0.05	0.08	0.55	0.35	0.55	180	600	0.3
+Cornwall_Midsummer	0.5	0.1	0.06	0.04	0.3	0.25	0.4	0.4	120	480	0.15
+London_Spring	0.48	0.09	0.06	0.03	0.32	0.22	0.35	0.35	120	420	0.12
+London_Autumn	0.58	0.1	0.05	0.035	0.2	0.35	0.38	0.45	150	480	0.18
+Scottish_Lowlands_Summer	0.55	0.1	0.06	0.035	0.28	0.3	0.35	0.42	150	480	0.18
+NIreland_Spring	0.56	0.1	0.06	0.04	0.25	0.32	0.36	0.42	150	480	0.18
+Yorkshire_LateAutumn	0.7	0.11	0.05	0.045	0.12	0.45	0.35	0.5	180	540	0.22
+Cumbria_LateWinter	0.76	0.09	0.04	0.05	0.1	0.52	0.34	0.52	180	600	0.28
+Kent_EarlySummer	0.46	0.08	0.06	0.03	0.36	0.2	0.34	0.34	120	420	0.12

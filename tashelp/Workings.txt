@@ -1,0 +1,33 @@
+***Timetable Automation System***
+
+**Workings*
+
+*Overview*
+
+A working is the name given to a single timetabled train movement in the Timetable Automation System. The working is defined by the timetable, but it is configured in its own working script. You can either write these scripts yourself or use the Timetable Automation System to help you to create them simply.
+
+*Before creating workings*
+
+Before you create any workings, you must already have a layout that works successfully with AutoActive Trains and the Dispatcher. Consult the main JMRI documentation on how to set this up.
+
+You also need to have one or more TrainInfo files created as you need to use these when creating a working. Create a TrainInfo file in JMRI by opening Dispatcher and selecting "New Train", filling in the information, and selecting "Save Train Info...". Consult the main JMRI documentation for details as to  how to set up a Train Info file.
+
+*Setup*
+
+Once you have selected what timetable to use, go to Setup>Workings. You will see in the left-hand column a list of workings extracted from your timetable. Each of those needs to be configured.
+
+Any working shown in black has already been configured. Any working shown in red has not yet been configured. Any working shown in orange is misconfigured. An explanation of what is wrong will be shown for a misconfigured script.
+
+To create a new configuration for a working, select the working that you want to configure. You can either select "New empty script" if you want to edit this yourself in Jython. Select "Delete" to delete the script, "save" to save the script or "revert" to reset to the version on disk. If you have created a blank script in error and want to use the script creation tool, first delete the blank script. 
+
+To use the script creation tool, select "Create working...". This is the easiest way of setting up a new working. First of all, choose one or more Train Info files from the box on the left that this working will try to use. All those in the box on the right will be available to be used for this working. Use the "Add" and "Remove" buttons to add and remove Train Info files. These will be tried in order, so use the "Move Up" and "Move Down" buttons to change the order. When this working runs, all the Train Info files will be attempted and the first one that is in a runnable state (the start block contains one of the trains that we have selected, that train is not currently part of an Active Train and the transit is not in use for a different Active Train) will be the one used.
+
+If your Train Info files do have a specific train selected in them (i.e. not "set to later"), you can choose to use only this train by checking "Use only roster entries from TrainInfo files". This will override any other settings about what train to use.
+
+Next, select what trains to use. This is only available if the current working is not marked in the timetable as being formed from the stock from a previous working. If it is, then that takes precedence. Select as many entries from the roster as you like in the same way as with Train Info files and re-order them in the same way as with Train Info files. The trains selected here will be tried in order.
+
+Alternatively, instead of selecting individual trains, set the working to search for any trains whose roster ID, "model" information in the roster or comment contains particular text. You can specify as many items of text as you choose. Select "Required" to select only trains that match this criterion. 
+
+When you have finished, you can generate a preview of what your script will look like by selecting "Generate Preview", or simply go directly to saving the script ("Save Script"). The working that you have just set up should now be coloured black in the list of workings. This means that it is ready to use.
+
+Once all the workings in the list are black, you are ready to run your timetable.

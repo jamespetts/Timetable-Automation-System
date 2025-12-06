@@ -1,0 +1,13 @@
+***Timetable Automation System***
+
+**Public information displays**
+
+*Overview*
+
+The Timetable Automation System can simulate public information displays used to tell passengers what trains are departing from what platforms using the timetable information, the current time and the disruption status of the train (e.g. cancelled, 5 minutes late, on time, etc.). 
+
+To view the currently configured public information displays, choose "Public information displays" from the Timetable Automation System main menu.
+
+*Configuration*
+
+To set up which public information displays are shown when "Public information displays" is selected, go to Setup>Display configuration. The public information displays in the left column are those that are available to choose from. Those in the right column are those that will be used when selecting "Public information displays". Add or remove entries from the right column using the "Add" and "Remove" buttons. 

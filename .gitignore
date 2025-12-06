@@ -1,0 +1,8 @@
+old code dump/
+*.class
+*.~lock*
+spice_inveiglers_scores.tsv
+workings/Arr/*
+workings/Dep/*
+workings/Trigger/*
+FlashThrottlesRailCom.py

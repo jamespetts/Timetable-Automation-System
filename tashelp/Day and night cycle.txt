@@ -1,0 +1,27 @@
+***Timetable Automation System***
+
+**Day and night cycle**
+
+*Overview*
+
+The Timetable Automation system contains a feature that will automatically adjust lighting on your layout accurately to mimic a day/night cycle using LED strips driven by DCC motor decoders. This includes a fully configurable climate and sunset/sunrise times to match the location and time of year, and dynamic weather, including a weather forecast interface to explain the current weather to the viewer (in short, when it is cloudy, it is darker and bluer than when it is sunny). This is fully integrated into the timetable so that the lighting always automatically matches what is running on the layout.
+
+*Hardware requirements*
+
+Use at least two DCC motor decoders, *not* accessory decoders. This is important, as only motor decoders will give you 128 individually tunable steps of brightness. Connect the decoder straight to the DCC bus (use the red and black wires of your DCC decoder to do this). Connect LED strips to the motor outputs (orange and grey) of your decoders. Use two LED strips: one of a low colour temperature (2,700K) and one of a high colour temperature (6,500k). 
+
+IMPORTANT
+* Make sure that the total current draw of your LED strips is not greater than the maximum continuous power output of your decoder. If you need more power (e.g. for a larger layout), use multiple shorter strips connected to a decoder each, all with teh same address. Failing to heed this instruction risks destroying the decoder.
+* Use 12v strips. If your track voltage is >14v, use a resistor on the output of your motor decoder to bring the voltage output down to around 12V. Make sure that the resistor is rated for at least the wattage (14v x the decoder's maximum output current) that might be drawn, or else the resistor may get extremely hot.
+* Disable ALL back-EMF settings in the decoder or your lights will flicker.
+* If you still experience flickering after disabling back-EMF, use an RC inductor between the DCC decoder and the LEDs. Use an AI chatbot to work out the correct values of resistor and capacitor that you need for your setup.
+* The LEDs will only work with current flowing in one direction. This means that you will only get light either if the decoder is set to run "forward" or "backward" but not both. Make sure that the LEDs always light in "forward" direction as this is what the Timetable Automation System expects. You can change this either by reversing the connexions between the orange/grey wires or by changing a CV in DecoderPro.
+* Use one DCC address for the decoder(s) powering all the 2,700K LED strips and another DCC address forthe decoder(s) powering the 6,500K LED strips.
+
+Test that the LEDs work adequately and without flickering by running them with a manual throttle before attempting to set them up in the Timetable Automation System. 
+
+*Setup*
+
+Go to Setup>Day/night cycle. Enter the DCC addresses of the decoders powering the low and high colour LEDs respectively. Check the "Enable day/night" cycle (and, optionally but recommended, "Use weather generator") and restart JMRI. 
+
+The day/night cycle tab of the Setup window will give you various options to choose from. Choose your climate present and your daylight hours preset (or, optionally, make your own). Choose whether you want a blackout for a short period to denote a time warp. Choose a minimum night glow to simulate moonlight and/or light pollution. Choose how you would like your weather forecast presented and how reliable that you would like it to be using the settings near the bottom of the window. 

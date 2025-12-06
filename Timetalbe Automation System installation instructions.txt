@@ -1,0 +1,9 @@
+1. Copy all files and folders from the download to {your JMRI profile directory}/jython
+2. In JMRI, go to "Scripting>Run Script..." and select "TimetableAutomation.py"
+3. Create a timetable. Go to Help>Timetable for more information.
+4. Select the timetable that you have created. Go to Setup>General Setup>Current timetable>Browse and choose the timetable that you just created
+5. (Recommended) If you want to use the Timetable Automation System whenever you run JMRI, select "Show the Timetable Automation System menu on startup"
+6. (Recommended) If you want to use the Timetable Automation System to do anything automatically other than day/night lighting, check "Enable time-based actions" and restart JMRI.
+7. If you want to run trains automatically from your timetable, go to Setup>Workings and set up each working.
+8. (Optional) Configure day/night lighting. See Help>Day and night lighting for more information.
+9. (Optional) Configure your preferences in Setup

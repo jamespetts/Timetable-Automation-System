@@ -1,0 +1,53 @@
+***Timetable Automation System***
+
+**Train orientation**
+
+*Overview*
+
+When trains run automatically, JMRI needs to know in which direction to run them: forwards or reverse. To make this work consistently, the Timetable Automation System needs to know which way that they are facing on the layout, and provides some tools for setting this up (and automating this if you have orientation sensing hardware). 
+
+*Orientation vs. direction*
+
+It helps to distinguish orientation from direction. Direction is what way that the train will move relative to the way that it is facing. Direction corresponds to "forward" and "reverse" on a DCC controller/throttle. "Forward" will make it move towards the front of the train/locomotive (e.g. the smokebox end of a normal steam locomotive). "Reverse" will make it run towards the back of the train/locomotive (e.g. the tender or bunker end of a normal steam locomotive). 
+
+Orientation, by contrast, is which way that the train is facing on the layout. For example, on a layout consisting of a fiddle/staging yard and a terminus station, if the front of the train is pointing towards the terminus station, it will go towards the station if driven "forward". If the front of the train is facing towards the fiddle/staging yard, it will go towards the fiddle/staging yard if driven "Forward". 
+
+*Direction and workings*
+
+As explained under the "Workings" section of this help, to create a working, you need to create a Train Info File. That Train Info File contains a setting that allows you to specify whether to run the train in reverse. If not checked, it will run forward. 
+
+A complexity is that you cannot always predict when you create the Train Info file which way that whatever train will be using it will be orientated. The orientation features in the Timetable Automation System are intended to manage that complexity.
+
+*Recommended approach*
+
+The best way of dealing with direction is to start by assuming, when you create your Train Info files, that trains will always face in one particular direction on the layout (for example, that "forward" will always be moving from the fiddle/staging yard to the terminus station). This is referred to as the "normal" direction. Then, use the tools in the Timetable Automation System to handle the individual cases where trains in fact face in the opposite direction. The Timetable Automation System calls this the "inverted" direction. 
+
+*Manually adjusting the orientation*
+
+In Setup>Orientation, you will see two columns of trains. On the right there are trains assumed to be in the normal orientation, and on the left are trains that are set in the inverted orientation. You can move trains between these columns by selecting the >> and << buttons. This is useful if you know that you have some particular trains/locomotives that are currently facing the opposite way to the normal orientation.
+
+When a train is in the right hand column, it will always run in the *opposite* direction to that specified in the Train Info file. So, for example, if the Train Info file did not have the "reverse direction" box ticked, it would run in reverse. If it were checked, it would run fowrard. 
+
+*Hardware orientation sensing - overview*
+
+Some hardware is capable of automatically sensing which way that a train is oriented on the track. The Timetable Automation System can work with this hardware to automate orientation of individual trains.
+
+*Hardware orientation sensing - requirements*
+
+At present, the Timetable Automation System requires orientation sensing of the OPC_MULTI_SENSE_LONG type with the LocoNet bus. This is supported by the YaMoRC YD6061LN-RC and Digikeijs DR5088RC. In the configuration software, make sure to set "OPC_MULTI_SENSE both" to enable both orientation sensing and basic RailCom (R) functionality: the built-in RailCom (R) functionality in JMRI requires use of the OPC_MULTI_SENSE_SHORT setting.
+
+IMPORTANT: Do *not* enable "RailCom direction sensing". This will enable an older and cruder system that will modify the block or locomotive address depending on which way that the locomotive is oriented. JMRI cannot deal with this and it is unnecessary with the more sophisticated system supported by these modern devices.
+
+Further systems may be supported in future.
+
+*Hardware orientation sensing - setup*
+
+Once your hardware orientation system is working, you need to tell the Timetable Automation System whether the current orientation of the train is, on your layout, normal or inverted before hardware orientation sensing will work with the Timetable Automation System. 
+
+To enable hardware orientation sensing, check "Enable hardware orientation sensing" in the "Orientation" tab. You may need to restart JMRI after doing this.
+
+Once that is donoe, to configure the indvidual trains, go to "Configure hardware orientation sensing" in the Setup>Orientation. You will see a list of trains whose orientation has been sensed. If trains do not appear make sure that the track power is on and that the train is on a part of the track connected to a hardware orientation sensor that has been set up as described above.
+
+The trains that are shown in cyan are ones whose orientation has been sensed but not configured. To set these up, select them one by one then press "Normal" or "Inverted" to the right to select whether they are currently in their normal or inverted orientation.
+
+Once you have done that, the Timetable Automation System will remember your choice (even after you restart JMRI) and will run the train in the right direction so long as any manal change of orietation takes place on track connected to a hardware orientation sensor. A good way of making sure of this is to design your layout so that the fiddle/staging yard tracks are all equipped with hardware orientation sensors and then make sure only to put trains onto the track in those fiddle/staging yards. 

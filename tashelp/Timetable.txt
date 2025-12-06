@@ -1,0 +1,175 @@
+***Timetable Automation System***
+
+**The timetable**
+
+*Overview*
+
+The timetable is at the heart of the Timetable Automation System. You need to create the timetable in a spreadsheet, put it in the appropriate directory, then tell the Timetable Automation System where it is. You can easily switch between timetables, e.g., if you run your layout in different eras and want a different timetable for each era.
+
+*Viewing the timetable*
+
+When the timetable has been created, you can view it by selecting "Show timetable" from the main Timetable Automation System menu. You can configure how the timetable looks using controls in the "Timetable" tab of the Setup dialogue.
+
+*Setting the timetable*
+
+You can change which timetable is currently in use by choosing a different timetable in the "General setup" tab of the Setup dialogue. The name of the current timetable is displayed near the top of the main Timetable Automation System menu.
+
+*Format*
+
+The timetable should be created as a spreadsheet and saved as a tab-separated .csv file. (Tab-separated rather than comma separated allows for commas in the data). The timetable should be in the form of a row of column headings at the top, followed by rows of data that correspond with the column headings. 
+
+There are some compulsory columns and some optional columns. The compulsory columns are:
+
+* Arr *or* Trigger;
+* Dep;
+* Monday;
+* Tuesday;
+* Wednesday;
+* Thursday;
+* Friday;
+* Saturday; and
+* Sunday.
+
+Optional columns that it is strongly recommended to use are:
+
+* Reporting number;
+* Forms; 
+* Direction; and
+* Disrupton group.
+
+Other optional columns include
+
+* Platform;
+* Timing load;
+* Notes;
+* Origin;
+* Destination; 
+* Calling pattern; 
+* Company;
+* Operator notes; and
+* Timing point columns (see below).
+
+The meaning of each of the columns is set out below.
+
+*Arr/Dep/Trigger*
+
+Data format: time, either 12h or 24h, e.g. 1:37 PM or 13:37. Hours and minutes only (seconds not supported).
+
+These are the main timing columns. "Trigger" is the time that the working in the row is first triggered to start (e.g. from a hidden fiddle/staging yard). "Arr" is the time that the working is due to arrive at the main or default timing point on the layout (if the layout depicts a station, then the arrival time at this station). "Dep" is the time that the working is due to depart the main or default timing point on the layout.
+
+If you have a small layout where less than a minute is likely to pass between the train leaving its start point (e.g. a staging yard) and arriving at the main timing point, then you can omit "Trigger" and just use "Arr", which will then serve both purposes. 
+
+If your train is due to pass your main timing point (e.g. a station) without stopping, then use "Trigger" and "Dep" times only, and omit the "Arr" time. 
+
+Each of these three main timing columns will call a Working Script at the times specified, with the below exceptions:
+* where both Trigger and Arr are specified, only the Trigger time, not the Arr time, will call a working script;
+* where both Trigger and Dep but not also Arr are specified, only Trigger will call a Working Script.
+
+Working Scripts are the instructions about what train to run where at a particular time. For more information on Working Scripts, see the help section with that title.
+
+*Days of the week*
+
+Data format: "TRUE" or "FALSE"
+
+The Timetable Automation System is set up to run a 7 day timetable. The data in these columns tell the Timetable Automation System whether the working runs on the day of the week in question. For example, if you wanted a working in a particular row to run only on Saturdays, you would enter "FALSE" beneath every day apart from Saturday, and "True" beneath Saturday.
+
+*Reporting number*
+
+Data format: string (e.g. "1A01")
+
+This is the unique identifier for each working. If you do not specify one, a default will be created for you with the format TASxxx, where xxx is the number of the row in the spreadsheet. However, allowing these defaults to be used can make it difficult to maintain your timetable (especially if you use the "Forms" column), so it is recommended to specify a reporting number in most cases.
+
+The reporting number can be in any format (and can be taken from a real timetable if you are replicating one; from the 1960s to the present, British Rail(ways)/Railtrack/Network Rail has used a four digit code such as 1A01, an explanation for which can readily be found online), but it is recommended to keep these short. You can easily set up a Layout Editor panel to show these reporting numbers by creating a text block and setting its value to the "Block value" of the block. 
+
+For users who want to simluate older timetables where some trains had reporting numbers and some less important trains did not, you can explicitly specify a special hidden reporting number for any working where you do not want the reporting number to be displayed. Do this by specifying a reporting number starting with the three letters "TAS" (e.g. "TAS071"). 
+
+The trains with hidden reporting numbers (including those supplied by default if you do not enter a reporting number manually) will not show thier reporting number in the block values in your Layout Editor Panel, but will instead show their Roster ID values. In the main timetable display, the "reporting number" column will be blank.
+
+For some railways, e.g. the London Underground, that did not use reporting numbers at all, use hidden reporting numbers for all workings. The London Underground used train numbers instead: simulate this by setting your roster IDs to a suitable train number.
+
+*Forms*
+
+This column tells the Timetable Automation System whether the stock from the current working is to be used to form a later working. For example, if train 1A01 arrives at 09:30 and then leaves empty to the depot at 09:50 as 5A01, you would put 5A01 in the "Forms" column of the row for working 1A01. 
+
+What this does is to tell the Timetable Automation System to use only whatever train it was that formed working 1A01 when starting the 5A01, and, if that not train is not in one of the starting places, wait until it is before triggering 5A01. 
+
+*Direction*
+
+Data format: string (e.g. "Up" "Down")
+
+This is used to make it easier to group the timetable displays. Use a railway direction ("Up" or "Down" for UK mainline practice; "Eastbound" , "Westbound", "Southbound", "Northbound", "Clockwise" or "Anti-clockwise" for London Underground practice) for each working so that they can be grouped in a convenient and realistic way when viewing the timetable from the timetable view in the Timetable Automation System
+
+*Disruption Group*
+
+If you want to enable delays and cancellations, then you will need this column. You will need to have created a separate disruption configuration file (see the help topic on disruption for more detail). That configuration file will create different Disruption Groups. Each different Disruption Group has different disruption characeristics, e.g. chance of delay, chance of cancellation, maximum delay length, etc.. Use the name of one of the Disruption Groups that you have created in your disruption configuration file to apply those disruption characeristics to the working in question. 
+
+Any working whose "Disruption group" column is left blank will always run on time no matter whether the global settings for delays and cancellations are enabled.
+
+*Platform*
+
+Data format: string (e.g. "1" or "A")
+
+This column is needed if you want to use any passenger information displays that rely on a platform number. This allows public information displays to show from what platforms that services will be departing.
+
+Not yet implemented but planned is a system that will allow platform alterations to be accommodated in the passenger information display system.
+
+*Timing load*
+
+Data format: string (e.g. "D350" or "150" or "EMU")
+
+This column is only used in the timetable display to replicate this information on a real timetable. This is useful if you are trying to recreate a real world timetable or someting like it.
+
+In reality, these were used to specify the type of train to be used on a particular service.
+
+*Notes*
+
+Data format: string (e.g. "The Manchester Pullman")
+
+This column is only used in the timetable display. It is used to create notes for particular workings that appear on pages of the timetable, just as a real timetable would sometimes have.
+
+*Origin/Destination*
+
+Data format: string (e.g. "London Paddington", "Oxford")
+
+This column is used in the timetable, signallers' and various public information displays. You will need to add and populate these columns if you want to use these displays to their fullest.
+
+If the "Origin" or the "Destination" name is the same as the layout profile name, then certain displays will react to this and show, e.g., "Terminates here" instead of the name. 
+
+*Calling pattern*
+
+Data format: string (e.g. "Ealing Broadway, Southall, Hayes & Harlington, Slough, Burnham, Taplow, Maidenhead, Twyford and Reading" or "via Bank")
+
+This column is used in some passenger information displays to show where the train calls. Different types of passenger information displays expect different kinds of information; in the UK, modern Network Rail displays typically show every station at which the train calls, whereas London Underground displays tend to show either nothing or "via...". 
+
+*Company*
+
+Data format: string (e.g. "First Great Western", "Intercity", "Southern Railway")
+
+This column is intended for use in future passenger information displays that display the railway company (or "operator") of a particular working.
+
+* Operator notes*
+
+Data format: string (e.g. "Collect coal empties", "Non-stop", "Attach carriages for the 11.45 local", "Wait for express to pass")
+
+This column is intended for use in a future display intended for the operators of a manually or semi-automatically operated model railway to explain to them the steps that they need to take for any given working.
+
+*Timing points*
+
+Column format: "TPArr <<NAME>>" "TPDep <<NAME>>" where "<<NAME>>" is the particular name of a timing point, such a a station or junction.
+Data format: time, either 12h or 24h (e.g. 13:37 or 1:37 PM)
+
+Timing points allow for a more immersive way of providing information on train disruption by simulating real life signalling and passenger information displays. On real railways, trains are timed at certain fixed points along their routes, known as timing points. Whether trains are running on time, late or early (and how late or early) is reported back to control from these timing points. 
+
+To use timing points, specify some major points (either stations or junctions) along the route for each of your workings. For a station stop, specify both TPArr (arrival time) and TPDep (departure time), e.g. "TPArr Cardiff Central" and "TPDep Cardiff Central". For a junction or other point that a train passes without stopping, specify only the TPDep time (the TPArr column should be present if any other trains do stop at this point, but do not enter anything in the row of a working that does not call at this point). 
+
+There are three types of timing points in the Timetable Automation System. The first is the main timing point, from which the main Arr and Dep times are calculated, as discussed above.
+
+The second is a virtual timing point. This is a timing point that is simulated entirely within the computer's memory by the Timetable Automation System, including when the train passes it and whether it is on time.
+
+The third is a physical timing point, which is one or more physical blocks on your layout that a train may pass on its way to or away from your main timing point. This is useful for larger layouts where you may have a second station, junction or other place that could be a timing point on your physical layout itself.
+
+Virtual timing points make delay handling more realistic and immersive. Trains may run early before reaching a timing point, but will never depart from a timing point at which they are due to stop early. Late running trains may catch up a little time between timing points, but if there is a generous wait at a timing point at which a train stops, a late running arrival may depart on time. Once a train has reached its first timing point, it will only update its reports of delays as it reaches later timing points, and some signallers' displays will show when a train is overdue at a timing point.
+
+Physical timing points work in the same way, except, instead of a train being deemed to have passed the point at a certain time by the Timetable Automation System, it is only logged as having passed the timing point if and when it actually passes the physical block on the layout that you have specified. Passenger information systems and signallers' displays showing a delay can be updated accordingly. Note that, in theory, it should also be possible to use "physical" timing points with simulated trains run into blocks using a script, but this has not been tested.
+
+Without timing points, the delay handling will still work, but will be free-floating and not tied to any given timing points.

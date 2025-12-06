@@ -1,0 +1,47 @@
+Reporting number	Direction	Arr	Dep	Monday	Tuesday	Wednesday	Thursday	Friday	Saturday	Sunday	Forms	Platform	Timing load	Disruption group	Notes	Origin	Destination	Calling pattern
+2L41	Down	6:39 AM		FALSE	FALSE	FALSE	FALSE	FALSE	TRUE	FALSE	2N05	1	150			Cardiff	Maesteg	Terminates here
+2L41	Down	6:41 AM		TRUE	TRUE	TRUE	TRUE	TRUE	FALSE	FALSE	2N05	1	150			Cardiff	Maesteg	Terminates here
+2N05	Up		6:43 AM	TRUE	TRUE	TRUE	TRUE	TRUE	FALSE	FALSE		1	142			Maesteg	Ebbw Vale	Maesteg (Ewenny Road), Garth, Tondu, Sarn, Wildmill, Bridgend, Pencoed, Llanharan, Pontyclun, Cardiff Central, Rogerstone, Risca & Pontymister, Cross Keys, Newbridge, Llanhilleth, Ebbw Vale Parkway
+2N05	Up		6:46 AM	FALSE	FALSE	FALSE	FALSE	FALSE	TRUE	FALSE		1	142			Maesteg	Ebbw Vale	Maesteg (Ewenny Road), Garth, Tondu, Sarn, Wildmill, Bridgend, Pencoed, Pontyclun, Cardiff Central, Rogerstone, Risca & Pontymister, Cross Keys, Newbridge (Ebbw Vale), Llanhilleth, Ebbw Vale Parkway
+2L43	Down	7:56 AM		TRUE	TRUE	TRUE	TRUE	TRUE	TRUE	FALSE	2G54	1	142			Cheltenham Spa	Maesteg	Terminates here
+2G54	Up		7:59 AM	TRUE	TRUE	TRUE	TRUE	TRUE	FALSE	FALSE		1	142			Maesteg	Cheltenham Spa	Maesteg (Ewenny Road), Garth, Tondu, Sarn, Wildmill, Bridgend, Llanharan, Cardiff Central, Newport, Severn Tunnel Junction, Caldicot, Chepstow, Gloucester, Cheltenham Spa
+2G54	Up		8:00 AM	FALSE	FALSE	FALSE	FALSE	FALSE	TRUE	FALSE		1	142			Maesteg	Cheltenham Spa	Maesteg (Ewenny Road), Garth, Tondu, Sarn, Wildmill, Bridgend, Llanharan, Cardiff Central, Newport, Severn Tunnel Junction, Caldicot, Chepstow, Gloucester, Cheltenham Spa
+1V49	Down	9:13 AM		FALSE	FALSE	FALSE	FALSE	FALSE	TRUE	FALSE	2G56	1	158			Shrewsbury	Maesteg	Terminates here
+1V89	Down	9:13 AM		TRUE	TRUE	TRUE	TRUE	TRUE	FALSE	FALSE	2G56	1	150			Shrewsbury	Maesteg	Terminates here
+2G56	Up		9:16 AM	TRUE	TRUE	TRUE	TRUE	TRUE	FALSE	FALSE		1	150			Maesteg	Cheltenham Spa	Maesteg (Ewenny Road), Garth, Tondu, Sarn, Wildmill, Bridgend, Pencoed, Llanharan, Pontyclun, Cardiff Central, Newport, Severn Tunnel Junction, Caldicot, Chepstow, Gloucester, Cheltenham Spa
+2G56	Up		9:17 AM	FALSE	FALSE	FALSE	FALSE	FALSE	TRUE	FALSE		1	150			Maesteg	Cheltenham Spa	Maesteg (Ewenny Road), Garth, Tondu, Sarn, Wildmill, Bridgend, Pencoed, Llanharan, Pontyclun, Cardiff Central, Newport, Severn Tunnel Junction, Caldicot, Chepstow, Gloucester, Cheltenham Spa
+2L47	Down	10:10 AM		TRUE	TRUE	TRUE	TRUE	TRUE	TRUE	FALSE	2L52	1	142			Cheltenham Spa	Maesteg	Terminates here
+2L52	Up		10:16 AM	TRUE	TRUE	TRUE	TRUE	TRUE	TRUE	FALSE		1	142			Maesteg	Cardiff Central	Maesteg (Ewenny Road), Garth, Tondu, Sarn, Wildmill, Bridgend, Pencoed, Llanharan, Pontyclun, Cardiff Central
+2L49	Down	11:10 AM		TRUE	TRUE	TRUE	TRUE	TRUE	TRUE	FALSE	2G58	1	142			Cheltenham Spa	Maesteg	Terminates here
+2G58	Up		11:15 AM	TRUE	TRUE	TRUE	TRUE	TRUE	TRUE	FALSE		1	142			Maesteg	Cheltenham Spa	Maesteg (Ewenny Road), Garth, Tondu, Sarn, Wildmill, Bridgend, Pencoed, Llanharan, Pontyclun, Cardiff Central, Newport, Severn Tunnel Junction, Caldicot, Chepstow, Lydney, Gloucester, Cheltenham Spa
+2L51	Down	12:10 PM		FALSE	FALSE	FALSE	FALSE	FALSE	TRUE	FALSE	2G60	1	142			Cardiff Central	Maesteg	Terminates here
+2L51	Down	12:11 PM		TRUE	TRUE	TRUE	TRUE	TRUE	FALSE	FALSE	2G60	1	142			Cardiff Central	Maesteg	Terminates here
+2G60	Up		12:17 PM	TRUE	TRUE	TRUE	TRUE	TRUE	TRUE	FALSE		1	142			Maesteg	Gloucester	Maesteg (Ewenny Road), Garth, Tondu, Sarn, Wildmill, Bridgend, Llanharan, Pontyclun, Cardiff Central, Newport, Severn Tunnel Junction, Caldicot, Chepstow, Lydney, Gloucester
+2L53	Down	1:10 PM		TRUE	TRUE	TRUE	TRUE	TRUE	TRUE	FALSE	2L54	1	142			Cheltenham Spa	Maesteg	Terminates here
+2L54	Up		1:15 PM	TRUE	TRUE	TRUE	TRUE	TRUE	TRUE	FALSE		1	142			Maesteg	Cardiff Central	Maesteg (Ewenny Road), Garth, Tondu, Sarn, Wildmill, Bridgend, Pencoed, Llanharan, Pontyclun, Cardiff Central
+2L55	Down	2:10 PM		TRUE	TRUE	TRUE	TRUE	TRUE	TRUE	FALSE	2G62	1	142			Cardiff Central	Maesteg	Terminates here
+2G62	Up		2:15 PM	TRUE	TRUE	TRUE	TRUE	TRUE	TRUE	FALSE		1	142			Maesteg	Cheltenham Spa	Maesteg (Ewenny Road), Garth, Tondu, Sarn, Wildmill, Bridgend, Pencoed, Llanharan, Pontyclun, Cardiff Central, Newport, Severn Tunnel Junction, Caldicot, Chepstow, Lydney, Gloucester, Cheltenham Spa
+2L57	Down	3:13 PM		TRUE	TRUE	TRUE	TRUE	TRUE	TRUE	FALSE	2G64	1	142			Cardiff Central	Maesteg	Terminates here
+2G64	Up		3:17 PM	TRUE	TRUE	TRUE	TRUE	TRUE	TRUE	FALSE		1	142			Maesteg	Cheltenham Spa	Maesteg (Ewenny Road), Garth, Tondu, Sarn, Wildmill, Bridgend, Pencoed, Llanharan, Pontyclun, Cardiff Central, Newport, Severn Tunnel Junction, Caldicot, Chepstow, Lydney, Gloucester, Cheltenham Spa
+2L59	Down	4:10 PM		FALSE	FALSE	FALSE	FALSE	FALSE	TRUE	FALSE	2G66	1	142			Cheltenham Spa	Maesteg	Terminates here
+2L59	Down	4:11 PM		TRUE	TRUE	TRUE	TRUE	TRUE	FALSE	FALSE	2G66	1	142			Cheltenham Spa	Maesteg	Terminates here
+2G66	Up		4:15 PM	TRUE	TRUE	TRUE	TRUE	TRUE	TRUE	FALSE		1	142			Maesteg	Cheltenham Spa	Maesteg (Ewenny Road), Garth, Tondu, Sarn, Wildmill, Bridgend, Pencoed, Llanharan, Pontyclun, Cardiff Central, Newport, Severn Tunnel Junction, Caldicot, Chepstow, Lydney, Gloucester, Cheltenham Spa
+2L61	Down	5:09 PM		TRUE	TRUE	TRUE	TRUE	TRUE	FALSE	FALSE	2G68	1	142			Cardiff Central	Maesteg	Terminates here
+2L61	Down	5:10 PM		FALSE	FALSE	FALSE	FALSE	FALSE	TRUE	FALSE	2G68	1	142			Cardiff Central	Maesteg	Terminates here
+2G68	Up		5:15 PM	TRUE	TRUE	TRUE	TRUE	TRUE	TRUE	FALSE		1	142			Maesteg	Cheltenham Spa	Maesteg (Ewenny Road), Garth, Tondu, Sarn, Wildmill, Bridgend, Pencoed, Llanharan, Pontyclun, Cardiff Central, Newport, Severn Tunnel Junction, Caldicot, Chepstow, Lydney, Gloucester, Cheltenham Spa
+1V97	Down	6:11 PM		FALSE	FALSE	FALSE	FALSE	FALSE	TRUE	FALSE	2L56	1	142			Holyhead	Maesteg	Terminates here
+1V96	Down	6:13 PM		TRUE	TRUE	TRUE	TRUE	TRUE	FALSE	FALSE	2L56	1	175			Holyhead	Maesteg	Terminates here
+2L56	Up		6:20 PM	TRUE	TRUE	TRUE	TRUE	TRUE	TRUE	FALSE		1	142			Maesteg	Cardiff Central	Maesteg (Ewenny Road), Garth, Tondu, Sarn, Wildmill, Bridgend, Pencoed, Llanharan, Pontyclun, Cardiff Central
+2L65	Down	7:08 PM		TRUE	TRUE	TRUE	TRUE	TRUE	FALSE	FALSE	2L58	1	142			Cheltenham Spa	Maesteg	Terminates here
+2L65	Down	7:11 PM		FALSE	FALSE	FALSE	FALSE	FALSE	TRUE	FALSE	1W76	1	142			Cheltenham Spa	Maesteg	Terminates here
+1W76	Up		7:16 PM	FALSE	FALSE	FALSE	FALSE	FALSE	TRUE	FALSE		1	158			Maesteg	Manchester Piccadilly	Maesteg (Ewenny Road), Garth, Tondu, Sarn, Wildmill, Bridgend, Pencoed, Llanharan, Pontyclun, Cardiff Central, Newport, Cwmbran, Pontypool and New Inn, Abergavenny, Hereford, Leominster, Ludlow, Craven Arms, Church Stretton, Shrewsbury, Crewe, Alderney Edge, Wilmslow, Stockport, Manchester Piccadilly
+2L58	Up		7:21 PM	TRUE	TRUE	TRUE	TRUE	TRUE	FALSE	FALSE		1	142			Maesteg	Cardiff Central	Maesteg (Ewenny Road), Garth, Tondu, Sarn, Wildmill, Bridgend, Pencoed, Llanharan, Pontyclun, Cardiff Central
+2L67	Down	8:09 PM		TRUE	TRUE	TRUE	TRUE	TRUE	TRUE	FALSE	2G72	1	142			Cheltenham Spa	Maesteg	Terminates here
+2G72	Up		8:15 PM	TRUE	TRUE	TRUE	TRUE	TRUE	FALSE	FALSE		1	142			Maesteg	Cheltenham Spa	Maesteg (Ewenny Road), Garth, Tondu, Sarn, Wildmill, Bridgend, Pencoed, Llanharan, Pontyclun, Cardiff Central, Newport, Severn Tunnel Junction, Caldicot, Chepstow, Lydney, Gloucester, Cheltenham Spa
+2G72	Up		8:15 PM	FALSE	FALSE	FALSE	FALSE	FALSE	TRUE	FALSE		1	142			Maesteg	Gloucester	Maesteg (Ewenny Road), Garth, Tondu, Sarn, Wildmill, Bridgend, Pencoed, Llanharan, Pontyclun, Cardiff Central, Newport, Severn Tunnel Junction, Caldicot, Chepstow, Lydney, Gloucester
+2L69	Down	9:06 PM		TRUE	TRUE	TRUE	TRUE	TRUE	TRUE	FALSE	2L60	1	142			Cheltenham Spa	Maesteg	Terminates here
+2L60	Up		9:15 PM	TRUE	TRUE	TRUE	TRUE	TRUE	TRUE	FALSE		1	142			Maesteg	Cardiff Central	Maesteg (Ewenny Road), Garth, Tondu, Sarn, Wildmill, Bridgend, Pencoed, Llanharan, Pontyclun, Cardiff Central
+2L71	Down	10:05 PM		TRUE	TRUE	TRUE	TRUE	TRUE	TRUE	FALSE	2G74	1	142			Cheltenham Spa	Maesteg	Terminates here
+2G74	Up		10:15 PM	TRUE	TRUE	TRUE	TRUE	TRUE	TRUE	FALSE		1	142			Maesteg	Gloucester	Maesteg (Ewenny Road), Garth, Tondu, Sarn, Wildmill, Bridgend, Pencoed, Llanharan, Pontyclun, Cardiff Central, Newport, Severn Tunnel Junction, Caldicot, Chepstow, Lydney, Gloucester
+2L73	Down	11:22 PM		TRUE	TRUE	TRUE	TRUE	TRUE	FALSE	FALSE	5L73	1	150			Cardiff Central	Maesteg	Terminates here
+5L73	Up		11:33 PM	TRUE	TRUE	TRUE	TRUE	TRUE	FALSE	FALSE		1	150			Maesteg	Empty to depot	

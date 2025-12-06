@@ -1,0 +1,6 @@
+Disruption group	Delay probability	Max delay	Early probability	Max early	Cancellation probability	Minutes before to check max	Minutes before to check min	Cancel if later than	Max recovery mins/min
+Shrewsbury	0.1	60	0	0	0.05	120	60	45	0.025
+Cardiff	0.05	15	0.01	2	0.02	60	30	45	0.02
+Cheltenham	0.07	35	0	0	0.03	120	60	45	0.03
+Holyhead	0.1	60	0	0	0.06	120	60	45	0.025
+Test	1	10	0	5	0	60	30	45	0.1
