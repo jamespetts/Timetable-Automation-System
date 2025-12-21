@@ -10,4 +10,4 @@ To view the currently configured public information displays, choose "Public inf
 
 *Configuration*
 
-To set up which public information displays are shown when "Public information displays" is selected, go to Setup>Display configuration. The public information displays in the left column are those that are available to choose from. Those in the right column are those that will be used when selecting "Public information displays". Add or remove entries from the right column using the "Add" and "Remove" buttons. 
+To set up which public information displays are shown when "Public information displays" is selected, go to Setup>Display configuration. The public information displays in the left column are those that are available to choose from. Those in the right column are those that will be used when selecting "Public information displays". Add or remove entries from the acright column using the "Add" and "Remove" buttons. 
