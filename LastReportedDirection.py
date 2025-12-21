@@ -266,14 +266,17 @@ def _register_shutdown():
 load()
 _register_shutdown()
 
-# Attach listener via LocoNetSystemConnectionMemo (correct API since 4.11.6)
-memo = jmri.InstanceManager.getDefault(jmri.jmrix.loconet.LocoNetSystemConnectionMemo)
-if memo is None:
-    debug("No LocoNet memo found; listener not registered.")
-else:
-    lnTraffic = memo.getLnTrafficController()
-    if lnTraffic is None:
-        debug("Memo found but no LnTrafficController; listener not registered.")
+# Attach listener via LocoNetSystemConnectionMemo (correct API since 4.11.6) (but only if we are in a LocoNet system)
+try:
+    memo = jmri.InstanceManager.getDefault(jmri.jmrix.loconet.LocoNetSystemConnectionMemo)
+    if memo is None:
+        debug("No LocoNet memo found; listener not registered.")
     else:
-        lnTraffic.addLocoNetListener(LocoNetInterface.ALL, LastDirectionListener())
-        debug("LastDirectionListener registered via memo.")
+        lnTraffic = memo.getLnTrafficController()
+        if lnTraffic is None:
+            debug("Memo found but no LnTrafficController; listener not registered.")
+        else:
+            lnTraffic.addLocoNetListener(LocoNetInterface.ALL, LastDirectionListener())
+            debug("LastDirectionListener registered via memo.")
+except Exception as e:
+    debug("Orientation sensing not available: LocoNet not in use")
