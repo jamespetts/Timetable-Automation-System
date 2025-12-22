@@ -33,7 +33,8 @@ import TASBeanLookup as TBL
 
 from java.text import SimpleDateFormat
 from java.util.concurrent.locks import ReentrantLock
-from java.lang import Thread
+from java.lang import Thread, Exception as JavaException
+from java.beans import PropertyChangeListener
 
 
 # ---------------- Time parsing helpers ----------------
@@ -46,7 +47,24 @@ _TimeParsers = [
 ]
 
 def _NormaliseTimeString(s):
-    # Returns a cleaned string        if t[-3] != " ":    # Returns a cleaned string suitable for parsing, ASCII only.
+    # Returns a cleaned string suitable for parsing, ASCII only.
+    if s is None:
+        return ""
+    try:
+        t = str(s)
+    except Exception:
+        return ""
+    t = t.strip()
+    if t == "":
+        return ""
+
+    # Collapse whitespace
+    t = " ".join(t.split())
+
+    # Handle missing space before AM/PM, e.g. "9:19PM"
+    up = t.upper()
+    if (up.endswith("AM") or up.endswith("PM")) and len(t) >= 4:
+        if len(t) >= 3 and t[-3] != " ":
             t = t[:-2] + " " + t[-2:]
 
     return t
@@ -62,7 +80,8 @@ def _ParseTimeToMinutes(s):
             d = p.parse(t)
             # java.util.Date.getHours/getMinutes exist and are used elsewhere in TAS
             return int(d.getHours()) * 60 + int(d.getMinutes())
-        except Exception:
+        except:
+            # Any parse failure (Java or Python): try the next format
             pass
 
     # Last-resort manual parse for "HH:MM" or "H:MM"
@@ -237,7 +256,7 @@ class MinuteTrigger(object):
 
         outer = self
 
-        class _MemListener(java.beans.PropertyChangeListener):
+        class _MemListener(PropertyChangeListener):
             def propertyChange(self, ev):
                 # Any change to the memory value can be treated as a potential minute tick.
                 try:
@@ -273,20 +292,4 @@ try:
         _MinuteTriggerInstance.Start()
 except Exception:
     traceback.print_exc()
-    if s is None:
-        return ""
-    try:
-        t = str(s)
-    except Exception:
-        return ""
-    t = t.strip()
-    if t == "":
-        return ""
 
-    # Collapse whitespace
-    t = " ".join(t.split())
-
-    # Handle missing space before AM/PM, e.g. "9:19PM"
-    up = t.upper()
-    if (up.endswith("AM") or up.endswith("PM")) and len(t) >= 4:
-        # Insert a space before AM/PM if missing
