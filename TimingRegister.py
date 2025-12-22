@@ -19,6 +19,7 @@ from java.util import Hashtable
 from java.lang import Runtime, Thread, Runnable
 from jmri import ShutDownManager
 from java.util.concurrent.locks import ReentrantReadWriteLock
+import TASBeanLookup as TBL
 
 _rwlock = ReentrantReadWriteLock()
 _rlock = _rwlock.readLock()
@@ -35,16 +36,6 @@ except NameError:
 # --- small helpers (local; ASCII only) -----------------------------------------------------------
 def _mm():
     return jmri.InstanceManager.getDefault(jmri.MemoryManager)
-
-def _readMemStr(name, default=None):
-    m = _mm().getMemory(name)
-    if m is None:
-        return default
-    v = m.getValue()
-    if v is None:
-        return default
-    s = str(v).strip()
-    return s if s else default
 
 def _parseTimeToMinutes(text):
     if text is None:
@@ -82,13 +73,15 @@ def _activeProfileBaseTP():
         return ""
 
 def _ttPath():
-    ttName = _readMemStr("IMCURRENTTIMETABLE")
+    # CURRENTTIMETABLE stores the timetable name as the Memory value (suffix-based lookup).
+    ttName = str(TBL.SafeGetMemoryValue("CURRENTTIMETABLE", "")).strip()
     if not ttName:
         return None
     return os.path.join(FileUtil.getProfilePath(), "timetable", ttName + ".csv")
 
 def _todayName():
-    return _readMemStr("IMDAYOFWEEK")
+    # DAYOFWEEK stores the current day name as the Memory value (suffix-based lookup).
+    return str(TBL.SafeGetMemoryValue("DAYOFWEEK", "")).strip()
 
 def _findRowForRNToday(reader, rnWantedLower, dayName):
     # First row with dayName == TRUE (case-insensitive) and RN match (exact string, case-insensitive)

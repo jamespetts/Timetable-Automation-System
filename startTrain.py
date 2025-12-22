@@ -20,6 +20,7 @@ import java
 import TimingRegister as TR
 import TASUtil as TU
 import TrainLocatorRegister as TLR
+import TASBeanLookup as TBL
 
 def IsDefaultReportingNumber(s):
     # Treat as "default" only if it is exactly 'TAS' (uppercase) followed by digits
@@ -37,8 +38,7 @@ def IsDefaultReportingNumber(s):
 def addMinutesToTime(minutes_to_add):
     from datetime import datetime, timedelta
 
-    memoryManager = InstanceManager.getDefault(jmri.MemoryManager)
-    currentTimeMemory = memoryManager.getMemory("IMCURRENTTIME")
+    currentTimeMemory = TBL.ProvideMemoryBySuffix("CURRENTTIME", "")
 
     if currentTimeMemory is None or currentTimeMemory.getValue() is None:
         print("ERROR: IMCURRENTTIME memory not available or has no value.")
@@ -270,10 +270,9 @@ def tpGetTimeAndDay():
     Read fast-clock time and day-of-week from JMRI memories.
     Returns (timeStr, dayStr); empty strings if unavailable.
     """
-    try:
-        mm = jmri.InstanceManager.getDefault(jmri.MemoryManager)
-        t = mm.getMemory("IMCURRENTTIME")
-        d = mm.getMemory("IMDAYOFWEEK")
+    try:        
+        t = TBL.ProvideMemoryBySuffix("CURRENTTIME", "")
+        d = TBL.ProvideMemoryBySuffix("DAYOFWEEK", "")
         timeStr = str(t.getValue()).strip() if (t is not None and t.getValue() is not None) else ""
         dayStr  = str(d.getValue()).strip() if (d is not None and d.getValue() is not None) else ""
         return timeStr, dayStr
@@ -339,11 +338,11 @@ def startTrain(traininfoName, rosterEntry, reportingNumber, direction, formsNext
     # Make sure that we always wait the minimum turnaround time before departing
     if workingRN is not None:
         mm = jmri.InstanceManager.getDefault(jmri.MemoryManager)
-        raw = mm.getMemory("IMTASTURNAROUNDMINUTES").getValue()
+        raw = TBL.ProvideMemoryBySuffix("TASTURNAROUNDMINUTES", "0").getValue()
         try:
             turnaroundTime = int(str(raw))          # This is necessary as the memory variable is a string by default
         except Exception:
-            print(u"IMTASTURNAROUNDMINUTES is not numeric: {!r}".format(raw))
+            print(u"TASTURNAROUNDMINUTES is not numeric: {!r}".format(raw))
             turnaroundTime = 0
 
         delayMinutes = int(delayMinutes)            # belt & braces
@@ -387,7 +386,7 @@ def startTrain(traininfoName, rosterEntry, reportingNumber, direction, formsNext
     tif.writeTrainInfo(ti, cloneName)
     
     # Disable the time warp instantly
-    jmri.InstanceManager.getDefault(jmri.MemoryManager).getMemory("IMALLOWTIMEWARP").setValue("False")
+    TBL.SafeSetMemoryValue("ALLOWTIMEWARP", "false")
         
     startBlock = ResolveStartBlockFromTrainInfo(ti)
     if(IsStartSectionAllocatedForBlock(startBlock)):

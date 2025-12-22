@@ -16,10 +16,10 @@
 # - One PID window per platform found in the timetable
 # - Each window shows next 3 departures for that platform
 # - Disruption inheritance, smooth alternation/scrolling preserved
-# - Platform alteration hook via Memory "IMPID_PLATFORM_OVERRIDES"
+# - Platform alteration hook via Memory "PID_PLATFORM_OVERRIDES"
 #
 # * A working is removed ONLY when it is recorded as having DEPARTED at the configured timing point(s).
-#   Default timing point = active profile name (base TP). Override via Memory "IMPID_DEPARTURE_TP"
+#   Default timing point = active profile name (base TP). Override via Memory "PID_DEPARTURE_TP"
 #   (single TP name or a comma/semicolon separated list). This makes the PID compatible with future
 #   use of other physical/virtual timing points.
 #
@@ -35,6 +35,7 @@ import os, csv
 import java.text.SimpleDateFormat as SimpleDateFormat
 from DisruptionRegister import getDisruption
 import TimingRegister as TR  # read-only access to timing tuples
+import TASBeanLookup as TBL
 
 # -------------------- THEME / UI CONFIG --------------------
 WINDOW_WIDTH = 800  # width of the content area (panels)
@@ -61,16 +62,15 @@ DAYS = ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"]
 DEFAULT_TOP_FONT = Font("SansSerif", Font.BOLD, TOP_FONT_SIZE)
 DEFAULT_MID_FONT = Font("SansSerif", Font.BOLD, MID_FONT_SIZE)
 
-# -------------------- MEMORIES / FAST CLOCK --------------------
-memoryManager = InstanceManager.getDefault(jmri.MemoryManager)
-timeMem = memoryManager.getMemory("IMCURRENTTIME")
-dayMem = memoryManager.getMemory("IMDAYOFWEEK")
-timetableMem = memoryManager.getMemory("IMCURRENTTIMETABLE")
-# Optional override hook: e.g., "2G56=2;1W76=1"
-overridesMem = memoryManager.getMemory("IMPID_PLATFORM_OVERRIDES")
+# ------------------------- MEMORIES / FAST CLOCK -------------------------
+# Use TASBeanLookup to obtain Memory beans by suffix (prefix-agnostic across IM/I2M/I3M...).
+timeMem = TBL.ProvideMemoryBySuffix("CURRENTTIME", "")
+dayMem = TBL.ProvideMemoryBySuffix("DAYOFWEEK", "")
+timetableMem = TBL.ProvideMemoryBySuffix("CURRENTTIMETABLE", "")
 # Optional: list of departure timing points (single name or ';' / ',' separated).
-# If empty, we use the active profile name (base TP) by default.
-departTPMem = memoryManager.getMemory("IMPID_DEPARTURE_TP")
+departTPMem = TBL.ProvideMemoryBySuffix("PID_DEPARTURE_TP", "")
+# Optional override hook: e.g., "2G56=2;1W76=1"
+overridesMem = TBL.ProvideMemoryBySuffix("PID_PLATFORM_OVERRIDES", "")
 
 timebase = InstanceManager.getDefault(jmri.Timebase)
 

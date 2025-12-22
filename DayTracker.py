@@ -15,12 +15,17 @@
 
 import java
 import jmri
+import TASBeanLookup as TBL
 
 class DayTracker(jmri.jmrit.automat.AbstractAutomaton):
-    def init(self):
-        self.clock = memories.getMemory('IMCURRENTTIME')
+    def init(self):      
+        self.clock = TBL.FindMemoryBySuffix("CURRENTTIME")
         self.timebase = jmri.InstanceManager.getDefault(jmri.Timebase)
-        self.dayMemory = memories.getMemory('IMDAYOFWEEK')
+        self.dayMemory = TBL.FindMemoryBySuffix("DAYOFWEEK")   
+        if self.clock is None:
+            raise Exception("Required memory CURRENTTIME not found")
+        if self.dayMemory is None:
+            raise Exception("Required memory DAYOFWEEK not found")
         self.dayNames = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
         self.lastHour = -1
 

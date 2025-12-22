@@ -22,6 +22,7 @@ from java.lang import System
 from jmri.profile import ProfileManager
 from jmri.util import FileUtil
 import TASUtil as TU
+import TASBeanLookup as TBL
 
 # --- Memory manager ---
 memoryManager = jmri.InstanceManager.getDefault(jmri.MemoryManager)
@@ -31,11 +32,11 @@ profile = ProfileManager.getDefault().getActiveProfile()
 profilePath = profile.getPath()   # java.nio.file.Path
 
 # --- Get timetable file name ---
-memTimetable = memoryManager.getMemory("IMCURRENTTIMETABLE")
+memTimetable = TBL.ProvideMemoryBySuffix("CURRENTTIMETABLE", "")
 if memTimetable is None:
-    print("Error: IMCURRENTTIMETABLE memory variable is not defined.")
+    print("Error: CURRENTTIMETABLE memory variable is not defined.")
 elif memTimetable.getValue() is None:
-    print("Error: IMCURRENTTIMETABLE has no value.")
+    print("Error: CURRENTTIMETABLE has no value.")
 else:
     timetableName = memTimetable.getValue()
     timetableFile = os.path.join(profilePath.toString(), "timetable", timetableName + ".csv")
@@ -46,8 +47,8 @@ else:
 
     else:
         # --- Get current time and day ---
-        currentTimeStr = memoryManager.getMemory("IMCURRENTTIME").getValue()
-        currentDay = memoryManager.getMemory("IMDAYOFWEEK").getValue()
+        currentTimeStr = TBL.ProvideMemoryBySuffix("CURRENTTIME", "").getValue()
+        currentDay = TBL.ProvideMemoryBySuffix("DAYOFWEEK", "").getValue()
 
         # --- Day order ---
         daysOfWeek = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
@@ -89,8 +90,7 @@ else:
                 s = s[:-1].strip()
 
             # HH:MM[:SS] with optional AM/PM (space optional)
-            m = _re.match(r'^\s*(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?\s*(am|pm)?\s*$',
-                          s, flags=_re.IGNORECASE)
+            m = _re.match(r'^\s*(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?\s*(am|pm)?\s*$', s, flags=_re.IGNORECASE)
             if not m:
                 print("[RunWTT] Debug: could not parse time '{}'".format(timeStr))
                 return None

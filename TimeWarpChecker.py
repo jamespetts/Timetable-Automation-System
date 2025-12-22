@@ -15,14 +15,14 @@
 # This needs to be a STARTUP SCRIPT
 import java
 import jmri
+import TASBeanLookup as TBL
 
 # Define the task
 class CheckActiveTrains(java.util.TimerTask):
     def run(self):
         try:
             df = jmri.InstanceManager.getDefault(jmri.jmrit.dispatcher.DispatcherFrame)
-            mm = jmri.InstanceManager.getDefault(jmri.MemoryManager)
-            allowMem = mm.provideMemory("IMALLOWTIMEWARP")
+            allowMem = TBL.ProvideMemoryBySuffix("ALLOWTIMEWARP", "false")
 
             allow = False
             if df is not None:

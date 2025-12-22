@@ -18,6 +18,7 @@ import jmri, os
 from jmri.util import FileUtil
 from jmri.profile import ProfileManager
 from java.beans import PropertyChangeListener
+import TASBeanLookup as TBL
 
 class CheckWhenTimeChanges(PropertyChangeListener):
     def propertyChange(self, event):
@@ -25,7 +26,7 @@ class CheckWhenTimeChanges(PropertyChangeListener):
             scriptsPath = jmri.util.FileUtil.getScriptsPath()
             
             memoryManager = jmri.InstanceManager.getDefault(jmri.MemoryManager)
-            memAutoWorking = memoryManager.getMemory("IMTASAUTOWORKING")        
+            memAutoWorking = TBL.FindMemoryBySuffix("TASAUTOWORKING")
             
             autoWorking = False
             if memAutoWorking is not None:
@@ -53,15 +54,11 @@ class CheckWhenTimeChanges(PropertyChangeListener):
 
 # Attach the listener
 memoryManager = jmri.InstanceManager.getDefault(jmri.MemoryManager)
-memCurrentTime = memoryManager.getMemory("IMCURRENTTIME")
-
-# --- Get profile path ---
-profile = ProfileManager.getDefault().getActiveProfile()
-profilePath = profile.getPath()   # java.nio.file.Path
+memCurrentTime = TBL.FindMemoryBySuffix("CURRENTTIME")
 
 if memCurrentTime is not None:
     listener = CheckWhenTimeChanges()
     memCurrentTime.addPropertyChangeListener(listener)
-    print("Listener attached to IMCURRENTTIME.")
+    print("Listener attached to CURRENTTIME.")
 else:
-    print("Error: IMCURRENTTIME memory variable not found.")
+    print("Error: CURRENTTIME memory variable not found.")

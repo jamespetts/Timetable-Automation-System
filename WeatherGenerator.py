@@ -26,6 +26,7 @@ import java
 import jmri
 import math
 import csv # for loading the tab-delimited climate.csv
+import TASBeanLookup as TBL
 
 # ============================== CONSTANT PARAMETERS ==============================
 # >>> Tab-delimited climate CSV <<<
@@ -36,10 +37,10 @@ except Exception:
 
 # Read climate preset from memory (IMWX_CLIMATE) if present, else default
 try:
-    mm = jmri.InstanceManager.getDefault(jmri.MemoryManager)
-    mem = mm.provideMemory('IMWX_CLIMATE')
-    val = mem.getValue()
-    CLIMATE_NAME = str(val).strip() if val else 'SouthWales_EarlySep'
+    v = TBL.SafeGetMemoryValue("WX_CLIMATE", "SouthWales_EarlySep")
+    CLIMATE_NAME = str(v).strip() if v is not None else 'SouthWales_EarlySep'
+    if CLIMATE_NAME == "":
+        CLIMATE_NAME = 'SouthWales_EarlySep'
 except:
     CLIMATE_NAME = 'SouthWales_EarlySep'
 
@@ -58,7 +59,7 @@ FORECAST_ACCURACY = 80
 
 # Memory override for forecast reliability (%)
 try:
-    ACCURACY_MEM = mm.provideMemory('IMWX_FORECAST_ACCURACY')
+    ACCURACY_MEM = TBL.ProvideMemoryBySuffix("WX_FORECAST_ACCURACY", int(FORECAST_ACCURACY))
     if ACCURACY_MEM.getValue() is None:
         ACCURACY_MEM.setValue(int(FORECAST_ACCURACY))
 except Exception:
@@ -73,19 +74,20 @@ LOG_FORECAST_ON_ISSUE = True
 
 # -------------------------- NEW: Published forecast Memories --------------------
 # Single-source-of-truth publication for UIs (schema WG2).
-IMWX_SCHEMA    = 'IMWX_SCHEMA'              # 'WG2'
-IMWX_FC_STEP   = 'IMWX_FC_STEP_MIN'         # int
-IMWX_FC_LEN    = 'IMWX_FC_LENGTH'           # int
-IMWX_FC_ISSUE  = 'IMWX_FC_ISSUE_ABSMIN'     # int
-IMWX_FC_POINTS = 'IMWX_FC_POINTS'           # 'absMin:pct,absMin:pct,...' (length=FORECAST_HOURS)
-IMWX_UPDATED   = 'IMWX_UPDATED_ABSMIN'      # int
+WX_SCHEMA_MEM = TBL.ProvideMemoryBySuffix("WX_SCHEMA", "WG2")
+WX_FC_STEP_MEM = TBL.ProvideMemoryBySuffix("WX_FC_STEP_MIN", int(FORECAST_STEP_MIN))
+WX_FC_LEN_MEM = TBL.ProvideMemoryBySuffix("WX_FC_LENGTH", int(FORECAST_HOURS))
+WX_FC_ISSUE_MEM = TBL.ProvideMemoryBySuffix("WX_FC_ISSUE_ABSMIN", 0)
+WX_FC_POINTS_MEM = TBL.ProvideMemoryBySuffix("WX_FC_POINTS", "")
+WX_UPDATED_MEM = TBL.ProvideMemoryBySuffix("WX_UPDATED_ABSMIN", 0)
 
 # Optional: rolling list of recent issues (newest last) and one series per issue.
-IMWX_FC_ISSUES = 'IMWX_FC_ISSUES'           # 'issue1,issue2,...'
-# For each listed issue i, memory name is 'IMWX_FC_<i>' -> same 'absMin:pct' CSV
+WX_FC_ISSUES_MEM = TBL.ProvideMemoryBySuffix("WX_FC_ISSUES", "") # 'issue1,issue2,...'
 
-# Back-compat (simple list for legacy readers)
-IMWX_FC_LIST   = 'IMWX_FC_LIST'             # 'p0,p1,...,p47'
+# For each listed issue i, memory name is 'WX_FC_<i>' -> same 'absMin:pct' CSV
+# Backwards compatible (simple list for legacy readers)
+WX_FC_LIST_MEM = TBL.ProvideMemoryBySuffix("WX_FC_LIST", "")  # 'p0,p1,...,p47'
+
 # -------------------------------------------------------------------------------
 
 # ------------------------------ Built-in fallback climate preset ----------------
@@ -220,15 +222,13 @@ def _load_climate_from_tsv(path, name, fallback_dict):
 
 # ------------------------------- Weather Generator ------------------------------
 class WeatherGenerator(jmri.jmrit.automat.AbstractAutomaton):
-    def init(self):
-        # Inputs (existing memories)
-        self.clockMem = memories.getMemory('IMCURRENTTIME')
-        self.dowMem = memories.getMemory('IMDAYOFWEEK')
+    def init(self):      
+        # Inputs (suffix-based)
+        self.clockMem = TBL.ProvideMemoryBySuffix("CURRENTTIME", "")
+        self.dowMem = TBL.ProvideMemoryBySuffix("DAYOFWEEK", "")
 
-        # Output (existing)
-        self.cloudNowMem = memories.getMemory('IMCLOUDCOVERPCT')
-        if self.cloudNowMem is None:
-            self.cloudNowMem = jmri.InstanceManager.getDefault(jmri.MemoryManager).provideMemory('IMCLOUDCOVERPCT')
+        # Output (suffix-based)
+        self.cloudNowMem = TBL.ProvideMemoryBySuffix("CLOUDCOVERPCT", 0)
         if self.cloudNowMem.getValue() is None:
             self.cloudNowMem.setValue(0)
 
@@ -248,8 +248,8 @@ class WeatherGenerator(jmri.jmrit.automat.AbstractAutomaton):
         self.eraScale01 = max(0.0, min(1.0, acc / 100.0))
 
         # Track accuracy mem for live updates
-        self.accMem = ACCURACY_MEM if ('ACCURACY_MEM' in globals() and ACCURACY_MEM is not None) else jmri.InstanceManager.getDefault(jmri.MemoryManager).provideMemory('IMWX_FORECAST_ACCURACY')
-
+        self.accMem = ACCURACY_MEM if ('ACCURACY_MEM' in globals() and ACCURACY_MEM is not None) else TBL.ProvideMemoryBySuffix("WX_FORECAST_ACCURACY", int(FORECAST_ACCURACY))
+        
         # Load climate from TAB-delimited CSV (or fallback to built-in)
         builtin = BUILTIN_CLIMATES.get(CLIMATE_NAME, BUILTIN_CLIMATES['SouthWales_EarlySep'])
         self.climate = _load_climate_from_tsv(CLIMATE_CSV_PATH, CLIMATE_NAME, builtin)
@@ -258,17 +258,14 @@ class WeatherGenerator(jmri.jmrit.automat.AbstractAutomaton):
         self.cloudNowMem.setValue(int(self._true_cloud_pct_at(self._abs_minute_now(), BASE_SEED)))
 
         # Publication memories for UIs (WG2 + back-compat)
-        mm = jmri.InstanceManager.getDefault(jmri.MemoryManager)
-        self.fcSchemaMem  = mm.provideMemory(IMWX_SCHEMA)
-        self.fcStepMem    = mm.provideMemory(IMWX_FC_STEP)
-        self.fcLenMem     = mm.provideMemory(IMWX_FC_LEN)
-        self.fcIssueMem   = mm.provideMemory(IMWX_FC_ISSUE)
-        self.fcPointsMem  = mm.provideMemory(IMWX_FC_POINTS)
-        self.fcUpdatedMem = mm.provideMemory(IMWX_UPDATED)
-        self.fcIssuesListMem = mm.provideMemory(IMWX_FC_ISSUES)
-
-        # Back-compat list memory
-        self.fcListMem    = mm.provideMemory(IMWX_FC_LIST)
+        self.fcSchemaMem = WX_SCHEMA_MEM
+        self.fcStepMem = WX_FC_STEP_MEM
+        self.fcLenMem = WX_FC_LEN_MEM
+        self.fcIssueMem = WX_FC_ISSUE_MEM
+        self.fcPointsMem = WX_FC_POINTS_MEM
+        self.fcUpdatedMem = WX_UPDATED_MEM
+        self.fcIssuesListMem = WX_FC_ISSUES_MEM
+        self.fcListMem = WX_FC_LIST_MEM
 
         # Static fields (schema/shape) – write once
         self.fcSchemaMem.setValue('WG2')
@@ -486,7 +483,7 @@ class WeatherGenerator(jmri.jmrit.automat.AbstractAutomaton):
             self.fcIssuesListMem.setValue(','.join(str(x) for x in items))
         # Per-issue series
         mm = jmri.InstanceManager.getDefault(jmri.MemoryManager)
-        per_issue_mem = mm.provideMemory('IMWX_FC_' + str(issueAbsMin))
+        per_issue_mem = TBL.ProvideMemoryBySuffix("WX_FC_" + str(issueAbsMin), "")
         per_issue_mem.setValue(csv_pairs)
 
     # ------------------------------- Main Automaton ------------------------------

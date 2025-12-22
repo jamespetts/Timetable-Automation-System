@@ -15,11 +15,11 @@
 import jmri, os, enqueuedWorkings, traceback, csv
 from jmri.profile import ProfileManager
 import TASUtil as TU
+import TASBeanLookup as TBL
 
 def get_forms_for(reporting_number):
-    try:
-        memoryManager = jmri.InstanceManager.getDefault(jmri.MemoryManager)
-        memTimetable = memoryManager.getMemory("IMCURRENTTIMETABLE")
+    try:     
+        memTimetable = TBL.ProvideMemoryBySuffix("CURRENTTIMETABLE", "")
         if memTimetable is None or memTimetable.getValue() is None:
             return ""
         timetable_name = memTimetable.getValue()

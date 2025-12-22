@@ -16,6 +16,7 @@ import jmri
 import csv
 import os
 import java
+import TASBeanLookup as TBL
 from java.util import Calendar, Date
 from java.text import SimpleDateFormat
 from jmri.profile import ProfileManager
@@ -32,12 +33,11 @@ except:
         profile_str = str(profilePath)
 print(profile_str)
 
-mm = jmri.InstanceManager.getDefault(jmri.MemoryManager)
-
+# ---- Memory helpers (suffix-based via TASBeanLookup; no direct MemoryManager usage) ----
 def ReadMemStr(name, defaultValue):
+    # 'name' is a TAS suffix key, e.g. "CURRENTTIME" (not a bean name)
     try:
-        m = mm.getMemory(name)
-        v = m.getValue() if m is not None else None
+        v = TBL.SafeGetOrCreateMemoryValue(name, defaultValue)
         if v is None:
             return defaultValue
         s = str(v).strip()
@@ -46,19 +46,20 @@ def ReadMemStr(name, defaultValue):
         return defaultValue
 
 def ReadMemBool(name, defaultFalse):
+    # 'name' is a TAS suffix key
     s = ReadMemStr(name, None)
     if s is None:
         return defaultFalse
-    s = s.strip().lower()
+    s = str(s).strip().lower()
     return s in ("true", "1", "yes", "on")
 
-timetableName = ReadMemStr("IMCURRENTTIMETABLE", "")
+timetableName = ReadMemStr("CURRENTTIMETABLE", "")
 timetablePath = os.path.join(profile_str, "timetable", timetableName + ".csv")
 
 # ---- Memories ----
-currentTimeString = ReadMemStr("IMCURRENTTIME", "")
-currentDay = ReadMemStr("IMDAYOFWEEK", "Monday")
-timeWarpEnabled = ReadMemBool("IMALLOWTIMEWARP", False)
+currentTimeString = ReadMemStr("CURRENTTIME", "")
+currentDay = ReadMemStr("DAYOFWEEK", "Monday")
+timeWarpEnabled = ReadMemBool("ALLOWTIMEWARP", False)
 
 # ---- Day order ----
 DAYS_OF_WEEK = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
@@ -311,7 +312,7 @@ if timeWarpEnabled:
     if df0 is not None and AnyTrainRunningNow(df0):
         print("Time warp blocked: ActiveTrain is running/working/paused/ready/stopped")
         try:
-            mm.getMemory("IMALLOWTIMEWARP").setValue("False")
+            TBL.SafeSetMemoryValue("ALLOWTIMEWARP", "false")
         except Exception:
             pass
     else:
@@ -345,7 +346,7 @@ if timeWarpEnabled:
             if df1 is not None and AnyTrainRunningNow(df1):
                 print("Time warp aborted: movement detected during final apply.")
                 try:
-                    mm.getMemory("IMALLOWTIMEWARP").setValue("False")
+                    TBL.SafeSetMemoryValue("ALLOWTIMEWARP", "false")
                 except Exception:
                     pass
             else:
@@ -367,9 +368,9 @@ if timeWarpEnabled:
                 timeBase.setTime(date_to_set)
                 fmt_am_pm = SimpleDateFormat("h:mm a")
                 formatted_time = fmt_am_pm.format(date_to_set)
-
-                mm.getMemory("IMCURRENTTIME").setValue(formatted_time)
-                mm.getMemory("IMDAYOFWEEK").setValue(next_day)
+              
+                TBL.SafeSetMemoryValue("CURRENTTIME", formatted_time)
+                TBL.SafeSetMemoryValue("DAYOFWEEK", next_day)
 
                 print("Advanced to {} (earliest candidate) on {}".format(formatted_time, next_day))
         else:

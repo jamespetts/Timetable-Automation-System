@@ -28,9 +28,8 @@ import os
 import csv as FBP_csv
 import java.text.SimpleDateFormat as SimpleDateFormat
 from java.awt.geom import Area, RoundRectangle2D, Ellipse2D
-
-# Optional TimingRegister (for departure logging)
 import TimingRegister as TR  # read-only tuples (reportingNumber, direction, time, day)
+import TASBeanLookup as TBL
 
 # -------------------- TYPEFACE & COLOURS --------------------
 def FBP_PickFamily(cands):
@@ -93,18 +92,18 @@ FBP_LABEL_FONT_MIN    = 12
 FBP_LINE_FONT_MAX     = 42
 FBP_LINE_FONT_MIN     = 18
 
-# -------------------- JMRI MEMORIES / TIMETABLE --------------------
-FBP_Mm            = InstanceManager.getDefault(jmri.MemoryManager)
-FBP_TimeMem       = FBP_Mm.getMemory("IMCURRENTTIME")
-FBP_DayMem        = FBP_Mm.getMemory("IMDAYOFWEEK")
-FBP_TimetableMem  = FBP_Mm.getMemory("IMCURRENTTIMETABLE")
-FBP_OverridesMem  = FBP_Mm.getMemory("IMPID_PLATFORM_OVERRIDES")
+# ------------------------- JMRI MEMORIES / TIMETABLE -------------------------
+# Use TASBeanLookup to obtain Memory beans by suffix (prefix-agnostic across IM/I2M/I3M...).
+FBP_TimeMem = TBL.ProvideMemoryBySuffix("CURRENTTIME", "")
+FBP_DayMem = TBL.ProvideMemoryBySuffix("DAYOFWEEK", "")
+FBP_TimetableMem = TBL.ProvideMemoryBySuffix("CURRENTTIMETABLE", "")
+FBP_OverridesMem = TBL.ProvideMemoryBySuffix("PID_PLATFORM_OVERRIDES", "")
 
 # Optional: departure TP list, ECS keywords, due-window, hide-clocks toggle
-FBP_DepartTPMem   = FBP_Mm.getMemory("IMPID_DEPARTURE_TP")
-FBP_EcsFilterMem  = FBP_Mm.getMemory("IMPID_ECS_FILTER_TERMS")
-FBP_WithInMinMem  = FBP_Mm.getMemory("IMPID_FINGERBOARD_WITHIN_MINUTES")
-FBP_HideClocksEmptyMem = FBP_Mm.getMemory("IMPID_FINGERBOARD_HIDE_CLOCKS_WHEN_EMPTY")
+FBP_DepartTPMem = TBL.ProvideMemoryBySuffix("PID_DEPARTURE_TP", "")
+FBP_EcsFilterMem = TBL.ProvideMemoryBySuffix("PID_ECS_FILTER_TERMS", "")
+FBP_WithInMinMem = TBL.ProvideMemoryBySuffix("PID_FINGERBOARD_WITHIN_MINUTES", "10")
+FBP_HideClocksEmptyMem = TBL.ProvideMemoryBySuffix("PID_FINGERBOARD_HIDE_CLOCKS_WHEN_EMPTY", "false")
 
 FBP_DefaultWithinMinutes = 10
 
@@ -591,7 +590,7 @@ class FBP_FingerBoardWindow(object):
             from TASIcon import SetFrameClockIcon
             SetFrameClockIcon(self.frame, 32)  # 32px icon size
         except Exception as ex:
-            print("[PIDCRTSingle] Failed to set PID window icon: " + str(ex))
+            print("[PIDCRTFingerboard] Failed to set PID window icon: " + str(ex))
        
         self.frame.setResizable(False)
         self.frame.setVisible(True)

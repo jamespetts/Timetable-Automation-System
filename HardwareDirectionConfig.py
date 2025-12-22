@@ -13,8 +13,8 @@
 #
 # UI for configuring "normal" hardware orientation per roster ID.
 # Theming: match TAS setup window font and paper background via memory keys:
-#   - Typeface: Memory "IMTAS_FONT_FAMILY" (e.g., "Gill Sans MT")
-#   - Paper colour: Memory "IMTASPAPERCOLOUR" as "R,G,B" (e.g., "249,246,238")
+#   - Typeface: Memory "TAS_FONT_FAMILY" (e.g., "Gill Sans MT")
+#   - Paper colour: Memory "TASPAPERCOLOUR" as "R,G,B" (e.g., "249,246,238")
 #
 # Foreground (text) colors indicate state:
 #   - Cyan text: last-reported only
@@ -41,6 +41,7 @@ from javax.swing.border import EmptyBorder
 from javax.swing.event import ListSelectionListener
 from java.awt import BorderLayout, Color, Dimension, Font
 from java.lang import Runnable
+import TASBeanLookup as TBL
 
 # Import registers (must be available on JMRI's Jython path)
 try:
@@ -67,24 +68,12 @@ CLASS_PURPLE = "purple"    # normal-only
 
 # Theme: read font family and paper background like TASSetup (no import)
 
-def GetMemoryString(Name, DefaultValue):
-    # Minimal, safe read of a JMRI Memory; returns DefaultValue on any issue.
+
+def GetMemoryString(Suffix, DefaultValue):
+    # Read (and if needed create) a JMRI Memory by suffix, prefix-agnostic.
+    # Uses TASBeanLookup so this works across IM, I2M, I3M... internal prefixes.
     try:
-        mm = jmri.InstanceManager.getDefault(jmri.MemoryManager)
-        if mm is None:
-            return DefaultValue
-        mem = mm.getBySystemName(Name)
-        if mem is None:
-            mem = mm.getByUserName(Name)
-        if mem is None:
-            mem = mm.provideMemory(Name)
-            try:
-                if mem.getValue() is None:
-                    mem.setValue(DefaultValue)
-            except Exception:
-                return DefaultValue
-            return DefaultValue
-        val = mem.getValue()
+        val = TBL.SafeGetOrCreateMemoryValue(Suffix, DefaultValue)
         return DefaultValue if val is None else str(val)
     except Exception:
         return DefaultValue
@@ -101,8 +90,8 @@ def RgbStrToColorOrDefault(rgbStr, defaultColor):
     except Exception:
         return defaultColor
 
-THEME_FONT_FAMILY = GetMemoryString("IMTAS_FONT_FAMILY", "Gill Sans MT")
-THEME_PAPER = RgbStrToColorOrDefault(GetMemoryString("IMTASPAPERCOLOUR", "249,246,238"), Color(249, 246, 238))
+THEME_FONT_FAMILY = GetMemoryString("TAS_FONT_FAMILY", "Gill Sans MT")
+THEME_PAPER = RgbStrToColorOrDefault(GetMemoryString("TASPAPERCOLOUR", "249,246,238"), Color(249, 246, 238))
 
 def SetPaperBackground(component):
     try:

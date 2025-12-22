@@ -17,15 +17,11 @@
 
 import jmri, os, csv, re
 from jmri.util import FileUtil
+import TASBeanLookup as TBL
 
 # --- utils ---
 def _mm():
     return jmri.InstanceManager.getDefault(jmri.MemoryManager)
-
-def _get_mem(name):
-    mm = _mm()
-    m = mm.getMemory(name)
-    return None if m is None else m.getValue()
 
 def _days_between_inclusive(start_day, end_day, days):
     """Return the list of days strictly after start_day up to and including end_day, wrapping as needed.
@@ -59,11 +55,11 @@ def sync_timing_points_from_timetable(verbose=True):
         pass
 
     # 1) Read current day (source of truth) and timetable name
-    current_day = _get_mem("IMDAYOFWEEK")
-    timetable_name = _get_mem("IMCURRENTTIMETABLE")
+    current_day = TBL.SafeGetMemoryValue("DAYOFWEEK")
+    timetable_name = TBL.SafeGetMemoryValue("CURRENTTIMETABLE")
 
     if timetable_name is None or (isinstance(timetable_name, basestring) and timetable_name.strip() == ""):
-        if verbose: print("[TPSync] No IMCURRENTTIMETABLE set; nothing to do.")
+        if verbose: print("[TPSync] No CURRENTTIMETABLE set; nothing to do.")
         return
 
     # 2) Build full path to timetable (TSV)

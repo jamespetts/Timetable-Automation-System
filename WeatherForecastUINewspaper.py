@@ -1,5 +1,3 @@
-# -*- coding: utf-8 -*-
-
 # This file is part of the Timetable Automation System by James E. Petts
 #
 # The Timetable Automation System is free software: you can redistribute it and/or modify it under the terms of the 
@@ -19,6 +17,7 @@ from java.awt import Color, Font, BasicStroke, RenderingHints, Dimension, GridLa
 from java.awt.geom import Area, Ellipse2D, RoundRectangle2D
 from javax.swing import JPanel, JLabel, BoxLayout, BorderFactory, JTextArea, JEditorPane
 from javax.swing.border import EmptyBorder
+import TASBeanLookup as TBL
 
 # ------------------------------ SIZING & STYLES ------------------------------
 PAGE_H_MARGIN = 8  # left/right padding
@@ -55,30 +54,30 @@ PM_START, PM_END = 12*60, 24*60
 
 # ------------------------------ MEMORIES ------------------------------
 mm = jmri.InstanceManager.getDefault(jmri.MemoryManager)
-def mem(name, default=None):
-    m = mm.provideMemory(name)
-    if m.getValue() is None and default is not None:
-        m.setValue(default)
-    return m
 
-CLOCK_MEM = mem('IMCURRENTTIME')
-DOW_MEM   = mem('IMDAYOFWEEK')
+# Use TASBeanLookup to ensure beans exist and values are seeded
+def mem(suffix, default=None):
+    return TBL.ProvideMemoryBySuffix(suffix, default)
+
+CLOCK_MEM = mem("CURRENTTIME")
+DOW_MEM = mem("DAYOFWEEK")
 
 # WG2 forecast
-FC_STEP   = mem('IMWX_FC_STEP_MIN', 60)
-FC_POINTS = mem('IMWX_FC_POINTS', '')
+FC_STEP = mem("WX_FC_STEP_MIN", 60)
+FC_POINTS = mem("WX_FC_POINTS", '')
+
 
 # Newspaper options (snapshot at launch)
-NEWS_STYLE     = mem('IMWX_NEWS_STYLE', 'modern')  # 'modern' | 'old'
-NEWS_DAYS      = mem('IMWX_NEWS_DAYS', 3)          # 2..3
-PAPERNAME_MEM  = mem('IMWX_NEWS_PAPERNAME', None)
+NEWS_STYLE = mem("WX_NEWS_STYLE", 'modern') # 'modern' | 'old'
+NEWS_DAYS = mem("WX_NEWS_DAYS", 3)        # 2..3
+PAPERNAME_MEM = mem("WX_NEWS_PAPERNAME")
 
 # Day/night preset
-DAYNIGHT_PRESET_MEM = mem('IMDAYNIGHT_PRESET', None)
+DAYNIGHT_PRESET_MEM = mem("DAYNIGHT_PRESET")
 
 # Spoof ads
-ADS_ENABLED = mem('IMSPOOFADSENABLED', 1)
-AD_COUNT    = mem('IMAD_COUNT', 0)
+ADS_ENABLED = mem("SPOOFADSENABLED", 1)
+AD_COUNT = mem("AD_COUNT", 0)
 
 # ------------------------------ SUN TIMES ------------------------------
 def _active_preset_name():
@@ -390,7 +389,8 @@ class OldFlowLine(JPanel):
 # ------------------------------ ADS ------------------------------
 def _get_str(name, default):
     try:
-        v = mm.provideMemory(name).getValue()
+        m = mem(name, default)
+        v = m.getValue() if m is not None else None
         return default if v is None else _ascii_only(v)
     except Exception:
         return default
@@ -405,10 +405,10 @@ def _ads_from_memory(old_style):
     if count > 0:
         ads = []
         for i in range(1, count+1):
-            b  = _get_str('IMAD%d_BRAND' % i, 'Brand %d' % i)
-            l1 = _get_str('IMAD%d_L1' % i, 'Headline %d' % i)
-            l2 = _get_str('IMAD%d_L2' % i, 'Subline %d' % i)
-            cta= _get_str('IMAD%d_CTA' % i, 'Enquire within')
+            b  = _get_str('AD%d_BRAND' % i, 'Brand %d' % i)
+            l1 = _get_str('AD%d_L1' % i, 'Headline %d' % i)
+            l2 = _get_str('AD%d_L2' % i, 'Subline %d' % i)
+            cta= _get_str('AD%d_CTA' % i, 'Enquire within')
             ads.append((_ascii_only(b), _ascii_only(l1), _ascii_only(l2), _ascii_only(cta)))
         return ads
     # Expanded ASCII-only defaults (old era) ~12 items

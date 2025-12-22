@@ -29,6 +29,7 @@ import os, csv
 import java.text.SimpleDateFormat as SimpleDateFormat
 from DisruptionRegister import getDisruption
 import TimingRegister as TR  # read-only access to timing tuples (reportingNumber, direction, time, day)
+import TASBeanLookup as TBL
 
 # =============================================================================
 # UNIFORM SCALING — keep everything strictly proportional to your current design
@@ -121,14 +122,14 @@ CRTS_FitMarginW = 0.93
 CRTS_FitMarginH = 0.90
 CRTS_Days = ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"]
 
-CRTS_Mm = InstanceManager.getDefault(jmri.MemoryManager)
-CRTS_TimeMem = CRTS_Mm.getMemory("IMCURRENTTIME")
-CRTS_DayMem = CRTS_Mm.getMemory("IMDAYOFWEEK")
-CRTS_TimetableMem = CRTS_Mm.getMemory("IMCURRENTTIMETABLE")
-CRTS_OverridesMem = CRTS_Mm.getMemory("IMPID_PLATFORM_OVERRIDES")
-CRTS_DepartTPMem = CRTS_Mm.getMemory("IMPID_DEPARTURE_TP")
-CRTS_WithInMinMem = CRTS_Mm.getMemory("IMPID_CRT_WITHIN_MINUTES")
-CRTS_EcsFilterMem = CRTS_Mm.getMemory("IMPID_ECS_FILTER_TERMS")  # NEW: optional ECS keywords
+# Use TASBeanLookup to obtain Memory beans by suffix (prefix-agnostic across IM/I2M/I3M...).
+CRTS_TimeMem = TBL.ProvideMemoryBySuffix("CURRENTTIME", "")
+CRTS_DayMem = TBL.ProvideMemoryBySuffix("DAYOFWEEK", "")
+CRTS_TimetableMem = TBL.ProvideMemoryBySuffix("CURRENTTIMETABLE", "")
+CRTS_OverridesMem = TBL.ProvideMemoryBySuffix("PID_PLATFORM_OVERRIDES", "")
+CRTS_DepartTPMem = TBL.ProvideMemoryBySuffix("PID_DEPARTURE_TP", "")
+CRTS_WithInMinMem = TBL.ProvideMemoryBySuffix("PID_CRT_WITHIN_MINUTES", "5")
+CRTS_EcsFilterMem = TBL.ProvideMemoryBySuffix("PID_ECS_FILTER_TERMS", "")
 
 # Optional authoritative fast clock
 CRTS_Timebase = InstanceManager.getDefault(jmri.Timebase)

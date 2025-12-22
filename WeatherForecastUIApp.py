@@ -1,5 +1,3 @@
-# -*- coding: utf-8 -*-
-
 # This file is part of the Timetable Automation System by James E. Petts
 #
 # The Timetable Automation System is free software: you can redistribute it and/or modify it under the terms of the 
@@ -17,7 +15,7 @@
 # This needs to be a STARTUP SCRIPT
 #
 # Provides a 2010s-style mobile app UI for the weather forecast.
-# PURPOSE: UI frontend ONLY — reads future weather data published by WeatherGenerator.py
+# PURPOSE: UI frontend ONLY - reads future weather data published by WeatherGenerator.py
 # (schema WG2: IMWX_FC_POINTS etc.). Also shows sunrise/sunset for the current day.
 # Input memories:
 # - IMCURRENTTIME (for simulated time)
@@ -28,7 +26,6 @@
 # - Spoof ad / rotation (optional):
 #   IMSPOOFADSENABLED (1/0), IMAD_ROTATE_SEC (int), IMAD_MODE ('seq'|'rand'), IMAD_COUNT (int),
 #   IMAD{i}_BRAND, IMAD{i}_L1, IMAD{i}_L2, IMAD{i}_CTA for i = 1..IMAD_COUNT
-# Output memories: none (this script is read-only)
 #
 # Start style preserved at bottom:
 # ui = WeatherForecastUI(); ui.setName('Weather forecast UI'); ui.start()
@@ -37,6 +34,7 @@ from java.awt import Color, Font, BasicStroke, RenderingHints, Dimension, GridLa
 from java.awt.geom import RoundRectangle2D
 from javax.swing import JPanel, JLabel, BoxLayout, BorderFactory, Timer, JButton
 from javax.swing.border import EmptyBorder
+import TASBeanLookup as TBL
 
 # ------------------------------ UI Configuration ------------------------------
 REALTIME_REFRESH_MS = 4000
@@ -67,31 +65,31 @@ except Exception:
 
 # ------------------------------ Memory bindings ------------------------------
 mm = jmri.InstanceManager.getDefault(jmri.MemoryManager)
-def mem(name, default=None):
-    m = mm.provideMemory(name)
-    if m.getValue() is None and default is not None:
-        m.setValue(default)
-    return m
 
-CLOCK_MEM = mem('IMCURRENTTIME')
-DOW_MEM = mem('IMDAYOFWEEK')
-CLOUD_NOW = mem('IMCLOUDCOVERPCT', 0)
+# Use TASBeanLookup to handle prefix and creation
+def mem(suffix, default=None):
+    return TBL.ProvideMemoryBySuffix(suffix, default)
+
+CLOCK_MEM = mem("CURRENTTIME")
+DOW_MEM = mem("DAYOFWEEK")
+CLOUD_NOW = mem("CLOUDCOVERPCT", 0)
+
 # WG2 publication from WeatherGenerator
-FC_SCHEMA = mem('IMWX_SCHEMA', 'WG2')
-FC_STEP = mem('IMWX_FC_STEP_MIN', 60)
-FC_LEN = mem('IMWX_FC_LENGTH', 48)
-FC_ISSUE = mem('IMWX_FC_ISSUE_ABSMIN', 0)
-FC_POINTS = mem('IMWX_FC_POINTS', '')
-FC_UPDATED = mem('IMWX_UPDATED_ABSMIN', 0)
+FC_SCHEMA = mem("WX_SCHEMA", 'WG2')
+FC_STEP = mem("WX_FC_STEP_MIN", 60)
+FC_LEN = mem("WX_FC_LENGTH", 48)
+FC_ISSUE = mem("WX_FC_ISSUE_ABSMIN", 0)
+FC_POINTS = mem("WX_FC_POINTS", '')
+FC_UPDATED = mem("WX_UPDATED_ABSMIN", 0)
 
 # NEW: day/night preset name from memory (matches newspaper script behavior)
-DAYNIGHT_PRESET_MEM = mem('IMDAYNIGHT_PRESET', None)
+DAYNIGHT_PRESET_MEM = mem("DAYNIGHT_PRESET", None)
 
 # Spoof ad controls (optional)
-ADS_ENABLED_MEM = mem('IMSPOOFADSENABLED', True)
-AD_ROTATE_SEC = mem('IMAD_ROTATE_SEC', 15) # seconds
-AD_MODE_MEM = mem('IMAD_MODE', 'seq')      # 'seq' or 'rand'
-AD_COUNT_MEM = mem('IMAD_COUNT', 0)        # 0 -> use defaults
+ADS_ENABLED_MEM = mem("SPOOFADSENABLED", True)
+AD_ROTATE_SEC = mem("AD_ROTATE_SEC", 15) # seconds
+AD_MODE_MEM = mem("AD_MODE", 'seq')      # 'seq' or 'rand'
+AD_COUNT_MEM = mem("AD_COUNT", 0)        # 0 -> use defaults
 
 # ------------------------------ Sunrise/Sunset helpers ------------------------------
 FALLBACK_SUN = {
@@ -317,7 +315,7 @@ class BlueCtaButton(JButton):
         self.setFocusable(False)
         self.setForeground(Color(255,255,255))  # white text
         self.setFont(Font("SansSerif", Font.BOLD, 13))
-        # start with a roomy size; we’ll adjust at paint time
+        # start with a roomy size; we will adjust at paint time
         self.setPreferredSize(Dimension(180, 32))
         self.setMinimumSize(Dimension(160, 32))
         self.setMaximumSize(Dimension(280, 32))
@@ -665,13 +663,6 @@ class WeatherForecastUI(jmri.jmrit.automat.AbstractAutomaton):
     def _read_int(self, m, d):
         try: return int(m.getValue() or d)
         except Exception: return d
-        
-    def _read_str(self, m, d):
-        try:
-            v = m.getValue()
-            return d if v is None else str(v)
-        except Exception:
-            return d
     
     def _read_enabled(self, m, defaultEnabled):
     # Accept both 1/0 and common boolean words
@@ -692,23 +683,23 @@ class WeatherForecastUI(jmri.jmrit.automat.AbstractAutomaton):
         except:
             return 1 if defaultEnabled else 0
         
-        def _read_str(self, m, d):
-            try:
-                v = m.getValue()
-                return d if v is None else str(v)
-            except Exception:
-                return d
+    def _read_str(self, m, d):
+        try:
+            v = m.getValue()
+            return d if v is None else str(v)
+        except Exception:
+            return d
 
     def _reload_ads_from_mem(self):
         """Rebuild self.adList from IMAD_* memories, or defaults if none."""
         count = self._read_int(AD_COUNT_MEM, 0)
         ads = []
         if count > 0:
-            for i in range(1, count+1):
-                b  = self._read_str(mm.provideMemory('IMAD%d_BRAND' % i), 'Brand %d' % i)
-                l1 = self._read_str(mm.provideMemory('IMAD%d_L1'    % i), 'Headline %d' % i)
-                l2 = self._read_str(mm.provideMemory('IMAD%d_L2'    % i), 'Subline %d' % i)
-                cta= self._read_str(mm.provideMemory('IMAD%d_CTA'   % i), 'Learn more')
+            for i in range(1, count+1):             
+                b = self._read_str(mem('AD%d_BRAND' % i, 'Brand %d' % i), 'Brand %d' % i)
+                l1 = self._read_str(mem('AD%d_L1' % i, 'Headline %d' % i), 'Headline %d' % i)
+                l2 = self._read_str(mem('AD%d_L2' % i, 'Subline %d' % i), 'Subline %d' % i)
+                cta = self._read_str(mem('AD%d_CTA' % i, 'Learn more'), 'Learn more')
                 ads.append({'brand':b,'l1':l1,'l2':l2,'cta':cta})
         else:
             # Defaults (rotate if user hasn't configured anything)
@@ -800,7 +791,7 @@ class WeatherForecastUI(jmri.jmrit.automat.AbstractAutomaton):
     
     def _PushFirstAdIfNeeded(self, enabled):
         # Only run when ads are enabled and there's at least one ad;
-        # Never call this at class scope—methods only.
+        # Never call this at class scope-methods only.
         try:
             if enabled == 1 and len(self.adList) > 0:
                 if self.adIndex < 0:

@@ -39,25 +39,31 @@ from java.awt.event import KeyEvent
 from java.awt.event import MouseWheelListener, MouseWheelEvent
 from java.lang import String, Math, System
 from java.text import SimpleDateFormat
+import TASBeanLookup as TBL
 
 # -- TAS default RN rule --
 import TASUtil as TU  # IsDefaultReportingNumber(s)
 
-# --- Helpers: read memory and parse "r,g,b" safely (JMRI validated)
-def _ReadMemStr(name, default=""):
-    mm = InstanceManager.getDefault(jmri.MemoryManager)
-    mem = None
-    try: mem = mm.getMemory(name)
-    except: mem = None
-    val = None if (mem is None) else mem.getValue()
-    s = "" if (val is None) else str(val).strip()
-    return s if s else default
-    
-def _ReadMemBool(name, default=False):
-    s = _ReadMemStr(name, "")
+# --- Helpers: read memory and parse "r,g,b" safely 
+def _ReadMemStr(suffix, default=""):
+    # Read a Memory value using suffix-based (prefix-agnostic) lookup.
+    # Returns a stripped string, falling back to default.
+    try:
+        val = TBL.SafeGetMemoryValue(suffix, default)
+        s = "" if val is None else str(val).strip()
+        return s if s else default
+    except:
+        return default
+
+
+def _ReadMemBool(suffix, default=False):
+    # Read boolean-ish Memory values using suffix-based lookup.
+    s = _ReadMemStr(suffix, "")
     t = ("" if s is None else str(s)).strip().lower()
-    if t in ("1","true","yes","y","on","enabled"):   return True
-    if t in ("0","false","no","n","off","disabled"): return False
+    if t in ("1", "true", "yes", "y", "on", "enabled"):
+        return True
+    if t in ("0", "false", "no", "n", "off", "disabled"):
+        return False
     return bool(default)
 
 def _RgbStrToColor(rgbStr, fallback):
@@ -73,37 +79,37 @@ def _RgbStrToColor(rgbStr, fallback):
 
 # ---------------- Options ----------------
 # --- Options via memories set in TASSetup ---
-PAGE_MODE       = _ReadMemStr("IMWTT_PAGE_MODE", "WEEKDAYS_SAT_SUN")
-TIME_24H        = _ReadMemBool("IMWTT_TIME_24H",  True)
-TIME_SEPARATOR  = _ReadMemStr("IMWTT_TIME_SEPARATOR", " ")[:1]  # single char
-ECS_LABEL       = _ReadMemStr("IMWTT_ECS_LABEL", "ECS")
+PAGE_MODE = _ReadMemStr("WTT_PAGE_MODE", "WEEKDAYS_SAT_SUN")
+TIME_24H = _ReadMemBool("WTT_TIME_24H", True)
+TIME_SEPARATOR = _ReadMemStr("WTT_TIME_SEPARATOR", " ")[:1]  # single char
+ECS_LABEL = _ReadMemStr("WTT_ECS_LABEL", "ECS")
 
 # Parse comma-separated tokens (lowercased, trimmed) into a set
-_ecs_raw        = _ReadMemStr("IMWTT_ECS_DEST_MATCH", "empty to depot,empty,ety.,ecs")
+_ecs_raw = _ReadMemStr("WTT_ECS_DEST_MATCH", "empty to depot,empty,ety.,ecs")
 _ECS_DEST_MATCH = set([t.strip().lower() for t in _ecs_raw.split(",") if len(t.strip()) > 0])
 
-DIRECTION_SPLIT = _ReadMemBool("IMWTT_DIRECTION_SPLIT", True)
+DIRECTION_SPLIT = _ReadMemBool("WTT_DIRECTION_SPLIT", True)
 
 # Header orientation for origin/destination columns (default: horizontal)
 # Set IMWTT_OD_HEADER_VERTICAL = "true" in TASSetup to enable vertical headers.
-OD_HEADER_VERTICAL = _ReadMemBool("IMWTT_OD_HEADER_VERTICAL", False)
+OD_HEADER_VERTICAL = _ReadMemBool("WTT_OD_HEADER_VERTICAL", False)
 
 # ---------------- Styles ----------------
 # Paper colour from IMTASPAPERCOLOUR (default "249,246,238")
-PAPER = _RgbStrToColor(_ReadMemStr("IMTASPAPERCOLOUR", "249,246,238"), Color(249,246,238))
+PAPER = _RgbStrToColor(_ReadMemStr("TASPAPERCOLOUR", "249,246,238"), Color(249, 246, 238))
 RULE = Color(60, 60, 60)
 HEADER_BG = PAPER
-# Lighter band = PAPER; darker band from IMTASWTTBANDDARK (default "245,242,235")
-ROW_A = _RgbStrToColor(_ReadMemStr("IMTASWTTBANDLIGHT", "255,253,247"), Color(255,253,247))
-ROW_B = _RgbStrToColor(_ReadMemStr("IMTASWTTBANDDARK", "245,242,235"), Color(245,242,235))
+# Lighter band = PAPER; darker band from TASWTTBANDDARK (default "245,242,235")
+ROW_A = _RgbStrToColor(_ReadMemStr("TASWTTBANDLIGHT", "255,253,247"), Color(255, 253, 247))
+ROW_B = _RgbStrToColor(_ReadMemStr("TASWTTBANDDARK", "245,242,235"), Color(245, 242, 235))
 MAJOR_RULE_THICK = 2
 MINOR_RULE_THICK = 1
 DOUBLE_RULE_THICK = MAJOR_RULE_THICK * 2
 DOTS_A = ". ."
 DOTS_B = ". . . . . . ."
 
-# Font family from IMTAS_FONT_FAMILY (default "Gill Sans MT")
-_fontFam = _ReadMemStr("IMTAS_FONT_FAMILY", "Gill Sans MT")
+# Font family from TAS_FONT_FAMILY (default "Gill Sans MT")
+_fontFam = _ReadMemStr("TAS_FONT_FAMILY", "Gill Sans MT")
 try:
     BASE_FONT   = Font(_fontFam, Font.PLAIN, 14)
     HEADER_FONT = Font(_fontFam, Font.BOLD,  14)
@@ -116,7 +122,7 @@ except:
 
 BOLD_FONT = Font(BASE_FONT.getName(), Font.BOLD, BASE_FONT.getSize())
 ITALIC_FONT = Font(BASE_FONT.getName(), Font.ITALIC, BASE_FONT.getSize())
-BOLD_ITALIC = Font(BASE_FONT.getName(), Font.BOLD | Font.ITALIC, BASE_FONT.getSize())
+BOLD_ITALIC = Font(BASE_FONT.getName(), (Font.BOLD | Font.ITALIC), BASE_FONT.getSize())
 
 LEFT_PAGE_PADDING = 16
 
@@ -306,9 +312,7 @@ model = DefaultTableModel(_blank_rows_for_start(True), columns)  # temp; rebuilt
 
 # ---------------- CSV path ----------------
 def ResolveTimetableCsvPath():
-    memoryManager = InstanceManager.getDefault(jmri.MemoryManager)
-    mem = memoryManager.getMemory("IMCURRENTTIMETABLE")
-    timetableName = "Timetable 2017" if (mem is None or mem.getValue() is None) else str(mem.getValue())
+    timetableName = _ReadMemStr("CURRENTTIMETABLE", "Default timetable")
     profilePath = None
     try:
         from jmri.profile import ProfileManager

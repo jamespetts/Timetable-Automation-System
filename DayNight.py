@@ -18,21 +18,22 @@ import java
 import jmri
 import math
 import csv
+import TASBeanLookup as TBL
 
 # -------------------- Throttle fallback constants (used if Memories missing/invalid) --------------------
 LOW_TEMP_DEFAULT = 990  # warm / low CCT fallback address
 HIGH_TEMP_DEFAULT = 991 # cool / high CCT fallback address
 
-# -------------------- New configurable Memory names for throttle addresses --------------------
-MEM_LOW_ADDR = 'IMLOWCTTHROTTLEADDR'   # integer expected
-MEM_HIGH_ADDR = 'IMHIGHCTTHROTTLEADDR' # integer expected
+# -------------------- Configurable Memory names for throttle addresses --------------------
+MEM_LOW_ADDR = "LOWCTTHROTTLEADDR"   # integer expected
+MEM_HIGH_ADDR = "HIGHCTTHROTTLEADDR" # integer expected
 
 # -------------------- Time-warp blackout configuration --------------------
 BLACKOUT_SECONDS_DEFAULT = 2               # default blackout duration in seconds
 TIMEWARP_THRESHOLD_MINUTES_DEFAULT = 5     # default warp threshold in minutes
-MEM_BLACKOUT_SECONDS = 'IMTIMEWARPBLACKOUTSECONDS'
-MEM_TIMEWARP_THRESHOLD = 'IMTIMEWARPTHRESHOLDMINUTES'
-MEM_MIN_NIGHT_GLOW = 'IMMINNIGHTGLOW'
+MEM_BLACKOUT_SECONDS = "TIMEWARPBLACKOUTSECONDS"
+MEM_TIMEWARP_THRESHOLD = "TIMEWARPTHRESHOLDMINUTES"
+MEM_MIN_NIGHT_GLOW = "MINNIGHTGLOW"
 MIN_NIGHT_GLOW_DEFAULT = 0.02
 
 
@@ -52,7 +53,7 @@ mm = jmri.InstanceManager.getDefault(jmri.MemoryManager)
 # Read the preset from memory if present; otherwise fall back to DAYNIGHT_PRESET.
 # Also write the resolved value back so other scripts can consume it consistently.
 try:
-    _mem_obj = mm.provideMemory('IMDAYNIGHT_PRESET')
+    _mem_obj = TBL.ProvideMemoryBySuffix("DAYNIGHT_PRESET", DAYNIGHT_PRESET)
     _val = _mem_obj.getValue()
     _val = None if _val is None else str(_val).strip()
     ACTIVE_DAYNIGHT_PRESET = _val if _val else DAYNIGHT_PRESET
@@ -137,10 +138,10 @@ def _load_daynight_from_tsv(path, preset_name, fallback):
 class DayNight(jmri.jmrit.automat.AbstractAutomaton):
     def init(self):
         # ---- Memories ----
-        self.clock = memories.getMemory('IMCURRENTTIME')
-        self.dayMemory = memories.getMemory('IMDAYOFWEEK')
-        self.cloudMemory = memories.getMemory('IMCLOUDCOVERPCT')
-        self.minNightGlowMem = memories.getMemory(MEM_MIN_NIGHT_GLOW)
+        self.clock = TBL.FindMemoryBySuffix("CURRENTTIME")
+        self.dayMemory = TBL.FindMemoryBySuffix("DAYOFWEEK")
+        self.cloudMemory = TBL.FindMemoryBySuffix("CLOUDCOVERPCT")
+        self.minNightGlowMem = TBL.FindMemoryBySuffix(MEM_MIN_NIGHT_GLOW)
         self.minNightGlow = MIN_NIGHT_GLOW_DEFAULT
         if self.minNightGlowMem is not None:
             v = _to_float_or_none(self.minNightGlowMem.getValue())
@@ -148,8 +149,8 @@ class DayNight(jmri.jmrit.automat.AbstractAutomaton):
                 self.minNightGlow = v
 
         # New address memories (log error if missing)
-        self.lowAddrMem = memories.getMemory(MEM_LOW_ADDR)
-        self.highAddrMem = memories.getMemory(MEM_HIGH_ADDR)
+        self.lowAddrMem = TBL.FindMemoryBySuffix(MEM_LOW_ADDR)
+        self.highAddrMem = TBL.FindMemoryBySuffix(MEM_HIGH_ADDR)
         if self.lowAddrMem is None:
             print("ERROR: Required memory '{}' does not exist. Using fallback address {}."
                   .format(MEM_LOW_ADDR, LOW_TEMP_DEFAULT))
@@ -158,8 +159,8 @@ class DayNight(jmri.jmrit.automat.AbstractAutomaton):
                   .format(MEM_HIGH_ADDR, HIGH_TEMP_DEFAULT))
 
         # Time-warp configuration memories (optional)
-        self.blackoutSecsMem = memories.getMemory(MEM_BLACKOUT_SECONDS)
-        self.warpThresholdMinsMem = memories.getMemory(MEM_TIMEWARP_THRESHOLD)
+        self.blackoutSecsMem = TBL.FindMemoryBySuffix(MEM_BLACKOUT_SECONDS)
+        self.warpThresholdMinsMem = TBL.FindMemoryBySuffix(MEM_TIMEWARP_THRESHOLD)
 
         # ---- Core services ----
         self.timebase = jmri.InstanceManager.getDefault(jmri.Timebase)

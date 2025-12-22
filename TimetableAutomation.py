@@ -39,6 +39,7 @@ from java.awt import GraphicsEnvironment
 from java.io import BufferedReader, InputStreamReader
 import jmri
 from java.io import File  # needed for canonical path comparison
+import TASBeanLookup as TBL
 
 # ------------------ Helpers - profile & memory (JMRI API validated) ------------------
 
@@ -144,30 +145,19 @@ def GetActiveProfileName():
         print("Profile name lookup failed: " + str(ex))
     return "Current Profile"
 
+
 def GetTimetableName():
     try:
-        mm = jmri.InstanceManager.getDefault(jmri.MemoryManager)
-        if mm is not None:
-            mem = None
-            try:
-                mem = mm.getBySystemName(TIMETABLE_MEMORY_NAME)
-            except:
-                mem = None
-            if mem is None:
-                try:
-                    mem = mm.getByUserName(TIMETABLE_MEMORY_NAME)
-                except:
-                    mem = None
-            if mem is not None:
-                val = mem.getValue()
-                if val is not None:
-                    s = str(val).strip()
-                    if len(s) > 0:
-                        return s
+        # CURRENTTIMETABLE stores the timetable *name* as the Memory value.
+        # Use prefix-agnostic suffix lookup via TASBeanLookup.
+        val = TBL.SafeGetMemoryValue(TIMETABLE_MEMORY_NAME, "")
+        if val is not None:
+            s = str(val).strip()
+            if len(s) > 0:
+                return s
     except Exception as ex:
         print("Timetable name lookup failed: " + str(ex))
     return "Not configured"
-
 
 def RunExternalScript(FileName, FriendlyName, Arg=None):
     # Execute another script located in the JMRI scripts directory (portable path).
@@ -303,60 +293,9 @@ def LoadLicenceText():
         print("Licence load failed: " + str(ex))
         return None
 
-# Get a string value from a JMRI Memory by system or user name; never throw.
-# Default is applied ONLY when the memory did not previously exist (created now).
-# If the memory exists but has blank/whitespace, return it as-is (do not override).
-def GetMemoryString(Name, Default=""):
-    try:
-        mm = jmri.InstanceManager.getDefault(jmri.MemoryManager)
-        if mm is None:
-            # No MemoryManager -> we cannot create; return Default to be safe
-            return Default
-
-        # Try existing by system name first, then user name
-        mem = None
-        try:
-            mem = mm.getBySystemName(Name)
-        except:
-            mem = None
-        if mem is None:
-            try:
-                mem = mm.getByUserName(Name)
-            except:
-                mem = None
-
-        if mem is None:
-            # Memory did not exist: create and set the default ONCE
-            mem = mm.provideMemory(Name)
-            try:
-                # Only set the default if the newly-created Memory has no value
-                if mem.getValue() is None:
-                    mem.setValue(Default)
-            except:
-                # If setting fails, fall back to returning Default
-                return Default
-            # Return Default (we just created and seeded it)
-            return Default
-
-        # Memory exists: respect its value even if blank or whitespace
-        val = None
-        try:
-            val = mem.getValue()
-        except:
-            val = None
-
-        if val is None:
-            # Existing memory but no value -> treat as blank (do NOT force Default)
-            return ""
-        # Return the string as-is (do not trim), to allow " " etc. to render blank
-        return str(val)
-    except Exception:
-        # On any unexpected error, be conservative
-        return Default
-
 # Compatibility helper for legacy external scripts that expect ReadMemStr(...)
 def ReadMemStr(Name, Default=""):
-    return GetMemoryString(Name, Default)
+    return TBL.SafeGetOrCreateMemoryValue(Name, Default)
 
 # ------------------ Cover panel ------------------
 
@@ -379,13 +318,13 @@ class CoverPanel(JPanel):
     def __init__(self):
         JPanel.__init__(self)
         self.setOpaque(True)
-        # Use IMTASCOVERCOLOUR from memory (default "240,238,220")
-        memRgb = GetMemoryString("IMTASCOVERCOLOUR", "240,238,220")
+        # Use TASCOVERCOLOUR from memory (default "240,238,220")
+        memRgb = TBL.SafeGetOrCreateMemoryValue("TASCOVERCOLOUR", "240,238,220")
         try:
             parts = [p.strip() for p in str(memRgb).split(",")]
             if len(parts) == 3:
                 r = max(0, min(255, int(float(parts[0]))))
-                g = max(0, min(255, int(float(parts[1]))))
+                g = max(0, min(255, int(float(parts[1]))))  
                 b = max(0, min(255, int(float(parts[2]))))
                 self.setBackground(Color(r, g, b))
             else:
@@ -393,8 +332,8 @@ class CoverPanel(JPanel):
         except:
             self.setBackground(Color(240, 238, 220))
             
-        # Inner panel background colour from IMTASINNERCOLOUR (default "220,235,220")
-        memRgbInner = GetMemoryString("IMTASINNERCOLOUR", "220,235,220")
+        # Inner panel background colour from TASINNERCOLOUR (default "220,235,220")
+        memRgbInner = TBL.SafeGetOrCreateMemoryValue("TASINNERCOLOUR", "220,235,220")
         try:
             parts = [p.strip() for p in str(memRgbInner).split(",")]
             if len(parts) == 3:
@@ -409,8 +348,8 @@ class CoverPanel(JPanel):
         
         self.setLayout(None)
         
-        # Ink (text/lines/boxes/button outlines) colour from IMTASINKCOLOUR (default "0,0,0")
-        memRgbInk = GetMemoryString("IMTASINKCOLOUR", "0,0,0")
+        # Ink (text/lines/boxes/button outlines) colour from TASINKCOLOUR (default "0,0,0")
+        memRgbInk = TBL.SafeGetOrCreateMemoryValue("TASINKCOLOUR", "0,0,0")
         try:
             parts = [p.strip() for p in str(memRgbInk).split(",")]
             if len(parts) == 3:
@@ -436,7 +375,7 @@ class CoverPanel(JPanel):
         # Initial application of ink colour to buttons
         _ApplyInkToButtons(self)
 
-        memFont = GetMemoryString("IMTAS_FONT_FAMILY", PreferredFontFamily())
+        memFont = TBL.SafeGetOrCreateMemoryValue("TAS_FONT_FAMILY", PreferredFontFamily())
         self.FontFamily = memFont if memFont else PreferredFontFamily()
         self.ProfileName = GetActiveProfileName()
         self.TimetableName = GetTimetableName()
@@ -491,7 +430,7 @@ class CoverPanel(JPanel):
         dlg.setVisible(True)
 
     def IsTimeWarpAllowed(self):
-        s = GetMemoryString("IMALLOWTIMEWARP", "").strip().lower()
+        s = TBL.SafeGetOrCreateMemoryValue("ALLOWTIMEWARP", "").strip().lower()
         return s in ("true", "yes", "1", "on", "enabled")
 
     def UpdateTimeWarpEnabled(self):
@@ -507,8 +446,8 @@ class CoverPanel(JPanel):
     def OnWeatherForecast(self):
         # Decide which UI to run based on Memories, and handle disabled generator.
         wxEnabled = _IsStartUpScriptEnabled("WeatherGenerator.py")  # from Start-Up list  [1]
-        uiChoice  = GetMemoryString("IMWX_UI", "Newspaper").strip()
-        cloudStr  = GetMemoryString("IMCLOUDCOVERPCT", "0").strip()
+        uiChoice  = TBL.SafeGetOrCreateMemoryValue("WX_UI", "Newspaper").strip()
+        cloudStr  = TBL.SafeGetOrCreateMemoryValue("CLOUDCOVERPCT", "0").strip()
         try:
             cloud = int(float(cloudStr))
         except:
@@ -532,7 +471,7 @@ class CoverPanel(JPanel):
     # Run configured Display scripts (CSV of .py filenames in memories)
     def RunConfiguredPublic(self):
         try:
-            raw = GetMemoryString("IMPUBLICDISPLAYLIST", "")
+            raw = TBL.SafeGetOrCreateMemoryValue("PUBLICDISPLAYLIST", "")
             names = [s.strip() for s in raw.split(",") if len(s.strip()) > 0]
             # Run each chosen script (do nothing if none selected)
             for fname in names:
@@ -547,7 +486,7 @@ class CoverPanel(JPanel):
 
     def RunConfiguredSignallers(self):
         try:
-            raw = GetMemoryString("IMSIGNALLERDISPLAYLIST", "")
+            raw = TBL.SafeGetOrCreateMemoryValue("SIGNALLERDISPLAYLIST", "")
             names = [s.strip() for s in raw.split(",") if len(s.strip()) > 0]
             for fname in names:
                 RunExternalScript(fname, self.FRIENDLY_NAME(fname, "Signallers' display"))
@@ -596,12 +535,12 @@ class CoverPanel(JPanel):
         # Top line + SECTION box
         y = margin + innerPad + 40
         g.setFont(Font(self.FontFamily, Font.PLAIN, 14))
-        railwayText = GetMemoryString("IMRAILWAYCO", "BRITISH RAILWAYS")
-        regionText = GetMemoryString("IMREGION", "LONDON MIDLAND REGION")
+        railwayText = TBL.SafeGetOrCreateMemoryValue("RAILWAYCO", "BRITISH RAILWAYS")
+        regionText = TBL.SafeGetOrCreateMemoryValue("REGION", "LONDON MIDLAND REGION")
         g.drawString(railwayText + " " + regionText, innerLeft, y)
         
         g.setFont(Font(self.FontFamily, Font.BOLD, 14))
-        secText = GetMemoryString("IMSECTION", "SECTION B")
+        secText = TBL.SafeGetOrCreateMemoryValue("SECTION", "SECTION B")
 
         # If SECTION text is blank/whitespace, do NOT draw the box or the label
         if secText is not None and len(str(secText).strip()) > 0:
@@ -624,31 +563,6 @@ class CoverPanel(JPanel):
             textY = secY + padY + fmSec.getAscent()
             g.drawString(secText, textX, textY)
         # else: box is intentionally omitted
-
-        fmSec = g.getFontMetrics()
-        textW = fmSec.stringWidth(secText)
-        textH = fmSec.getAscent() + fmSec.getDescent()
-
-        # Padding inside the box (left/right/top/bottom)
-        padX = 12
-        padY = 6
-
-        # Compute box width/height to fit the text with padding
-        secW = textW + 2 * padX
-        secH = textH + 2 * padY
-
-        # Position box flush to the inner right edge, aligned with the railway/region baseline
-        secX = innerRight - secW
-        secY = y - (fmSec.getAscent() + padY)  # so text baseline aligns with 'y'
-
-        # Draw the box
-        g.drawRect(secX, secY, secW, secH)
-
-        # Center the text horizontally and vertically inside the box
-        textX = secX + (secW - textW) // 2
-        textY = secY + padY + fmSec.getAscent()  # vertical centering via ascent
-
-        g.drawString(secText, textX, textY)
 
         # Headline (lossless two-line builder; never drops words)
         y += 54
@@ -877,7 +791,7 @@ def Run():
         f.setVisible(True)
     SwingUtilities.invokeLater(Create)
 
-Run()
-SYSTEM_NAME = "Timetable Automation System"
-TIMETABLE_MEMORY_NAME = "IMCURRENTTIMETABLE"  # Memory holding the current timetable name
 
+SYSTEM_NAME = "Timetable Automation System"
+TIMETABLE_MEMORY_NAME = "CURRENTTIMETABLE"  # Memory holding the current timetable name
+Run()

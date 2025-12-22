@@ -34,6 +34,7 @@ from javax.swing.event import DocumentListener, ListSelectionListener
 from javax.swing.text import StyleContext, StyledDocument, SimpleAttributeSet, StyleConstants
 from java.awt.event import KeyAdapter, KeyEvent
 from java.awt import GridLayout
+import TASBeanLookup as TBL
 
 # JMRI
 import jmri
@@ -84,85 +85,8 @@ def _ColorToRgbStr(c):
         return GetDefaultBackgroundRGB()
 
 # --------------------------- Memory helpers ---------------------------
-def ProvideMemory(Name):
-    # Provide existing Memory by system or user name;
-    # create if missing (JMRI-provided ensure).
-    mm = jmri.InstanceManager.getDefault(jmri.MemoryManager)
-    if mm is None:
-        raise Exception("MemoryManager not available")
-    mem = None
-    try:
-        mem = mm.getBySystemName(Name)
-    except:
-        mem = None
-    if mem is None:
-        try:
-            mem = mm.getByUserName(Name)
-        except:
-            mem = None
-    if mem is None:
-        mem = mm.provideMemory(Name)
-    return mem
-
-def GetMemoryString(Name, Default=""):
-    """
-    Return the memory value as-is.
-    Apply Default ONLY when the memory did not exist and was just created
-    (and has no value). Existing blank/whitespace values are respected.
-    """
-    try:
-        mm = jmri.InstanceManager.getDefault(jmri.MemoryManager)
-        if mm is None:
-            return Default  # conservative fallback
-
-        # Try to find an existing memory without creating one
-        mem = None
-        try:
-            mem = mm.getBySystemName(Name)
-        except:
-            mem = None
-        if mem is None:
-            try:
-                mem = mm.getByUserName(Name)
-            except:
-                mem = None
-
-        if mem is None:
-            # First creation: provide and seed with Default once
-            mem = mm.provideMemory(Name)
-            try:
-                if mem.getValue() is None:
-                    mem.setValue(Default)
-            except:
-                return Default
-            return Default
-
-        # Existing memory: respect whatever value it holds (even blank/whitespace)
-        try:
-            v = mem.getValue()
-        except:
-            v = None
-        if v is None:
-            # existing memory but unset -> treat as blank (do not force Default)
-            return ""
-        return str(v)
-    except Exception:
-        return Default
-
-def SetMemoryString(Name, Value):
-    """
-    Set memory to the given string value verbatim (no stripping),
-    so the UI may deliberately store " " to render blank headers.
-    """
-    try:
-        m = ProvideMemory(Name)
-        m.setValue(str(Value))
-        print(TAG + "Set " + Name + " = " + str(Value))
-    except Exception as ex:
-        LogError("Failed to set memory " + Name + ": " + str(ex), ex=ex, alsoDialog=False)
-
 def GetMemoryBool(Name, Default=False):
-    s=GetMemoryString(Name,"")
+    s=TBL.SafeGetOrCreateMemoryValue(Name,"")
     if isinstance(s,bool): return s
     t=str(s).strip().lower()
     if t in ["1","true","yes","y","on","enabled"]: return True
@@ -170,7 +94,7 @@ def GetMemoryBool(Name, Default=False):
     return Default
 
 def SetMemoryBool(Name, Value):
-    SetMemoryString(Name, "true" if bool(Value) else "false")
+    TBL.SafeSetMemoryValue(Name, "true" if bool(Value) else "false")
     
 def ScriptExists(scriptName):
     try:
@@ -180,9 +104,9 @@ def ScriptExists(scriptName):
         return False    
 
 # ------------------------------- Theme --------------------------------
-THEME_FONT_FAMILY = GetMemoryString("IMTAS_FONT_FAMILY", "Gill Sans MT")
+THEME_FONT_FAMILY = TBL.SafeGetOrCreateMemoryValue("TAS_FONT_FAMILY", "Gill Sans MT")
 THEME_TEXT_COLOR = Color(30, 30, 30)
-THEME_PAPER = _RgbStrToColorOrDefault(GetMemoryString("IMTASPAPERCOLOUR", "249,246,238"), Color(249, 246, 238))
+THEME_PAPER = _RgbStrToColorOrDefault(TBL.SafeGetOrCreateMemoryValue("TASPAPERCOLOUR", "249,246,238"), Color(249, 246, 238))
 THEME_ACCENT = Color(80, 80, 80)
 LIST_SEL_BG = Color(210, 225, 235)
 LIST_SEL_FG = Color(20, 20, 20)
@@ -316,36 +240,36 @@ def GetDefaultBackgroundRGB():
     return "240,238,220"
 
 # ------------------------------- Keys ---------------------------------
-IMCurrentTimetable   = "IMCURRENTTIMETABLE"
-IMAllowDelays        = "IMALLOWDELAYS"
-IMAllowCANCELLATIONS = "IMALLOWCANCELLATIONS"
-IMPublicDisplayList  = "IMPUBLICDISPLAYLIST"
-IMSignallerDisplayList = "IMSIGNALLERDISPLAYLIST"
+IMCurrentTimetable   = "CURRENTTIMETABLE"
+IMAllowDelays        = "ALLOWDELAYS"
+IMAllowCANCELLATIONS = "ALLOWCANCELLATIONS"
+IMPublicDisplayList  = "PUBLICDISPLAYLIST"
+IMSignallerDisplayList = "SIGNALLERDISPLAYLIST"
 
 # Timetable (WTTDisplay) parameter memories
-IMWTT_PageMode        = "IMWTT_PAGE_MODE"           # str: "WEEKDAYS_SAT_SUN" / "SEVEN_DAYS" / "MONSAT_PLUS_SUN" / "ALL_WEEK"
-IMWTT_Time24          = "IMWTT_TIME_24H"            # bool: true/false
-IMWTT_TimeSeparator   = "IMWTT_TIME_SEPARATOR"      # str: single character (":" or " " or ".")
-IMWTT_EcsLabel        = "IMWTT_ECS_LABEL"           # str: e.g., "ECS"
-IMWTT_EcsMatch        = "IMWTT_ECS_DEST_MATCH"      # str: comma-separated tokens (lowercased)
-IMWTT_DirectionSplit  = "IMWTT_DIRECTION_SPLIT"     # bool: true/false
-IMWTT_OdHeaderVertical = "IMWTT_OD_HEADER_VERTICAL" # bool: true/false (unchecked=horizontal default)
+IMWTT_PageMode        = "WTT_PAGE_MODE"          # str: "WEEKDAYS_SAT_SUN" / "SEVEN_DAYS" / "MONSAT_PLUS_SUN" / "ALL_WEEK"
+IMWTT_Time24          = "WTT_TIME_24H"          # bool: true/false
+IMWTT_TimeSeparator   = "WTT_TIME_SEPARATOR"     # str: single character (":" or " " or ".")
+IMWTT_EcsLabel        = "WTT_ECS_LABEL"         # str: e.g., "ECS"
+IMWTT_EcsMatch        = "WTT_ECS_DEST_MATCH"    # str: comma-separated tokens (lowercased)
+IMWTT_DirectionSplit  = "WTT_DIRECTION_SPLIT"     # bool: true/false
+IMWTT_OdHeaderVertical = "WTT_OD_HEADER_VERTICAL" # bool: true/false (unchecked=horizontal default)
 
 # Day/Night & Weather (UI values consumed by DayNight/Weather scripts)
-IMLowThrottleAddr = "IMLOWCTTHROTTLEADDR"
-IMHighThrottleAddr = "IMHIGHCTTHROTTLEADDR"
-IMDayNightPreset = "IMDAYNIGHT_PRESET"
-IMWxClimate   = "IMWX_CLIMATE"
-IMWxCloudPct  = "IMCLOUDCOVERPCT"
-IMWxUiChoice  = "IMWX_UI"          # "App" or "Newspaper"
-IMWxNewsStyle = "IMWX_NEWS_STYLE"  # "Old" or "Modern"
+IMLowThrottleAddr = "LOWCTTHROTTLEADDR"
+IMHighThrottleAddr = "HIGHCTTHROTTLEADDR"
+IMDayNightPreset = "DAYNIGHT_PRESET"
+IMWxClimate   = "WX_CLIMATE"
+IMWxCloudPct  = "CLOUDCOVERPCT"
+IMWxUiChoice  = "WX_UI"     # "App" or "Newspaper"
+IMWxNewsStyle = "WX_NEWS_STYLE" # "Old" or "Modern"
 
 # DayNight time-warp blackout configuration (matches DayNight.py)
-IMTimeWarpBlackoutSeconds = "IMTIMEWARPBLACKOUTSECONDS"
-IMTimeWarpThresholdMinutes = "IMTIMEWARPTHRESHOLDMINUTES"
+IMTimeWarpBlackoutSeconds = "TIMEWARPBLACKOUTSECONDS"
+IMTimeWarpThresholdMinutes = "TIMEWARPTHRESHOLDMINUTES"
 
 # NEW: Auto-working enable memory switch (non-startup, no restart)
-IMTASAutoWorking = "IMTASAUTOWORKING"
+IMTASAutoWorking = "TASAUTOWORKING"
 
 # --------------------------- Portable paths ---------------------------
 def GetTimetableDirFile():
@@ -503,7 +427,7 @@ def _ParseTimeToMinutes(timeStr):
     return hour*60 + minute
 
 def _TimetableFilePath():
-    name = GetMemoryString(IMCurrentTimetable, "").strip()
+    name = TBL.SafeGetOrCreateMemoryValue(IMCurrentTimetable, "").strip()
     if not name: return None
     ttDir = FileUtil.getExternalFilename("profile:timetable")
     return os.path.join(ttDir, name + ".csv")
@@ -764,8 +688,8 @@ def MakeDualListPanel(TitleText, AvailableTuples, InitialSelectedNames, OnChange
     return panel
 
 # ------------------------------- Main frame ----------------------------
-IMPublicDisplayList = "IMPUBLICDISPLAYLIST"
-IMSignallerDisplayList = "IMSIGNALLERDISPLAYLIST"
+IMPublicDisplayList ="PUBLICDISPLAYLIST"
+IMSignallerDisplayList = "SIGNALLERDISPLAYLIST"
 
 PUBLIC_SCRIPTS = [
     ("NSEClock.py", "NSE clock"),
@@ -947,7 +871,7 @@ class TASSetupFrame(jmri.util.JmriJFrame):
             want = self.ChkTimeActions.isSelected()
 
             # Enable/disable all scripts under the single master toggle
-            ok = _EnsureScriptEnabled("CheckWhenTimeChanges.py", want) and _EnsureScriptEnabled("TimeWarpChecker.py") and _EnsureScriptEnabled("DayTracker.py", want)
+            ok = _EnsureScriptEnabled("CheckWhenTimeChanges.py", want) and _EnsureScriptEnabled("TimeWarpChecker.py", want) and _EnsureScriptEnabled("DayTracker.py", want)
             
             # Reflect actual combined state and track it for the restart prompt
             actual = IsTimeActionsEnabled()
@@ -1026,11 +950,11 @@ class TASSetupFrame(jmri.util.JmriJFrame):
 
         txt = JTextField(28)
         txt.setToolTipText("Select the timetable used for this layout")
-        txt.setText(GetMemoryString(IMCurrentTimetable, ""))
+        txt.setText(TBL.SafeGetOrCreateMemoryValue(IMCurrentTimetable, ""))
 
         def CommitText():
             name = StripCsvExt(txt.getText().strip())
-            SetMemoryString(IMCurrentTimetable, name)
+            TBL.SafeSetMemoryValue(IMCurrentTimetable, name)
             self.UpdateRunAutoControls()
             # No Start-Up change for auto-run now; validations still inform status
         txt.addActionListener(lambda e: CommitText())
@@ -1117,10 +1041,10 @@ class TASSetupFrame(jmri.util.JmriJFrame):
                         # Also re-seed disruption generator: IMDISRUPTIONSEEDBASE = current time (ms)
                         try:
                             from java.lang import System as _JSystem
-                            SetMemoryString("IMDISRUPTIONSEEDBASE", str(_JSystem.currentTimeMillis()))
+                            TBL.SafeSetMemoryValue("DISRUPTIONSEEDBASE", str(_JSystem.currentTimeMillis()))
                         except Exception:
                             import time as _pyTime
-                            SetMemoryString("IMDISRUPTIONSEEDBASE", str(int(_pyTime.time() * 1000)))
+                            TBL.SafeSetMemoryValue("DISRUPTIONSEEDBASE", str(int(_pyTime.time() * 1000)))
                         LogInfo("[TAS] Disruption register cleared.", alsoDialog=True, title="Done")
                     except Exception as ex:
                         LogError("Failed to clear disruption register: " + str(ex), ex=ex, alsoDialog=True)
@@ -1262,13 +1186,13 @@ class TASSetupFrame(jmri.util.JmriJFrame):
         gbc.weightx = 1.0
         gbc.weighty = 1.0
 
-        pubSel = [s for s in GetMemoryString(IMPublicDisplayList, "").split(",") if s.strip() != ""]
-        sigSel = [s for s in GetMemoryString(IMSignallerDisplayList, "").split(",") if s.strip() != ""]
+        pubSel = [s for s in TBL.SafeGetOrCreateMemoryValue(IMPublicDisplayList, "").split(",") if s.strip() != ""]
+        sigSel = [s for s in TBL.SafeGetOrCreateMemoryValue(IMSignallerDisplayList, "").split(",") if s.strip() != ""]
 
         def SavePublic(selection):
-            SetMemoryString(IMPublicDisplayList, ",".join(selection))
+            TBL.SafeSetMemoryValue(IMPublicDisplayList, ",".join(selection))
         def SaveSignaller(selection):
-            SetMemoryString(IMSignallerDisplayList, ",".join(selection))
+            TBL.SafeSetMemoryValue(IMSignallerDisplayList, ",".join(selection))
 
         gbc.gridx = 0; gbc.gridy = 0
         pubPanel = MakeDualListPanel("Public information displays",
@@ -1304,7 +1228,7 @@ class TASSetupFrame(jmri.util.JmriJFrame):
             try:
                 sel = str(cmbFont.getSelectedItem())
                 if sel and len(sel.strip()) > 0:
-                    SetMemoryString("IMTAS_FONT_FAMILY", sel.strip())
+                    TBL.SafeSetMemoryValue("TAS_FONT_FAMILY", sel.strip())
                     # Update theme and refresh UI
                     global THEME_FONT_FAMILY
                     THEME_FONT_FAMILY = sel.strip()
@@ -1324,7 +1248,7 @@ class TASSetupFrame(jmri.util.JmriJFrame):
         except:
             families = [GetDefaultFontFamily()]
         cmbFont = JComboBox(families)
-        currentFont = GetMemoryString("IMTAS_FONT_FAMILY", GetDefaultFontFamily())
+        currentFont = TBL.SafeGetOrCreateMemoryValue("TAS_FONT_FAMILY", GetDefaultFontFamily())
         # Choose current if present; else fall back to default
         try:
             if currentFont in families:
@@ -1337,7 +1261,7 @@ class TASSetupFrame(jmri.util.JmriJFrame):
             try:
                 sel = str(cmbFont.getSelectedItem())
                 if sel and len(sel.strip()) > 0:
-                    SetMemoryString("IMTAS_FONT_FAMILY", sel.strip())
+                    TBL.SafeSetMemoryValue("TAS_FONT_FAMILY", sel.strip())
                     # Update the theme font and refresh everything
                     global THEME_FONT_FAMILY
                     THEME_FONT_FAMILY = sel.strip()
@@ -1373,7 +1297,7 @@ class TASSetupFrame(jmri.util.JmriJFrame):
         swatch.setMaximumSize(Dimension(sw, sh))
 
         # Initial colour from memory (fallback to TimetableAutomation default cover colour 240,238,220)
-        memRgb = GetMemoryString("IMTASCOVERCOLOUR", GetDefaultBackgroundRGB())
+        memRgb = TBL.SafeGetOrCreateMemoryValue("TASCOVERCOLOUR", GetDefaultBackgroundRGB())
         currentColor = _RgbStrToColorOrDefault(memRgb, Color(240,238,220))
         swatch.setBackground(currentColor)
 
@@ -1385,7 +1309,7 @@ class TASSetupFrame(jmri.util.JmriJFrame):
                     chosen = JColorChooser.showDialog(None, "Choose background colour", initial)
                     if chosen is not None:
                         swatch.setBackground(chosen)
-                        SetMemoryString("IMTASCOVERCOLOUR", _ColorToRgbStr(chosen))
+                        TBL.SafeSetMemoryValue("TASCOVERCOLOUR", _ColorToRgbStr(chosen))
                 except Exception as ex:
                     LogWarn("Colour chooser failed: " + str(ex), alsoDialog=True)
 
@@ -1397,7 +1321,7 @@ class TASSetupFrame(jmri.util.JmriJFrame):
             try:
                 defaultColor = _RgbStrToColorOrDefault(GetDefaultBackgroundRGB(), Color(240,238,220))
                 swatch.setBackground(defaultColor)
-                SetMemoryString("IMTASCOVERCOLOUR", _ColorToRgbStr(defaultColor))
+                TBL.SafeSetMemoryValue("TASCOVERCOLOUR", _ColorToRgbStr(defaultColor))
             except Exception as ex:
                 LogWarn("Reset failed: " + str(ex), alsoDialog=True)
         btnReset.addActionListener(lambda e: DoReset(e))
@@ -1426,7 +1350,7 @@ class TASSetupFrame(jmri.util.JmriJFrame):
         swatch2.setMaximumSize(Dimension(sw2, sh2))
 
         # Initial colour from memory (fallback to TimetableAutomation inner default 220,235,220)
-        memRgb2 = GetMemoryString("IMTASINNERCOLOUR", "220,235,220")
+        memRgb2 = TBL.SafeGetOrCreateMemoryValue("TASINNERCOLOUR", "220,235,220")
         currentColor2 = _RgbStrToColorOrDefault(memRgb2, Color(220,235,220))
         swatch2.setBackground(currentColor2)
 
@@ -1437,7 +1361,7 @@ class TASSetupFrame(jmri.util.JmriJFrame):
                     chosen = JColorChooser.showDialog(None, "Choose inner background colour", initial)
                     if chosen is not None:
                         swatch2.setBackground(chosen)
-                        SetMemoryString("IMTASINNERCOLOUR", _ColorToRgbStr(chosen))
+                        TBL.SafeSetMemoryValue("TASINNERCOLOUR", _ColorToRgbStr(chosen))
                 except Exception as ex:
                     LogWarn("Colour chooser failed: " + str(ex), alsoDialog=True)
 
@@ -1449,7 +1373,7 @@ class TASSetupFrame(jmri.util.JmriJFrame):
             try:
                 defaultColor2 = Color(220,235,220)
                 swatch2.setBackground(defaultColor2)
-                SetMemoryString("IMTASINNERCOLOUR", _ColorToRgbStr(defaultColor2))
+                TBL.SafeSetMemoryValue("TASINNERCOLOUR", _ColorToRgbStr(defaultColor2))
             except Exception as ex:
                 LogWarn("Reset failed: " + str(ex), alsoDialog=True)
 
@@ -1476,7 +1400,7 @@ class TASSetupFrame(jmri.util.JmriJFrame):
         swatchInk.setMinimumSize(Dimension(swi, shi))
         swatchInk.setMaximumSize(Dimension(swi, shi))
         # Initial colour from memory (default = black 0,0,0)
-        memRgbInk = GetMemoryString("IMTASINKCOLOUR", "0,0,0")
+        memRgbInk = TBL.SafeGetOrCreateMemoryValue("TASINKCOLOUR", "0,0,0")
         currentInk = _RgbStrToColorOrDefault(memRgbInk, Color(0,0,0))
         swatchInk.setBackground(currentInk)
 
@@ -1487,7 +1411,7 @@ class TASSetupFrame(jmri.util.JmriJFrame):
                     chosen = JColorChooser.showDialog(None, "Choose ink colour", initial)
                     if chosen is not None:
                         swatchInk.setBackground(chosen)
-                        SetMemoryString("IMTASINKCOLOUR", _ColorToRgbStr(chosen))
+                        TBL.SafeSetMemoryValue("TASINKCOLOUR", _ColorToRgbStr(chosen))
                 except Exception as ex:
                     LogWarn("Colour chooser failed: " + str(ex), alsoDialog=True)
 
@@ -1499,7 +1423,7 @@ class TASSetupFrame(jmri.util.JmriJFrame):
             try:
                 defaultInk = Color(0,0,0)
                 swatchInk.setBackground(defaultInk)
-                SetMemoryString("IMTASINKCOLOUR", _ColorToRgbStr(defaultInk))
+                TBL.SafeSetMemoryValue("TASINKCOLOUR", _ColorToRgbStr(defaultInk))
             except Exception as ex:
                 LogWarn("Reset failed: " + str(ex), alsoDialog=True)
         btnResetInk.addActionListener(lambda e: DoResetInk(e))
@@ -1528,7 +1452,7 @@ class TASSetupFrame(jmri.util.JmriJFrame):
         swatch3.setMaximumSize(Dimension(sw3, sh3))
 
         # Initial colour from memory (default = WTTDisplay.py paper 249,246,238)
-        memRgb3 = GetMemoryString("IMTASPAPERCOLOUR", "249,246,238")
+        memRgb3 = TBL.SafeGetOrCreateMemoryValue("TASPAPERCOLOUR", "249,246,238")
         currentColor3 = _RgbStrToColorOrDefault(memRgb3, Color(249,246,238))
         swatch3.setBackground(currentColor3)
 
@@ -1539,7 +1463,7 @@ class TASSetupFrame(jmri.util.JmriJFrame):
                     chosen = JColorChooser.showDialog(None, "Choose paper colour", initial)
                     if chosen is not None:
                         swatch3.setBackground(chosen)
-                        SetMemoryString("IMTASPAPERCOLOUR", _ColorToRgbStr(chosen))
+                        TBL.SafeSetMemoryValue("TASPAPERCOLOUR", _ColorToRgbStr(chosen))
                 except Exception as ex:
                     LogWarn("Colour chooser failed: " + str(ex), alsoDialog=True)
 
@@ -1551,7 +1475,7 @@ class TASSetupFrame(jmri.util.JmriJFrame):
             try:
                 defaultColor3 = Color(249,246,238)
                 swatch3.setBackground(defaultColor3)
-                SetMemoryString("IMTASPAPERCOLOUR", _ColorToRgbStr(defaultColor3))
+                TBL.SafeSetMemoryValue("TASPAPERCOLOUR", _ColorToRgbStr(defaultColor3))
             except Exception as ex:
                 LogWarn("Reset failed: " + str(ex), alsoDialog=True)
 
@@ -1581,7 +1505,7 @@ class TASSetupFrame(jmri.util.JmriJFrame):
         swatch4.setMaximumSize(Dimension(sw4, sh4))
 
         # Initial colour from memory (default = legacy dark band 245,242,235)
-        memRgb4 = GetMemoryString("IMTASWTTBANDDARK", "245,242,235")
+        memRgb4 = TBL.SafeGetOrCreateMemoryValue("TASWTTBANDDARK", "245,242,235")
         currentColor4 = _RgbStrToColorOrDefault(memRgb4, Color(245,242,235))
         swatch4.setBackground(currentColor4)
 
@@ -1592,7 +1516,7 @@ class TASSetupFrame(jmri.util.JmriJFrame):
                     chosen = JColorChooser.showDialog(None, "Choose WTT darker band colour", initial)
                     if chosen is not None:
                         swatch4.setBackground(chosen)
-                        SetMemoryString("IMTASWTTBANDDARK", _ColorToRgbStr(chosen))
+                        TBL.SafeSetMemoryValue("TASWTTBANDDARK", _ColorToRgbStr(chosen))
                 except Exception as ex:
                     LogWarn("Colour chooser failed: " + str(ex), alsoDialog=True)
 
@@ -1604,7 +1528,7 @@ class TASSetupFrame(jmri.util.JmriJFrame):
             try:
                 defaultColor4 = Color(245,242,235)
                 swatch4.setBackground(defaultColor4)
-                SetMemoryString("IMTASWTTBANDDARK", _ColorToRgbStr(defaultColor4))
+                TBL.SafeSetMemoryValue("TASWTTBANDDARK", _ColorToRgbStr(defaultColor4))
             except Exception as ex:
                 LogWarn("Reset failed: " + str(ex), alsoDialog=True)
 
@@ -1634,7 +1558,7 @@ class TASSetupFrame(jmri.util.JmriJFrame):
         swatch5.setMaximumSize(Dimension(sw5, sh5))
 
         # Initial colour from memory (default = legacy light band 255,253,247)
-        memRgb5 = GetMemoryString("IMTASWTTBANDLIGHT", "255,253,247")
+        memRgb5 = TBL.SafeGetOrCreateMemoryValue("TASWTTBANDLIGHT", "255,253,247")
         currentColor5 = _RgbStrToColorOrDefault(memRgb5, Color(255,253,247))
         swatch5.setBackground(currentColor5)
 
@@ -1645,7 +1569,7 @@ class TASSetupFrame(jmri.util.JmriJFrame):
                     chosen = JColorChooser.showDialog(None, "Choose WTT lighter band colour", initial)
                     if chosen is not None:
                         swatch5.setBackground(chosen)
-                        SetMemoryString("IMTASWTTBANDLIGHT", _ColorToRgbStr(chosen))
+                        TBL.SafeSetMemoryValue("TASWTTBANDLIGHT", _ColorToRgbStr(chosen))
                 except Exception as ex:
                     LogWarn("Colour chooser failed: " + str(ex), alsoDialog=True)
 
@@ -1657,7 +1581,7 @@ class TASSetupFrame(jmri.util.JmriJFrame):
             try:
                 defaultColor5 = Color(255,253,247)
                 swatch5.setBackground(defaultColor5)
-                SetMemoryString("IMTASWTTBANDLIGHT", _ColorToRgbStr(defaultColor5))
+                TBL.SafeSetMemoryValue("TASWTTBANDLIGHT", _ColorToRgbStr(defaultColor5))
             except Exception as ex:
                 LogWarn("Reset failed: " + str(ex), alsoDialog=True)
 
@@ -1677,9 +1601,9 @@ class TASSetupFrame(jmri.util.JmriJFrame):
         rowRail = Box.createHorizontalBox()
         lblRail = JLabel("Railway company:")
         txtRail = JTextField(24)
-        txtRail.setText(GetMemoryString("IMRAILWAYCO", "BRITISH RAILWAYS"))
+        txtRail.setText(TBL.SafeGetMemoryValue("RAILWAYCO", "BRITISH RAILWAYS"))
         def CommitRail():
-            SetMemoryString("IMRAILWAYCO", txtRail.getText().strip())
+            TBL.SafeSetMemoryValue("RAILWAYCO", txtRail.getText().strip())
         txtRail.addActionListener(lambda e: CommitRail())
         class RailLost(FocusAdapter):
             def focusLost(self, e): CommitRail()
@@ -1692,9 +1616,9 @@ class TASSetupFrame(jmri.util.JmriJFrame):
         rowRegion = Box.createHorizontalBox()
         lblRegion = JLabel("Region:")
         txtRegion = JTextField(24)
-        txtRegion.setText(GetMemoryString("IMREGION", "LONDON MIDLAND REGION"))
+        txtRegion.setText(TBL.SafeGetOrCreateMemoryValue("REGION", "LONDON MIDLAND REGION"))
         def CommitRegion():
-            SetMemoryString("IMREGION", txtRegion.getText().strip())
+            TBL.SafeSetMemoryValue("REGION", txtRegion.getText().strip())
         txtRegion.addActionListener(lambda e: CommitRegion())
         class RegionLost(FocusAdapter):
             def focusLost(self, e): CommitRegion()
@@ -1707,9 +1631,9 @@ class TASSetupFrame(jmri.util.JmriJFrame):
         rowSection = Box.createHorizontalBox()
         lblSection = JLabel("Section:")
         txtSection = JTextField(24)
-        txtSection.setText(GetMemoryString("IMSECTION", "SECTION B"))
+        txtSection.setText(TBL.SafeGetOrCreateMemoryValue("SECTION", "SECTION B"))
         def CommitSection():
-            SetMemoryString("IMSECTION", txtSection.getText().strip())
+            TBL.SafeSetMemoryValue("SECTION", txtSection.getText().strip())
         txtSection.addActionListener(lambda e: CommitSection())
         class SectionLost(FocusAdapter):
             def focusLost(self, e): CommitSection()
@@ -1766,7 +1690,7 @@ class TASSetupFrame(jmri.util.JmriJFrame):
         ApplyTheme(cmbMode)
 
         # Load current internal code and select corresponding friendly name
-        currentModeCode = GetMemoryString(IMWTT_PageMode, "WEEKDAYS_SAT_SUN")
+        currentModeCode = TBL.SafeGetOrCreateMemoryValue(IMWTT_PageMode, "WEEKDAYS_SAT_SUN")
         currentFriendly = friendlyModes.get(currentModeCode, friendlyModes["WEEKDAYS_SAT_SUN"])
         cmbMode.setSelectedItem(currentFriendly)
 
@@ -1776,7 +1700,7 @@ class TASSetupFrame(jmri.util.JmriJFrame):
                 selFriendly = str(cmbMode.getSelectedItem()).strip()
                 for code, friendly in friendlyModes.items():
                     if friendly == selFriendly:
-                        SetMemoryString(IMWTT_PageMode, code)
+                        TBL.SafeSetMemoryValue(IMWTT_PageMode, code)
                         break
             except:
                 pass
@@ -1810,13 +1734,13 @@ class TASSetupFrame(jmri.util.JmriJFrame):
         lblSep = JLabel("Time separator (single character):")
         ApplyTheme(lblSep)
         txtSep = JTextField(2)
-        sepVal = GetMemoryString(IMWTT_TimeSeparator, " ")
+        sepVal = TBL.SafeGetOrCreateMemoryValue(IMWTT_TimeSeparator, " ")
         if sepVal is None or len(sepVal.strip()) == 0: sepVal = " "
         txtSep.setText(sepVal[:1])
         def ApplySep():
             s = txtSep.getText().strip()
             if len(s) == 0: s = " "
-            SetMemoryString(IMWTT_TimeSeparator, s[:1])
+            TBL.SafeSetMemoryValue(IMWTT_TimeSeparator, s[:1])
         txtSep.addActionListener(lambda e: ApplySep())
         class SepLost(FocusAdapter):
             def focusLost(self, e): ApplySep()
@@ -1830,9 +1754,9 @@ class TASSetupFrame(jmri.util.JmriJFrame):
         lblEcs = JLabel("ECS label (text):")
         ApplyTheme(lblEcs)
         txtEcs = JTextField(12)
-        txtEcs.setText(GetMemoryString(IMWTT_EcsLabel, "ECS"))
+        txtEcs.setText(TBL.SafeGetOrCreateMemoryValue(IMWTT_EcsLabel, "ECS"))
         def ApplyEcsLabel():
-            SetMemoryString(IMWTT_EcsLabel, txtEcs.getText().strip())
+            TBL.SafeSetMemoryValue(IMWTT_EcsLabel, txtEcs.getText().strip())
         txtEcs.addActionListener(lambda e: ApplyEcsLabel())
         class EcsLost(FocusAdapter):
             def focusLost(self, e): ApplyEcsLabel()
@@ -1849,7 +1773,7 @@ class TASSetupFrame(jmri.util.JmriJFrame):
         txtArea = JTextArea(4, 24)
         ApplyTheme(txtArea)
         txtArea.setLineWrap(True); txtArea.setWrapStyleWord(True)
-        rawMatch = GetMemoryString(IMWTT_EcsMatch, "empty to depot,empty,ety.,ecs")
+        rawMatch = TBL.SafeGetOrCreateMemoryValue(IMWTT_EcsMatch, "empty to depot,empty,ety.,ecs")
         preload = [t.strip() for t in rawMatch.split(",") if len(t.strip()) > 0]
         txtArea.setText("\n".join(preload))
         def ApplyEcsMatch():
@@ -1858,7 +1782,7 @@ class TASSetupFrame(jmri.util.JmriJFrame):
             for ln in lines:
                 t = (ln or "").strip().lower()
                 if len(t) > 0: tokens.append(t)
-            SetMemoryString(IMWTT_EcsMatch, ",".join(tokens))
+            TBL.SafeSetMemoryValue(IMWTT_EcsMatch, ",".join(tokens))
         class MatchLost(FocusAdapter):
             def focusLost(self, e): ApplyEcsMatch()
         txtArea.addFocusListener(MatchLost())
@@ -2673,7 +2597,7 @@ class TASSetupFrame(jmri.util.JmriJFrame):
         # --- Helpers ---
         def _CurrentTimetablePath():
             try:
-                name = GetMemoryString(IMCurrentTimetable, "").strip()
+                name = TBL.SafeGetOrCreateMemoryValue(IMCurrentTimetable, "").strip()
                 if name == "":
                     return None
                 prof = jmri.profile.ProfileManager.getDefault().getActiveProfile().getPath().toString()
@@ -3405,16 +3329,16 @@ class TASSetupFrame(jmri.util.JmriJFrame):
         gbc.gridy = 2
         addrRow = Box.createHorizontalBox()
         lblWarm = JLabel("Warm (low colour temperature):")
-        txtWarm = JTextField(8); txtWarm.setText(GetMemoryString(IMLowThrottleAddr, "990"))
+        txtWarm = JTextField(8); txtWarm.setText(TBL.SafeGetOrCreateMemoryValue(IMLowThrottleAddr, "990"))
         lblCool = JLabel(" Cool (high colour temperature):")
-        txtCool = JTextField(8); txtCool.setText(GetMemoryString(IMHighThrottleAddr, "991"))
+        txtCool = JTextField(8); txtCool.setText(TBL.SafeGetOrCreateMemoryValue(IMHighThrottleAddr, "991"))
         def CommitAddrWarm():
             s = txtWarm.getText().strip()
-            try: n=int(float(s)); SetMemoryString(IMLowThrottleAddr, str(n))
+            try: n=int(float(s)); TBL.SafeSetMemoryValue(IMLowThrottleAddr, str(n))
             except: LogWarn("Warm address invalid: " + s, alsoDialog=True)
         def CommitAddrCool():
             s = txtCool.getText().strip()
-            try: n=int(float(s)); SetMemoryString(IMHighThrottleAddr, str(n))
+            try: n=int(float(s)); TBL.SafeSetMemoryValue(IMHighThrottleAddr, str(n))
             except: LogWarn("Cool address invalid: " + s, alsoDialog=True)
         class WarmLost(FocusAdapter):
             def focusLost(self, e): CommitAddrWarm()
@@ -3460,11 +3384,11 @@ class TASSetupFrame(jmri.util.JmriJFrame):
         lblClimate = JLabel("Climate preset:")
         climateNames = self.LoadClimateNames()
         cmbClimate = JComboBox(climateNames)
-        currentClimate = GetMemoryString(IMWxClimate, "SouthWales_EarlySep")
+        currentClimate = TBL.SafeGetOrCreateMemoryValue(IMWxClimate, "SouthWales_EarlySep")
         cmbClimate.setSelectedItem(currentClimate if currentClimate in climateNames else "SouthWales_EarlySep")
         def ApplyClimate():
             val = str(cmbClimate.getSelectedItem())
-            SetMemoryString(IMWxClimate, val)
+            TBL.SafeSetMemoryValue(IMWxClimate, val)
         cmbClimate.addActionListener(lambda e: ApplyClimate())
         row4.add(lblClimate); row4.add(Box.createHorizontalStrut(8)); row4.add(cmbClimate)
         root.add(row4, gbc)
@@ -3475,11 +3399,11 @@ class TASSetupFrame(jmri.util.JmriJFrame):
         lblDaylight = JLabel("Daylight hours preset:")
         daylightNames = self.LoadDayNightNames()
         cmbDaylight = JComboBox(daylightNames)
-        currentDaylight = GetMemoryString(IMDayNightPreset, "Maesteg_Sep2017")
+        currentDaylight = TBL.SafeGetOrCreateMemoryValue(IMDayNightPreset, "Maesteg_Sep2017")
         cmbDaylight.setSelectedItem(currentDaylight if currentDaylight in daylightNames else "Maesteg_Sep2017")
         def ApplyDaylight():
             val = str(cmbDaylight.getSelectedItem())
-            SetMemoryString(IMDayNightPreset, val)
+            TBL.SafeSetMemoryValue(IMDayNightPreset, val)
         cmbDaylight.addActionListener(lambda e: ApplyDaylight())
         row4b.add(lblDaylight); row4b.add(Box.createHorizontalStrut(8)); row4b.add(cmbDaylight)
         root.add(row4b, gbc)
@@ -3491,13 +3415,13 @@ class TASSetupFrame(jmri.util.JmriJFrame):
         # Cloud cover control
         lblCloud = JLabel("Cloud cover (%):")
         txtCloud = JTextField(3)
-        txtCloud.setText(GetMemoryString(IMWxCloudPct, "0"))
+        txtCloud.setText(TBL.SafeGetOrCreateMemoryValue(IMWxCloudPct, "0"))
         def ApplyCloud():
             s = txtCloud.getText().strip()
             try:
                 n = int(float(s))
                 n = max(0, min(100, n))
-                SetMemoryString(IMWxCloudPct, str(n))
+                TBL.SafeSetMemoryValue(IMWxCloudPct, str(n))
             except:
                 LogWarn("Cloud cover must be 0..100", alsoDialog=True)
         class CloudLost(FocusAdapter):
@@ -3508,14 +3432,14 @@ class TASSetupFrame(jmri.util.JmriJFrame):
         # Minimum night glow control
         lblGlow = JLabel("Minimum night glow (0.0-1.0):")
         txtGlow = JTextField(4)
-        txtGlow.setText(GetMemoryString("IMMINNIGHTGLOW", "0.02"))
+        txtGlow.setText(TBL.SafeGetOrCreateMemoryValue("MINNIGHTGLOW", "0.02"))
         def CommitGlow():
             s = txtGlow.getText().strip()
             try:
                 v = float(s)
                 if v < 0.0: v = 0.0
                 if v > 1.0: v = 1.0
-                SetMemoryString("IMMINNIGHTGLOW", str(v))
+                TBL.SafeSetMemoryValue("MINNIGHTGLOW", str(v))
             except:
                 LogWarn("Night glow must be a number between 0.0 and 1.0", alsoDialog=True)
         class GlowLost(FocusAdapter):
@@ -3538,7 +3462,7 @@ class TASSetupFrame(jmri.util.JmriJFrame):
             s = txtCloud.getText().strip()
             try:
                 n = int(float(s)); n = max(0, min(100, n))
-                SetMemoryString(IMWxCloudPct, str(n))
+                TBL.SafeSetMemoryValue(IMWxCloudPct, str(n))
             except:
                 LogWarn("Cloud cover must be 0..100", alsoDialog=True)
         class CloudLost(FocusAdapter):
@@ -3564,8 +3488,8 @@ class TASSetupFrame(jmri.util.JmriJFrame):
         chkBlackout.setOpaque(False)
 
         # Read current memory values
-        secsVal = GetMemoryString(IMTimeWarpBlackoutSeconds, "2").strip()
-        minsVal = GetMemoryString(IMTimeWarpThresholdMinutes, "5").strip()
+        secsVal = TBL.SafeGetOrCreateMemoryValue(IMTimeWarpBlackoutSeconds, "2").strip()
+        minsVal = TBL.SafeGetOrCreateMemoryValue(IMTimeWarpThresholdMinutes, "5").strip()
 
         # Determine initial enabled state from seconds (0 => disabled)
         try:
@@ -3586,7 +3510,7 @@ class TASSetupFrame(jmri.util.JmriJFrame):
             s = txtWarpMins.getText().strip()
             try:
                 n = max(0, int(float(s)))
-                SetMemoryString(IMTimeWarpThresholdMinutes, str(n))
+                TBL.SafeSetMemoryValue(IMTimeWarpThresholdMinutes, str(n))
             except:
                 pass
 
@@ -3617,7 +3541,7 @@ class TASSetupFrame(jmri.util.JmriJFrame):
             s = txtBlackoutSecs.getText().strip()
             try:
                 v = max(0.0, float(s))
-                SetMemoryString(IMTimeWarpBlackoutSeconds, ("%s" % v))
+                TBL.SafeSetMemoryValue(IMTimeWarpBlackoutSeconds, ("%s" % v))
             except:
                 pass
 
@@ -3640,7 +3564,7 @@ class TASSetupFrame(jmri.util.JmriJFrame):
                     CommitBlackoutSecs()
                 else:
                     txtBlackoutSecs.setEnabled(False)
-                    SetMemoryString(IMTimeWarpBlackoutSeconds, "0")
+                    TBL.SafeSetMemoryValue(IMTimeWarpBlackoutSeconds, "0")
             except:
                 pass
 
@@ -3680,8 +3604,8 @@ class TASSetupFrame(jmri.util.JmriJFrame):
         rbNewsO = JRadioButton("Newspaper (Old)"); rbNewsO.setOpaque(False)
         rbNewsM = JRadioButton("Newspaper (Modern)"); rbNewsM.setOpaque(False)
         group = ButtonGroup(); group.add(rbApp); group.add(rbNewsO); group.add(rbNewsM)
-        uiChoice = GetMemoryString(IMWxUiChoice, "Newspaper").strip()
-        style = GetMemoryString(IMWxNewsStyle, "Old").strip()
+        uiChoice = TBL.SafeGetOrCreateMemoryValue(IMWxUiChoice, "Newspaper").strip()
+        style = TBL.SafeGetOrCreateMemoryValue(IMWxNewsStyle, "Old").strip()
         if uiChoice.lower() == "app":
             rbApp.setSelected(True)
         else:
@@ -3689,13 +3613,13 @@ class TASSetupFrame(jmri.util.JmriJFrame):
             else: rbNewsO.setSelected(True)
         def ApplyUi():
             if rbApp.isSelected():
-                SetMemoryString(IMWxUiChoice, "App")
+                TBL.SafeSetMemoryValue(IMWxUiChoice, "App")
             elif rbNewsO.isSelected():
-                SetMemoryString(IMWxUiChoice, "Newspaper")
-                SetMemoryString(IMWxNewsStyle, "Old")
+                TBL.SafeSetMemoryValue(IMWxUiChoice, "Newspaper")
+                TBL.SafeSetMemoryValue(IMWxNewsStyle, "Old")
             else:
-                SetMemoryString(IMWxUiChoice, "Newspaper")
-                SetMemoryString(IMWxNewsStyle, "Modern")
+                TBL.SafeSetMemoryValue(IMWxUiChoice, "Newspaper")
+                TBL.SafeSetMemoryValue(IMWxNewsStyle, "Modern")
             # ALSO: update enable/disable for the Newspaper title controls
             RefreshPaperTitleEnable()
             RefreshAdsControlEnable()
@@ -3714,14 +3638,14 @@ class TASSetupFrame(jmri.util.JmriJFrame):
 
         txtPaper = JTextField(28)
         # Default template uses the active profile name token
-        initPaper = GetMemoryString("IMWX_NEWS_PAPERNAME", "The {PROFILE} Echo")
+        initPaper = TBL.SafeGetOrCreateMemoryValue("WX_NEWS_PAPERNAME", "The {PROFILE} Echo")
         txtPaper.setText(initPaper)
 
         def CommitPaper():
             s = txtPaper.getText().strip()
             if len(s) == 0:
                 s = "The {PROFILE} Echo"
-            SetMemoryString("IMWX_NEWS_PAPERNAME", s)
+            TBL.SafeSetMemoryValue("WX_NEWS_PAPERNAME", s)
 
         txtPaper.addActionListener(lambda e: CommitPaper())
         class PaperLost(FocusAdapter):
@@ -3750,7 +3674,7 @@ class TASSetupFrame(jmri.util.JmriJFrame):
 
         txtAcc = JTextField(4)
         # Default = 80; clamp 0..100 when committing
-        initAcc = GetMemoryString("IMWX_FORECAST_ACCURACY", "80")
+        initAcc = TBL.SafeGetOrCreateMemoryValue("WX_FORECAST_ACCURACY", "80")
         txtAcc.setText(initAcc)
 
         def CommitAcc():
@@ -3758,7 +3682,7 @@ class TASSetupFrame(jmri.util.JmriJFrame):
             try:
                 n = int(float(s))
                 n = max(0, min(100, n))
-                SetMemoryString("IMWX_FORECAST_ACCURACY", str(n))
+                TBL.SafeSetMemoryValue("WX_FORECAST_ACCURACY", str(n))
             except:
                 # keep prior value if invalid; optional: show warning
                 pass
@@ -3779,10 +3703,10 @@ class TASSetupFrame(jmri.util.JmriJFrame):
 
         chkSpoofAds = JCheckBox("")
         chkSpoofAds.setOpaque(False)
-        chkSpoofAds.setSelected(GetMemoryBool("IMSPOOFADSENABLED", True))
+        chkSpoofAds.setSelected(GetMemoryBool("SPOOFADSENABLED", True))
 
         def OnSpoofAds(e=None):
-            SetMemoryBool("IMSPOOFADSENABLED", chkSpoofAds.isSelected())
+            SetMemoryBool("SPOOFADSENABLED", chkSpoofAds.isSelected())
 
         chkSpoofAds.addActionListener(OnSpoofAds)
 

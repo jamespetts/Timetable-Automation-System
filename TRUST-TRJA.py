@@ -21,6 +21,7 @@ import java.awt.event as event
 import jmri
 import os
 import csv
+import TASBeanLookup as TBL
 from java.text import SimpleDateFormat
 from jmri.profile import ProfileManager
 from DisruptionRegister import getDisruption
@@ -32,16 +33,15 @@ from java.awt.event import ComponentAdapter
 # --- TAS default RN rule ---
 import TASUtil as TU  # IsDefaultReportingNumber(s)
 
-# (The rest of the file is identical to your current TRUST-TRJA.py except where noted.)
-
 # ------ Script option ------
 TRJA_KEEP_AFTER_DEPART_UNTIL_LAST_TP = False
 
-# ------ Memory and profile ------
-TRJA_MemoryManager = jmri.InstanceManager.getDefault(jmri.MemoryManager)
-TRJA_TimeMem = TRJA_MemoryManager.getMemory("IMCURRENTTIME")
-TRJA_DayMem = TRJA_MemoryManager.getMemory("IMDAYOFWEEK")
-TRJA_TimetableMem = TRJA_MemoryManager.getMemory("IMCURRENTTIMETABLE")
+# ----- Memory and profile -----
+# Use TASBeanLookup to obtain Memory beans by suffix (prefix-agnostic across IM/I2M/I3M...).
+TRJA_TimeMem = TBL.ProvideMemoryBySuffix("CURRENTTIME", "")
+TRJA_DayMem = TBL.ProvideMemoryBySuffix("DAYOFWEEK", "")
+TRJA_TimetableMem = TBL.ProvideMemoryBySuffix("CURRENTTIMETABLE", "")
+
 TRJA_CurrentTimeStr = TRJA_TimeMem.getValue() or ""
 TRJA_CurrentDay = TRJA_DayMem.getValue() or ""
 TRJA_TimetableName = TRJA_TimetableMem.getValue() or ""

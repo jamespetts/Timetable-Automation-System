@@ -23,6 +23,7 @@ import DisruptionRegister as DR # enumerate all registered RNs safely
 import TimingRegister as TR
 import TASUtil as TU
 import TrainLocatorRegister as TLR
+import TASBeanLookup as TBL
 # -------------------------------------------------------------------------------------------------
 # In-memory, per-session state (NOT persisted)
 # Resets cleanly at layout-day rollover (IMDAYOFWEEK changes).
@@ -33,42 +34,48 @@ _lastCullMinute = None
 # -------------------------------------------------------------------------------------------------
 # Memory helpers + auto-default provisioning for new knobs
 # -------------------------------------------------------------------------------------------------
-def _mm():
-    return jmri.InstanceManager.getDefault(jmri.MemoryManager)
-def _readMem(name):
-    m = _mm().getMemory(name)
+def _readMem(suffix):
+    m = TBL.FindMemoryBySuffix(suffix)
     return None if m is None else m.getValue()
-def _readMemStr(name, default=None):
-    v = _readMem(name)
+
+def _readMemStr(suffix, default=None):
+    v = _readMem(suffix)
     if v is None:
         return default
     s = str(v).strip()
     return s if s else default
-def _readMemBool(name, default=True):
-    v = _readMem(name)
+
+def _readMemBool(suffix, default=True):
+    v = _readMem(suffix)
     if v is None:
         return default
-    return str(v).strip().lower() in ("true", "1", "yes", "on")
-def _ensureMemDefault(name, value):
-    mm = _mm()
-    m = mm.getMemory(name)
-    if m is None:
-        m = mm.provideMemory(name)
-        m.setValue(value)
-    else:
+    return str(v).strip().lower() in ("true", "1", "yes", "on", "enabled")
+
+def _ensureMemDefault(suffix, value):
+    # Ensure a memory exists (prefix-agnostic) and seed it if blank/None.
+    m = TBL.ProvideMemoryBySuffix(suffix, str(value))
+    cur = None
+    try:
         cur = m.getValue()
-        if cur is None or (isinstance(cur, basestring) and str(cur).strip() == ""):
-            m.setValue(value)
+    except:
+        cur = None
+    if cur is None or (isinstance(cur, basestring) and str(cur).strip() == ""):
+        try:
+            m.setValue(str(value))
+        except:
+            pass
+            
 def _provisionDefaults():
-    _ensureMemDefault("IMTP_WEIGHT_DELAY_PRE_FIRSTTP", "0.70")
-    _ensureMemDefault("IMTP_WEIGHT_EARLY_PRE_FIRSTTP", "0.70")
-    _ensureMemDefault("IMTP_P_LATE_DEPART_ON_EARLY", "0.10")
-    _ensureMemDefault("IMTP_MIN_DWELL_LE_2_MIN", "0.5") # minutes (30s)
-    _ensureMemDefault("IMTP_MIN_DWELL_LE_5_MIN", "1.0")
-    _ensureMemDefault("IMTP_MIN_DWELL_GT_5_MIN", "2.0")   
+    _ensureMemDefault("TP_WEIGHT_DELAY_PRE_FIRSTTP", "0.70")
+    _ensureMemDefault("TP_WEIGHT_EARLY_PRE_FIRSTTP", "0.70")
+    _ensureMemDefault("TP_P_LATE_DEPART_ON_EARLY", "0.10")
+    _ensureMemDefault("TP_MIN_DWELL_LE_2_MIN", "0.5")  # minutes (30s)
+    _ensureMemDefault("TP_MIN_DWELL_LE_5_MIN", "1.0")
+    _ensureMemDefault("TP_MIN_DWELL_GT_5_MIN", "2.0")
+
     # Post-publication grace (minutes) after the last scheduled time.
     # Outside this window, do NOT generate disruption or timing for that RN.
-    _ensureMemDefault("IMTP_POST_GRACE_MINUTES", "2")
+    _ensureMemDefault("TP_POST_GRACE_MINUTES", "2")
 
 # -------------------------------------------------------------------------------------------------
 # Time parsing & formatting
@@ -114,7 +121,7 @@ def minutesToStrHMM(mn):
 # -------------------------------------------------------------------------------------------------
 def timetablePathFromMemory():
     profilePath = jmri.profile.ProfileManager.getDefault().getActiveProfile().getPath().toString()
-    name = _readMemStr("IMCURRENTTIMETABLE")
+    name = _readMemStr("CURRENTTIMETABLE")
     if not name:
         return None
     return os.path.join(profilePath, "timetable", name + ".csv")
@@ -205,7 +212,7 @@ def _currentSeedBase():
     Return the current base seed, reading IMDISRUPTIONSEEDBASE if present;
     otherwise use the session salt. Robust against blank/invalid values.
     """
-    s = _readMemStr("IMDISRUPTIONSEEDBASE", None)
+    s = _readMemStr("DISRUPTIONSEEDBASE", None)
     if s is None:
         return _sessionSalt
     t = str(s).strip()
@@ -508,9 +515,9 @@ def _apply_step_evolution(rn, g, seed0, t, firstTpMinute, allowDelays, allowCanc
             cur = -mag
         return cur
 def _min_dwell_minutes(schedDwellMin):
-    d_le2 = float(_readMemStr("IMTP_MIN_DWELL_LE_2_MIN", "0.5"))
-    d_le5 = float(_readMemStr("IMTP_MIN_DWELL_LE_5_MIN", "1.0"))
-    d_gt5 = float(_readMemStr("IMTP_MIN_DWELL_GT_5_MIN", "2.0"))
+    d_le2 = float(_readMemStr("TP_MIN_DWELL_LE_2_MIN", "0.5"))
+    d_le5 = float(_readMemStr("TP_MIN_DWELL_LE_5_MIN", "1.0"))
+    d_gt5 = float(_readMemStr("TP_MIN_DWELL_GT_5_MIN", "2.0"))
     if schedDwellMin <= 2.0:
         return d_le2
     if schedDwellMin <= 5.0:
@@ -523,7 +530,7 @@ def _apply_stop_rules(arrSched, depSched, arriveActualMin, g, planned, allowDela
         depActual = float(depSched)
         if allowDelays and planned and planned.get("type") != "delay":
             try:
-                pLate = float(_readMemStr("IMTP_P_LATE_DEPART_ON_EARLY", "0.10"))
+                pLate = float(_readMemStr("TP_P_LATE_DEPART_ON_EARLY", "0.10"))
             except:
                 pLate = 0.10
             seed0 = planned.get("seed0", 1)
@@ -689,8 +696,8 @@ def cullSpuriousDisruptions():
     - first scheduled time is beyond group's checkMax horizon from 'now'
     (with cross-midnight handling for next day).
     """
-    nowStr = _readMemStr("IMCURRENTTIME")
-    dayName = _readMemStr("IMDAYOFWEEK")
+    nowStr = _readMemStr("CURRENTTIME")
+    dayName = _readMemStr("DAYOFWEEK")
     if not (nowStr and dayName):
         return
     nowMins = parseTimeToMinutes(nowStr)
@@ -755,9 +762,9 @@ def cullSpuriousDisruptions():
 def updateDisruptions():
     global _state, _lastCullDay, _lastCullMinute
     _provisionDefaults()
-    nowStr = _readMemStr("IMCURRENTTIME")
-    dayName = _readMemStr("IMDAYOFWEEK")
-    ttName = _readMemStr("IMCURRENTTIMETABLE")
+    nowStr = _readMemStr("CURRENTTIME")
+    dayName = _readMemStr("DAYOFWEEK")
+    ttName = _readMemStr("CURRENTTIMETABLE")
     if not (nowStr and dayName and ttName):
         return
     nowMins = parseTimeToMinutes(nowStr)
@@ -768,8 +775,8 @@ def updateDisruptions():
         cullSpuriousDisruptions()
     except Exception as e:
         print("[DG] Warning: cullSpuriousDisruptions failed: {}".format(e))
-    allowDelays = _readMemBool("IMALLOWDELAYS", True)
-    allowCancel = _readMemBool("IMALLOWCANCELLATIONS", True)
+    allowDelays = _readMemBool("ALLOWDELAYS", True)
+    allowCancel = _readMemBool("ALLOWCANCELLATIONS", True)
     if _state["_day"] != dayName:
         _state = {"_day": dayName, "trains": {}}
         try:
@@ -806,7 +813,7 @@ def updateDisruptions():
             print(w)                  
         # -- HARD GATE: stop generating ONLY for long-past services that have NO existing disruption AND NO timing
         try:
-            postGrace = int(float(_readMemStr("IMTP_POST_GRACE_MINUTES", "2")))
+            postGrace = int(float(_readMemStr("TP_POST_GRACE_MINUTES", "2")))
         except:
             postGrace = 2
         lastRowTime = _last_time_in_row(row)
@@ -999,11 +1006,11 @@ def _init_state_for_train(row, rn, groups, ttName, dayName, mainTimes, klass, se
                 outcome = tag
                 break
         try:
-            wDelayPre = float(_readMemStr("IMTP_WEIGHT_DELAY_PRE_FIRSTTP", "0.70"))
+            wDelayPre = float(_readMemStr("TP_WEIGHT_DELAY_PRE_FIRSTTP", "0.70"))
         except:
             wDelayPre = 0.70
         try:
-            wEarlyPre = float(_readMemStr("IMTP_WEIGHT_EARLY_PRE_FIRSTTP", "0.70"))
+            wEarlyPre = float(_readMemStr("TP_WEIGHT_EARLY_PRE_FIRSTTP", "0.70"))
         except:
             wEarlyPre = 0.70
         if outcome == "delay":
@@ -1053,7 +1060,7 @@ def _init_state_for_train(row, rn, groups, ttName, dayName, mainTimes, klass, se
 def _advance_internal(nowMins, row, rn, st, groups, allowDelays, allowCancel):
     groupName = (row.get("Disruption group","") or "").strip()
     g = groups.get(groupName) if groupName else None
-    seed0 = st["planned"]["seed0"] if (st.get("planned") and "seed0" in st["planned"]) else seedFor(rn, _state["_day"], _readMemStr("IMCURRENTTIMETABLE") or "")
+    seed0 = st["planned"]["seed0"] if (st.get("planned") and "seed0" in st["planned"]) else seedFor(rn, _state["_day"], _readMemStr("CURRENTTIMETABLE") or "")
     firstTp = st.get("firstRelevantMinute") or nowMins
     if st["lastSimMinute"] is None:
         st["lastSimMinute"] = firstTp
@@ -1143,7 +1150,7 @@ def _publish_due_virtuals(nowMins, row, rn, dayName, st, segment, allowDelays):
                       
         # Do not publish timing for far-past events unless the RN already has disruption OR any timing today
         try:
-            postGrace = int(float(_readMemStr("IMTP_POST_GRACE_MINUTES", "2")))
+            postGrace = int(float(_readMemStr("TP_POST_GRACE_MINUTES", "2")))
         except:
             postGrace = 2
         try:
@@ -1203,7 +1210,7 @@ def _backfill_missed_pre_virtuals(st, row, rn, dayName):
     idx = st["nextIndexPre"]
     if idx < len(pre):
         print("[DG][ERROR] ActiveTrain started but {} pre-main virtual timing point(s) were unlogged for {}. Backfilling now.".format(len(pre) - idx, rn))
-        nowMins = parseTimeToMinutes(_readMemStr("IMCURRENTTIME"))
+        nowMins = parseTimeToMinutes(_readMemStr("CURRENTTIME"))
         for i in range(idx, len(pre)):
             e = pre[i]
             cur = getDisruption(rn)

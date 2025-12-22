@@ -25,6 +25,7 @@ from java.awt import Color, Font, GradientPaint, RenderingHints, BasicStroke, Di
 import jmri
 from jmri import InstanceManager
 import os, csv
+import TASBeanLookup as TBL
 import java.text.SimpleDateFormat as SimpleDateFormat
 from DisruptionRegister import getDisruption
 import TimingRegister as TR  # read-only timing tuples: (reportingNumber, direction, time, day)
@@ -79,13 +80,13 @@ CRTSUM_TablePadX = 8
 CRTSUM_TablePadY = 8
 
 # JMRI memories / timetable
-CRTSUM_Mm = InstanceManager.getDefault(jmri.MemoryManager)
-CRTSUM_TimeMem = CRTSUM_Mm.getMemory("IMCURRENTTIME")
-CRTSUM_DayMem = CRTSUM_Mm.getMemory("IMDAYOFWEEK")
-CRTSUM_TimetableMem = CRTSUM_Mm.getMemory("IMCURRENTTIMETABLE")
-CRTSUM_OverridesMem = CRTSUM_Mm.getMemory("IMPID_PLATFORM_OVERRIDES")
-CRTSUM_DepartTPMem = CRTSUM_Mm.getMemory("IMPID_DEPARTURE_TP")  # optional override list
-CRTSUM_EcsFilterMem = CRTSUM_Mm.getMemory("IMPID_ECS_FILTER_TERMS")  # NEW: optional extra ECS terms
+# Use TASBeanLookup to obtain Memory beans by suffix (prefix-agnostic across IM/I2M/I3M...).
+CRTSUM_TimeMem = TBL.ProvideMemoryBySuffix("CURRENTTIME", "")
+CRTSUM_DayMem = TBL.ProvideMemoryBySuffix("DAYOFWEEK", "")
+CRTSUM_DepartTPMem = TBL.ProvideMemoryBySuffix("PID_DEPARTURE_TP", "")
+CRTSUM_EcsFilterMem = TBL.ProvideMemoryBySuffix("PID_ECS_FILTER_TERMS", "")
+CRTSUM_TimetableMem = TBL.ProvideMemoryBySuffix("CURRENTTIMETABLE", "")
+CRTSUM_OverridesMem = TBL.ProvideMemoryBySuffix("PID_PLATFORM_OVERRIDES", "")
 
 # Optional authoritative fast clock (used for 'now' minutes if available)
 CRTSUM_Timebase = InstanceManager.getDefault(jmri.Timebase)
@@ -654,7 +655,7 @@ class CRTSUM_CRTSummaryWindow(object):
             from TASIcon import SetFrameClockIcon
             SetFrameClockIcon(self.frame, 32)  # 32px icon size
         except Exception as ex:
-            print("[PIDCRTSingle] Failed to set PID window icon: " + str(ex))
+            print("[PIDCRTSummary] Failed to set PID window icon: " + str(ex))
         
         self._tightened_once = True
 
