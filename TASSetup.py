@@ -565,7 +565,7 @@ class RestrictedCsvChooser(JFileChooser):
             return
         JFileChooser.approveSelection(self)
 
-def MakeDualListPanel(TitleText, AvailableTuples, InitialSelectedNames, OnChangeCallback):
+def MakeDualListPanel(TitleText, AvailableNames, NameMap, DescMap, InitialSelectedNames, OnChangeCallback, OnSelectCallback=None):
     panel = MakePaperPanel()
     panel.setLayout(GridBagLayout())
     gbc = GridBagConstraints()
@@ -580,26 +580,52 @@ def MakeDualListPanel(TitleText, AvailableTuples, InitialSelectedNames, OnChange
 
     availModel = DefaultListModel()
     selectedModel = DefaultListModel()
-    selectedSet = set(InitialSelectedNames)
 
-    for fname, _friendly in AvailableTuples:
-        if fname not in selectedSet:
-            availModel.addElement(fname)
-    for fname in InitialSelectedNames:
-        selectedModel.addElement(fname)
-    
+    # Normalize and filter any junk entries (blank or "...")
+    def _NormName(x):
+        try:
+            return str(x).strip()
+        except:
+            return ""
+
+    selectedSet = set([_NormName(x) for x in (InitialSelectedNames or []) if _NormName(x) not in ["", "..."]])
+
+    # Populate available list (exclude anything already selected)
+    for fname in (AvailableNames or []):
+        f = _NormName(fname)
+        if f in ["", "..."]:
+            continue
+        if f not in selectedSet:
+            availModel.addElement(f)
+
+    # Keep any pre-selected names even if they are no longer available (lets user remove them)
+    for fname in (InitialSelectedNames or []):
+        f = _NormName(fname)
+        if f in ["", "..."]:
+            continue
+        selectedModel.addElement(f)
+
     class FriendlyRenderer(DefaultListCellRenderer):
         def getListCellRendererComponent(self, lst, value, index, isSelected, cellHasFocus):
-            # If value is a WorkingItem, use its Label(); else assume it's a string
+            # WorkingItem support (used elsewhere) remains intact
             if hasattr(value, "Label"):
                 labelText = value.Label()
             else:
-                labelText = str(value)
+                try:
+                    key = str(value)
+                except:
+                    key = value
+                try:
+                    labelText = str(NameMap.get(key, key))
+                except:
+                    labelText = str(key)
+
             comp = DefaultListCellRenderer.getListCellRendererComponent(
                 self, lst, labelText, index, isSelected, cellHasFocus
             )
             comp.setFont(Font(THEME_FONT_FAMILY, Font.PLAIN, 13))
-            # Color logic only applies to WorkingItem objects
+
+            # Preserve color logic for WorkingItem objects
             if hasattr(value, "IsExtra") and getattr(value, "IsExtra", False):
                 comp.setForeground(Color(128, 128, 128))  # Grey for extra scripts
             elif hasattr(value, "HasScript") and not value.HasScript:
@@ -608,6 +634,7 @@ def MakeDualListPanel(TitleText, AvailableTuples, InitialSelectedNames, OnChange
                 comp.setForeground(Color(255, 140, 0))    # Orange for invalid
             else:
                 comp.setForeground(THEME_TEXT_COLOR)
+
             comp.setBackground(LIST_SEL_BG if isSelected else THEME_PAPER)
             comp.setOpaque(True)
             return comp
@@ -624,20 +651,51 @@ def MakeDualListPanel(TitleText, AvailableTuples, InitialSelectedNames, OnChange
     selectedList.setSelectionBackground(LIST_SEL_BG)
     selectedList.setSelectionForeground(LIST_SEL_FG)
 
+    def FireChange():
+        sel = [selectedModel.getElementAt(i) for i in range(selectedModel.getSize())]
+        try:
+            LogInfo("Selection for \"" + TitleText + "\": " + ",".join(sel))
+        except:
+            pass
+        OnChangeCallback(sel)
+
+    def _NotifySelected(lst):
+        if OnSelectCallback is None:
+            return
+        try:
+            v = lst.getSelectedValue()
+            if v is None:
+                return
+            OnSelectCallback(str(v))
+        except:
+            pass
+
+    class SelHook(ListSelectionListener):
+        def __init__(self, lst):
+            self.lst = lst
+        def valueChanged(self, e):
+            if e.getValueIsAdjusting():
+                return
+            _NotifySelected(self.lst)
+
+    # Drive description box from either list
+    try:
+        availList.addListSelectionListener(SelHook(availList))
+        selectedList.addListSelectionListener(SelHook(selectedList))
+    except:
+        pass
+
     btnAdd = JButton("Add >>")
     btnRemove = JButton("<< Remove")
 
-    def FireChange():
-        sel = [selectedModel.getElementAt(i) for i in range(selectedModel.getSize())]
-        LogInfo("Selection for \"" + TitleText + "\": " + ",".join(sel))
-        OnChangeCallback(sel)
-
     def AddAction(e):
         idx = availList.getSelectedIndices()
-        if idx is None or len(idx) == 0: return
+        if idx is None or len(idx) == 0:
+            return
         items = [availModel.getElementAt(i) for i in idx]
+        existing = [selectedModel.getElementAt(i) for i in range(selectedModel.size())]
         for it in items:
-            if it not in [selectedModel.getElementAt(i) for i in range(selectedModel.size())]:
+            if it not in existing:
                 selectedModel.addElement(it)
         for i in sorted(idx, reverse=True):
             availModel.remove(i)
@@ -645,13 +703,30 @@ def MakeDualListPanel(TitleText, AvailableTuples, InitialSelectedNames, OnChange
 
     def RemoveAction(e):
         idx = selectedList.getSelectedIndices()
-        if idx is None or len(idx) == 0: return
+        if idx is None or len(idx) == 0:
+            return
         items = [selectedModel.getElementAt(i) for i in idx]
         for i in sorted(idx, reverse=True):
             selectedModel.remove(i)
         existing = [availModel.getElementAt(i) for i in range(availModel.size())]
         merged = existing + items
-        merged.sort(key=lambda n: FRIENDLY.get(n, n))
+
+        # Sort by friendly display name (case-insensitive)
+        def _SortKey(n):
+            try:
+                k = str(n)
+            except:
+                k = n
+            try:
+                return str(NameMap.get(k, k)).lower()
+            except:
+                try:
+                    return str(k).lower()
+                except:
+                    return ""
+
+        merged.sort(key=_SortKey)
+
         availModel.removeAllElements()
         for it in merged:
             availModel.addElement(it)
@@ -691,15 +766,109 @@ def MakeDualListPanel(TitleText, AvailableTuples, InitialSelectedNames, OnChange
 IMPublicDisplayList ="PUBLICDISPLAYLIST"
 IMSignallerDisplayList = "SIGNALLERDISPLAYLIST"
 
-PUBLIC_SCRIPTS = [
-    ("NSEClock.py", "NSE clock"),
-    ("PIDCRTSingle.py", "Per platform CRT PID"),
-    ("PIDCRTSummary.py", "Summary of departures CRT PID"),
-    ("PIDFingerboard.py", "Fingerboard"),
-    ("PIDSmall.py", "Small modern platform PID"),
-]
-SIGNALLER_SCRIPTS = [("TRUST-TRJA.py", "TRUST TRJA")]
-FRIENDLY = dict(PUBLIC_SCRIPTS + SIGNALLER_SCRIPTS)
+
+# ------------------- Display script discovery (profile:jython/*.py) -------------------
+# Scan all .py files in the profile's jython directory. Match <<>> comments.
+
+_PID_TAG_RE  = re.compile(r"<<\s*PID-DISP-NAME\s*:\s*(.*?)\s*>>")
+_SIG_TAG_RE  = re.compile(r"<<\s*SIG-DISP-NAME\s*:\s*(.*?)\s*>>")
+_DESC_TAG_RE = re.compile(r"<<\s*DESCRIPTION\s*:\s*(.*?)\s*>>")
+
+def _ReadDisplayScriptText(fullPath):
+    # Read a limited amount for speed; tags are expected in comments near the top.
+    try:
+        with open(fullPath, "r") as f:
+            raw = f.read(65536)
+            return raw.replace("\r\n", "\n").replace("\r", "\n")
+    except:
+        try:
+            with open(fullPath, "rb") as f:
+                raw = f.read(65536)
+            try:
+                return raw.decode("utf-8", "ignore").replace("\r\n", "\n").replace("\r", "\n")
+            except:
+                return ""
+        except:
+            return ""
+
+def _ScanOneDisplayScript(fullPath):
+    pidName = None
+    sigName = None
+    desc = None
+    text = _ReadDisplayScriptText(fullPath)
+    if not text:
+        return (None, None, None)
+
+    for ln in text.split("\n"):
+        if pidName is None:
+            m = _PID_TAG_RE.search(ln)
+            if m:
+                pidName = (m.group(1) or "").strip()
+        if sigName is None:
+            m = _SIG_TAG_RE.search(ln)
+            if m:
+                sigName = (m.group(1) or "").strip()
+        if desc is None:
+            m = _DESC_TAG_RE.search(ln)
+            if m:
+                desc = (m.group(1) or "").strip()
+
+        if (pidName is not None) and (sigName is not None) and (desc is not None):
+            break
+
+    if pidName == "":
+        pidName = None
+    if sigName == "":
+        sigName = None
+    if desc == "":
+        desc = None
+
+    return (pidName, sigName, desc)
+
+def ScanDisplayScripts():
+    # Returns: (pidFiles, sigFiles, pidNames, sigNames, descriptions)
+    pidFiles = []
+    sigFiles = []
+    pidNames = {}
+    sigNames = {}
+    descMap = {}
+
+    try:
+        jdir = FileUtil.getExternalFilename("profile:jython")
+    except:
+        jdir = None
+
+    if not jdir or not os.path.isdir(jdir):
+        return (pidFiles, sigFiles, pidNames, sigNames, descMap)
+
+    try:
+        for fn in os.listdir(jdir):
+            if not fn.lower().endswith(".py"):
+                continue
+            fullPath = os.path.join(jdir, fn)
+            if not os.path.isfile(fullPath):
+                continue
+
+            pidName, sigName, desc = _ScanOneDisplayScript(fullPath)
+
+            if desc is not None:
+                descMap[fn] = desc
+
+            if pidName is not None:
+                pidFiles.append(fn)
+                pidNames[fn] = pidName
+
+            if sigName is not None:
+                sigFiles.append(fn)
+                sigNames[fn] = sigName
+    except Exception as ex:
+        LogWarn("Display script scan failed: " + str(ex), alsoDialog=False)
+
+    # Sort by display name, case-insensitive
+    pidFiles.sort(key=lambda f: (pidNames.get(f, f) or f).lower())
+    sigFiles.sort(key=lambda f: (sigNames.get(f, f) or f).lower())
+
+    return (pidFiles, sigFiles, pidNames, sigNames, descMap)
 
 class TASSetupFrame(jmri.util.JmriJFrame):
     def __init__(self):
@@ -1181,30 +1350,100 @@ class TASSetupFrame(jmri.util.JmriJFrame):
         root = MakePaperPanel()
         root.setLayout(GridBagLayout())
         gbc = GridBagConstraints()
-        gbc.insets = Insets(8,8,8,8)
-        gbc.fill = GridBagConstraints.BOTH
-        gbc.weightx = 1.0
-        gbc.weighty = 1.0
-
-        pubSel = [s for s in TBL.SafeGetOrCreateMemoryValue(IMPublicDisplayList, "").split(",") if s.strip() != ""]
-        sigSel = [s for s in TBL.SafeGetOrCreateMemoryValue(IMSignallerDisplayList, "").split(",") if s.strip() != ""]
+        gbc.insets = Insets(8,8,8,8)   
+    
+        pubSel = [s for s in TBL.SafeGetOrCreateMemoryValue(IMPublicDisplayList, "").split(",")
+                  if s.strip() not in ["", "..."]]
+        sigSel = [s for s in TBL.SafeGetOrCreateMemoryValue(IMSignallerDisplayList, "").split(",")
+                  if s.strip() not in ["", "..."]]
 
         def SavePublic(selection):
             TBL.SafeSetMemoryValue(IMPublicDisplayList, ",".join(selection))
+
         def SaveSignaller(selection):
             TBL.SafeSetMemoryValue(IMSignallerDisplayList, ",".join(selection))
 
-        gbc.gridx = 0; gbc.gridy = 0
-        pubPanel = MakeDualListPanel("Public information displays",
-            PUBLIC_SCRIPTS, pubSel, SavePublic)
+        # Discover scripts from profile:jython
+        pidFiles, sigFiles, pidNames, sigNames, descMap = ScanDisplayScripts()
+
+        # Description area (shared between both panels)
+        from javax.swing import JTextArea
+        descArea = JTextArea(4, 50)
+        ApplyTheme(descArea)
+        descArea.setLineWrap(True)
+        descArea.setWrapStyleWord(True)
+        descArea.setEditable(False)
+        descArea.setBackground(THEME_PAPER)
+        descArea.setBorder(BorderFactory.createCompoundBorder(
+            BorderFactory.createLineBorder(Color(180,170,150), 1),
+            BorderFactory.createEmptyBorder(6,6,6,6)
+        ))
+
+        def ShowDescriptionForFile(fname):
+            try:
+                txt = descMap.get(fname, "")
+                if txt is None:
+                    txt = ""
+                descArea.setText(str(txt))
+                try:
+                    descArea.setCaretPosition(0)
+                except:
+                    pass
+            except:
+                pass
+
+        # Row 0: Public (PID) displays
+        gbc.gridx = 0
+        gbc.gridy = 0
+        gbc.weighty = 0.45
+        pubPanel = MakeDualListPanel(
+            "Public information displays",
+            pidFiles, pidNames, descMap,
+            pubSel, SavePublic,
+            OnSelectCallback=ShowDescriptionForFile
+        )
         root.add(pubPanel, gbc)
 
-        gbc.gridx = 0; gbc.gridy = 1
-        sigPanel = MakeDualListPanel("Signallers' displays",
-            SIGNALLER_SCRIPTS, sigSel, SaveSignaller)
+        # Row 1: Signallers' displays
+        gbc.gridx = 0
+        gbc.gridy = 1
+        gbc.weighty = 0.45
+        sigPanel = MakeDualListPanel(
+            "Signallers' displays",
+            sigFiles, sigNames, descMap,
+            sigSel, SaveSignaller,
+            OnSelectCallback=ShowDescriptionForFile
+        )
         root.add(sigPanel, gbc)
 
+        # Row 2: Description box at bottom
+        descPanel = JPanel()
+        descPanel.setOpaque(False)
+        descPanel.setLayout(GridBagLayout())
+        dg = GridBagConstraints()
+        dg.insets = Insets(2,2,2,2)
+        dg.fill = GridBagConstraints.BOTH
+        dg.weightx = 1.0
+
+        dg.gridx = 0
+        dg.gridy = 0
+        dg.weighty = 0.0
+        descPanel.add(MakeHeading("Description"), dg)
+
+        dg.gridy = 1
+        dg.weighty = 1.0
+        descScroll = JScrollPane(descArea)
+        descScroll.getViewport().setBackground(THEME_PAPER)
+        descScroll.setPreferredSize(Dimension(660, 110))
+        descPanel.add(descScroll, dg)
+
+        gbc.gridx = 0
+        gbc.gridy = 2
+        gbc.weighty = 0.10
+        root.add(descPanel, gbc)
+
         return root
+        gbc.fill = GridBagConstraints.BOTH
         
      # --------------------------- Interface -----------------------
     def BuildInterfaceTab(self):

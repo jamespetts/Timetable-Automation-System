@@ -14,6 +14,9 @@
 #
 # - All globals, classes, helpers prefixed with NSECLK_ to avoid shadowing
 # - Exact visual/behavioural parity with your original (fonts, sizes, layout)
+#
+# <<PID-DISP-NAME: Network SouthEast clock>>
+# <<DESCRIPTION: The mechanical/digital clocks installed by Network SouthEast in the 1980s>>
 
 import javax.swing as swing
 import java.awt as awt

@@ -24,6 +24,9 @@
 #   use of other physical/virtual timing points.
 #
 # * csv_rows(): hardened to avoid calling list(reader) to survive global name shadowing.
+#
+# <<PID-DISP-NAME: Small modern platform display>>
+# <<DESCRIPTION: Orange LED scrolling text showing the time, the next train with calling pattern and the two trains after that>>
 
 import javax.swing as swing
 import java.awt as awt

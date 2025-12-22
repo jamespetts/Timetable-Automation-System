@@ -16,7 +16,7 @@ import os
 import java
 from java.awt import Color, Font, BasicStroke, RenderingHints, Dimension, Rectangle, Polygon
 from javax.swing import JPanel, Timer, JOptionPane
-from java.awt.event import KeyAdapter, KeyEvent
+from java.awt.event import KeyAdapter, KeyEvent, WindowAdapter
 from java.util import Random
 
 # ----------------------------------------------------------------------
@@ -53,7 +53,11 @@ ENEMY_SHOT_H = 8
 ENEMY_SHOT_SPEED = 5
 
 LIVES_START = 3
+PLAYER_HIT_FLASH_MS = 60
 LEVEL_SPEED_INCREMENT = 0.15
+EXPLOSION_TOTAL_MS = 96 
+EXPLOSION_FRAME_MS = 48 
+EXPLOSION_PIXEL = 5 
 
 # Animation pacing (larger = slower alien wiggle)
 ANIM_TICKS_PER_FLIP = 8
@@ -201,6 +205,31 @@ def DrawShot(g2, x, y, w, h, friendly=True):
         g2.fillOval(int(x), int(y), int(w), int(h))
         g2.setColor(Color(255, 140, 140))
         g2.fillRect(int(x), int(y + h), int(w), 2)
+              
+def DrawExplosion(g2, x, y, w, h, col, phase):
+    cx = int(x + w / 2)
+    cy = int(y + h / 2)
+    ps = int(EXPLOSION_PIXEL)
+
+    g2.setColor(col)
+
+    # Two simple frames: phase 0 = tighter, phase 1 = wider scatter
+    if phase == 0:
+        offs = [
+           (0, 0), (1, 0), (-1, 0), (0, 1), (0, -1),
+           (1, 1), (-1, -1), (1, -1), (-1, 1),
+        ]
+    else:
+        offs = [
+           (0, 0), (2, 0), (-2, 0), (0, 2), (0, -2),
+           (2, 1), (-2, -1), (1, 2), (-1, -2),
+        ]
+
+    half = ps / 2
+    for (dx, dy) in offs:
+        px = cx + dx * ps - half
+        py = cy + dy * ps - half
+        g2.fillRect(int(px), int(py), ps, ps)
 
 # ----------------------------------------------------------------------
 # High score I/O (Top-10, TSV) - strictly ASCII, no timestamp
@@ -303,9 +332,11 @@ class GamePanel(JPanel):
         self.PromptedHS = False
         self.PlayerX = PANEL_W / 2 - PLAYER_W / 2
         self.PlayerY = PANEL_H - 64
-        self.PlayerCooldownMs = 0
-        self.PlayerShots = []
-        self.EnemyShots = []
+        self.PlayerCooldownMs = 0   
+        self.PlayerShots = [] 
+        self.EnemyShots = [] 
+        self.PlayerHitFlashMs = 0
+        self.Explosions = []
         self.AlienDir = 1
         self.AlienSpeed = ALIEN_BASE_SPEED
         self.AlienStepDownPending = False
@@ -338,6 +369,16 @@ class GamePanel(JPanel):
         # Cooldown
         if self.PlayerCooldownMs > 0:
             self.PlayerCooldownMs = max(0, self.PlayerCooldownMs - FPS_MS)
+
+        if self.PlayerHitFlashMs > 0: 
+            self.PlayerHitFlashMs = max(0, self.PlayerHitFlashMs - FPS_MS)
+                       
+        # Update explosions
+        for i in range(len(self.Explosions) - 1, -1, -1):
+            e = self.Explosions[i]
+            e["ms"] = int(e.get("ms", 0)) - FPS_MS
+            if e["ms"] <= 0:
+                del self.Explosions[i]
 
         if self.GameOver:
             if not self.PromptedHS:
@@ -436,23 +477,44 @@ class GamePanel(JPanel):
                     a = self.Aliens[r][c]
                     if not a["alive"]:
                         continue
+                    
                     if Intersects(ps, Rect(a["x"], a["y"], a["w"], a["h"])):
+                        # Explosion uses the same color the alien is currently drawn with
+                        rowCol0 = ROW_COLORS_PHASE0[min(max(0, r), len(ROW_COLORS_PHASE0) - 1)]
+                        rowCol1 = ROW_COLORS_PHASE1[min(max(0, r), len(ROW_COLORS_PHASE1) - 1)]
+                        expCol = rowCol0 if (self.TickPhase == 0) else rowCol1
+
+                        self.Explosions.append({
+                            "x": float(a["x"]),
+                            "y": float(a["y"]),
+                            "w": a["w"],
+                            "h": a["h"],
+                            "ms": int(EXPLOSION_TOTAL_MS),
+                            "col": expCol,
+                        })
+
                         a["alive"] = False
                         self.Score += 10
                         del self.PlayerShots[i]
                         hit = True
                         break
-                if hit:
+     
+        # Collisions: enemy shots vs player 
+        playerRect = Rect(self.PlayerX, self.PlayerY, PLAYER_W, PLAYER_H) 
+        if self.PlayerHitFlashMs == 0: 
+            for i in range(len(self.EnemyShots) - 1, -1, -1): 
+                es = self.EnemyShots[i] 
+                if Intersects(es, playerRect): 
+                    del self.EnemyShots[i] 
+                    self.LoseLife() 
+                    break 
+        else: 
+            # Invulnerable while flashing white: consume overlapping enemy shots without losing lives
+            for i in range(len(self.EnemyShots) - 1, -1, -1): 
+                es = self.EnemyShots[i] 
+                if Intersects(es, playerRect): 
+                    del self.EnemyShots[i] 
                     break
-
-        # Collisions: enemy shots vs player
-        playerRect = Rect(self.PlayerX, self.PlayerY, PLAYER_W, PLAYER_H)
-        for i in range(len(self.EnemyShots) - 1, -1, -1):
-            es = self.EnemyShots[i]
-            if Intersects(es, playerRect):
-                del self.EnemyShots[i]
-                self.LoseLife()
-                break
 
         # Aliens reach player line
         for r in range(ALIEN_ROWS):
@@ -479,19 +541,37 @@ class GamePanel(JPanel):
             self.AlienSpeed += LEVEL_SPEED_INCREMENT
             self.EnemyShots[:] = []
             self.PlayerShots[:] = []
+            self.Explosions[:] = [] 
             self.BuildAliens()
 
         self.repaint()
 
     def LoseLife(self):
         self.Lives -= 1
-        self.EnemyShots[:] = []
-        self.PlayerShots[:] = []
+        self.PlayerHitFlashMs = PLAYER_HIT_FLASH_MS
+
+        # Move the whole alien formation up without compressing rows.
+        # Work out the highest (smallest y) alive alien; shift all rows up equally,
+        # but never allow the formation to go above ALIEN_START_Y.
+        minY = None
         for r in range(ALIEN_ROWS):
             for c in range(ALIEN_COLS):
                 a = self.Aliens[r][c]
                 if a["alive"]:
-                    a["y"] = max(ALIEN_START_Y, a["y"] - ALIEN_STEP_DOWN)
+                    if minY is None or a["y"] < minY:
+                        minY = a["y"]
+
+        shiftUp = 0.0
+        if minY is not None and minY > ALIEN_START_Y:
+            shiftUp = min(float(ALIEN_STEP_DOWN), float(minY - ALIEN_START_Y))
+
+        if shiftUp > 0.0:
+            for r in range(ALIEN_ROWS):
+                for c in range(ALIEN_COLS):
+                    a = self.Aliens[r][c]
+                    if a["alive"]:
+                        a["y"] -= shiftUp
+
         if self.Lives <= 0:
             self.GameOver = True
 
@@ -551,10 +631,13 @@ class GamePanel(JPanel):
                 g2.drawString("Press Space to start", 20, 130)
                 g2.drawString("Press H for High Scores", 20, 150)
             return
-
-        # Player
-        g2.setColor(CLR_PLAYER)
-        DrawShip(g2, int(self.PlayerX), int(self.PlayerY), PLAYER_W, PLAYER_H)
+      
+         # Player 
+        if self.PlayerHitFlashMs > 0: 
+            g2.setColor(Color(255, 255, 255)) 
+        else: 
+            g2.setColor(CLR_PLAYER) 
+        DrawShip(g2, int(self.PlayerX), int(self.PlayerY), PLAYER_W, PLAYER_H) 
 
         # Aliens (per-row color)
         for r in range(ALIEN_ROWS):
@@ -563,7 +646,13 @@ class GamePanel(JPanel):
                 if not a["alive"]:
                     continue
                 DrawAlienSprite(g2, int(a["x"]), int(a["y"]), a["w"], a["h"], a["kind"], self.TickPhase, r)
-
+       
+        # Explosions (simple 2-frame chunky pixels)
+        for e in self.Explosions:
+            ms = int(e.get("ms", 0))
+            phase = 0 if ms > EXPLOSION_FRAME_MS else 1
+            DrawExplosion(g2, e.get("x", 0), e.get("y", 0), e.get("w", 0), e.get("h", 0), e.get("col", CLR_TEXT), phase)
+        
         # Shots
         for ps in self.PlayerShots:
             DrawShot(g2, ps.x, ps.y, ps.width, ps.height, friendly=True)
@@ -691,10 +780,21 @@ class SpiceInveiglersWindow(object):
         class _Keys(KeyAdapter):
             def keyPressed(_, e): self.Panel.OnKeyPress(e.getKeyCode(), e.isControlDown())
             def keyReleased(_, e): self.Panel.OnKeyRelease(e.getKeyCode())
-        self.Frame.addKeyListener(_Keys())
-
-
+        self.Frame.addKeyListener(_Keys())     
+        outerSelf = self
+        class _WinClose(WindowAdapter):
+            def windowClosing(_, e):
+                try:
+                    outerSelf.Close()
+                except:
+                    pass
+        self.Frame.addWindowListener(_WinClose())
+  
     def Close(self):
+        try:
+            self.Panel.Timer.stop()
+        except:
+            pass
         try:
             self.Frame.dispose()
         except:

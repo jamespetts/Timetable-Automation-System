@@ -18,6 +18,9 @@
 # Uniquified global/class names to avoid cross-script shadowing.
 # CLEAR-ON-DEPARTURE: remove a working once a departure is logged at the configured timing point(s)
 # ECS FILTER: hide ECS/empty-to-depot workings (class-5 or keyword-matched; keywords configurable).
+#
+# <<PID-DISP-NAME: Monochrome CRT summary of departures>>
+# <<DESCRIPTION: British Rail 1980s monitor showing a summary of the next 8 departures>>
 
 import javax.swing as swing
 import java.awt as awt

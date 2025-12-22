@@ -14,6 +14,10 @@
 # If not, see <https://www.gnu.org/licenses/>. 
 #
 # TRUST-TRJA Enquiry Output — hides TAS-default reporting numbers in the "Train" column.
+#
+# <<SIG-DISP-NAME: TRUST TRJA output>>
+# <<DESCRIPTION: Shows a line-up of trains due at this location, simulating the BR/Network Rail TRUST TRJA output>>
+#
 
 import javax.swing as swing
 import java.awt as awt

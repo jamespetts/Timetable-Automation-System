@@ -19,6 +19,9 @@
 # Clears the shown train once a departure is logged at configured timing point(s).
 # Only show a train if due within X minutes (IMPID_CRT_WITHIN_MINUTES; default 5).
 # NEW: Hide ECS/empty-to-depot workings (class-5 or keyword-matched; keywords configurable via IMPID_ECS_FILTER_TERMS).
+# 
+# <<PID-DISP-NAME: Monochrome CRT platform display>>
+# <<DESCRIPTION: British Rail 1980s monitors showing the next train's time, destination and calling patterm per platform>>
 
 import javax.swing as swing
 import java.awt as awt

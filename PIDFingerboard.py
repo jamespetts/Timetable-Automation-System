@@ -17,6 +17,9 @@
 # Text composition remains configurable:
 #   FBP_TEXT_MODE = "CALLING_ONLY" or "DEST_THEN_CALLING"
 #   FBP_CALLING_SEPARATOR, FBP_DEST_CALL_JOINER, FBP_UPPERCASE_ALL
+#
+# <<PID-DISP-NAME: Platform fingerboard>>
+# <<DESCRIPTION: A wooden board with the destination and calling pattern of the next train painted on it>>
 
 import javax.swing as swing
 import java.awt as awt
