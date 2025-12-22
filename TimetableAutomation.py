@@ -18,7 +18,7 @@
 # Working Timetable-style startup UI for the Timetable Automation System (TAS)
 # JMRI 5.12 / Jython 2.7. ASCII only. Thread-safe. No absolute paths.
 
-VERSION = "1.0"
+VERSION = "1.1"
 from javax.swing import JFrame
 from javax.swing import JPanel
 from javax.swing import JButton
@@ -720,6 +720,7 @@ class AboutDialog(JDialog):
         AckText.setText(
             "Acknowledgements\n\n"
             "- David Sand (JMRI scripting assistance)\n"
+            "- Torben (early testting and bug reporting)\n"
             "- Jennifer E. Kirk (use of 'Billy's Replacement Speakers')\n"
             "- Microsoft Copilot (doing most of the actual work)\n"
         )
