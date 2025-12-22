@@ -361,9 +361,9 @@ class CoverPanel(JPanel):
                 self.InkColor = Color(0, 0, 0)
         except:
             self.InkColor = Color(0, 0, 0)
-
+        
         # Helper: if ink changes at runtime, apply to all buttons
-        def _ApplyInkToButtons(self):
+        def _ApplyInkToButtons():
             try:
                 for b in (self.BtnShowTimetable, self.BtnTimeWarp, self.BtnPublic, self.BtnSignallers,
                           self.BtnWeather, self.BtnSetup, self.BtnHelp, self.BtnAbout):
@@ -372,8 +372,8 @@ class CoverPanel(JPanel):
             except:
                 pass
 
-        # Initial application of ink colour to buttons
-        _ApplyInkToButtons(self)
+        # Expose helper for possible runtime use
+        self.ApplyInkToButtons = _ApplyInkToButtons
 
         memFont = TBL.SafeGetOrCreateMemoryValue("TAS_FONT_FAMILY", PreferredFontFamily())
         self.FontFamily = memFont if memFont else PreferredFontFamily()
@@ -393,6 +393,12 @@ class CoverPanel(JPanel):
                   self.BtnWeather, self.BtnSetup, self.BtnHelp, self.BtnAbout):
             self.add(b)
 
+        # Apply ink colour to buttons now that they exist
+        try:
+            self.ApplyInkToButtons()
+        except:
+            pass
+        
         # Actions
         self.BtnShowTimetable.addActionListener(lambda e: RunExternalScript("WTTDisplay.py", "Show timetable"))
         self.BtnTimeWarp.addActionListener(lambda e: self.OnTimeWarp(e))
