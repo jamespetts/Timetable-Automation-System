@@ -2999,6 +2999,7 @@ class TASSetupFrame(jmri.util.JmriJFrame):
         # --- Block picker dialog ---
         def ShowBlockPicker(tpName, preselectedSysNames):
             dlg = JDialog(self, "Assign blocks to '" + str(tpName) + "'", True)
+            dlg.setDefaultCloseOperation(JDialog.DISPOSE_ON_CLOSE)  # make sure closing X disposes the dialog
             dlg.setSize(480, 420)
             dlg.setLayout(BorderLayout())
 
@@ -3145,9 +3146,12 @@ class TASSetupFrame(jmri.util.JmriJFrame):
                 "All of the Train Info files that define what happens when we run a working "
                 "assume that a train is in a particular orientation. "
                 "If a train is in the opposite orientation on the layout, it will go the wrong way. "
-                "To correct that, this is a list of all the trains that are facing the opposite way to the "
-                "orientation expected by the Train Info files. "
-                "Trains on this list will run in the correct direction if they are in inverse orientation.",
+                "To correct that, here are two lists of all the roster entries on the layout: those that are "
+                "facing in the normal orientation and those that are facing in the inverse orientation. "
+                "Trains in the normal list will run in the correct direction if they are in normal orientation, "
+                "and trains on the inverted list will run in the correct direction if they are in inverse orientation. "
+                "Either assign trains to the normal and inverted lists manually using the controls below, or, if "
+                "you have the appropraite hardware, configure hardware orientation sensing below.",
                 widthPx=560,    # tweak to taste; matches your tab width
                 lineHeight=1.25 # tighter than default; adjust 1.2–1.3 as desired
             ),
@@ -3487,8 +3491,28 @@ class TASSetupFrame(jmri.util.JmriJFrame):
             except Exception as ex:
                 LogError("Failed to remove from orientation register: " + str(ex), ex=ex, alsoDialog=True)
 
-        # Layout with headings and equal-width columns (matching Display configuration pattern)        
-        
+        # Layout with headings and equal-width columns (matching Display configuration pattern)      
+
+        # Header row: align "Normal" (left) and "Inverted" (right) over the two lists
+        gbc.gridy += 1
+        gbc.fill = GridBagConstraints.HORIZONTAL
+        gbc.weightx = 1.0
+        gbc.weighty = 0.0
+
+        headerPanel = JPanel(GridLayout(1, 3, 12, 0))  # match the listsPanel grid (3 columns)
+        lblNormal = JLabel("Normal")
+        lblInverted = JLabel("Inverted")
+        ApplyTheme(lblNormal)
+        ApplyTheme(lblInverted)
+
+        # Left column: "Normal"
+        headerPanel.add(lblNormal)
+        # Middle column: keep empty to align over the move buttons
+        headerPanel.add(Box.createVerticalBox())
+        # Right column: "Inverted"
+        headerPanel.add(lblInverted)
+
+        panel.add(headerPanel, gbc)     
         
         # Row: lists with equal widths and buttons in the middle
         gbc.gridy += 1
@@ -4062,6 +4086,18 @@ class TASSetupFrame(jmri.util.JmriJFrame):
                     )
                 except Exception as ex:
                     LogWarn("Please restart JMRI manually to apply changes.", alsoDialog=False)
+        
+        # Actively dispose any owned child dialogs (e.g., Block Picker) so nothing lingers
+        try:
+            for w in self.getOwnedWindows():
+                try:
+                    if w is not None and w.isDisplayable():
+                        w.dispose()
+                except:
+                    pass
+        except:
+            pass
+
         jmri.util.JmriJFrame.dispose(self)
 
 # -------------------------------- Entry --------------------------------
