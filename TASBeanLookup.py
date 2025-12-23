@@ -19,27 +19,30 @@ _WARNED_COLLISIONS = set()
 
 def _NormSuffix(s):
     # Normalize suffix keys to be prefix-agnostic.
-    # Also strip accidental internal prefixes if a caller passes a full system name.
+    # Strip any stacked internal memory prefixes: IM, I<n>M, repeated.
     try:
         t = str(s).strip().upper()
     except:
         return ""
     if t == "":
         return ""
-
-    # If caller passed IMxxxx, strip the leading IM.
-    if t.startswith("IM") and len(t) > 2:
-        return t[2:]
-
-    # If caller passed I<n>Mxxxx (e.g. I2Mxxxx), strip the leading I<n>M.
-    if t.startswith("I"):
-        i = 1
-        while i < len(t) and t[i].isdigit():
-            i += 1
-        if i > 1 and i < len(t) and t[i] == "M" and (i + 1) < len(t):
-            return t[i + 1:]
-
-    return t
+    # Remove ALL leading internal memory prefixes (handles nested IMIM, I2MIM, etc.)
+    # Pattern: IM or I<digits>M
+    i = 0
+    L = len(t)
+    while True:
+        if t.startswith("IM", i):
+            i += 2
+            continue
+        if i < L and t.startswith("I", i):
+            j = i + 1
+            while j < L and t[j].isdigit():
+                j += 1
+            if j < L and t[j] == "M":
+                i = j + 1
+                continue
+        break
+    return t[i:]
 
 def _PreferredInternalPrefixes(memManager):
     # Ordered preference: IM first, then I2M, I3M, ...
@@ -238,7 +241,7 @@ def ProvideMemoryBySuffix(suffix, default=""):
     except:
         prefix = "IM"
 
-    newMem = memManager.provideMemory(prefix + suffix)
+    newMem = memManager.provideMemory(suffix)
     try:
         if newMem.getValue() is None:
             newMem.setValue(default)
