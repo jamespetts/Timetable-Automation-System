@@ -1,5 +1,3 @@
-# -*- coding: utf-8 -*-
-
 # This file is part of the Timetable Automation System by James E. Petts
 #
 # The Timetable Automation System is free software: you can redistribute it and/or modify it under the terms of the 
@@ -13,7 +11,7 @@
 # You should have received a copy of the GNU General Public License along with the Timetable Automation System.
 # If not, see <https://www.gnu.org/licenses/>. 
 #
-# JMRI 5.12 — 1970s/90s monochrome CRT PID (per-platform)
+# 1980s monochrome CRT PID (per-platform)
 # Uniformly scaled; disruption inheritance; expected HHMM; keep late service until expected time.
 #
 # Clears the shown train once a departure is logged at configured timing point(s).
@@ -30,16 +28,18 @@ import jmri
 from jmri import InstanceManager
 import os, csv
 import java.text.SimpleDateFormat as SimpleDateFormat
+from java.beans import PropertyChangeListener
+from java.awt.event import WindowAdapter
 from DisruptionRegister import getDisruption
 import TimingRegister as TR  # read-only access to timing tuples (reportingNumber, direction, time, day)
 import TASBeanLookup as TBL
 
-# =============================================================================
-# UNIFORM SCALING — keep everything strictly proportional to your current design
-# =============================================================================
+# ==================
+# UNIFORM SCALING
+# ==================
 CRTS_TargetGlassWidth = 640.0  # matches your CRT summary
 
-# ---- BASE (from the original full-size CRT single) ----
+# ---- BASE ----
 CRTS_BaseGlassWidth = 820.0
 CRTS_BaseHeaderHeight = 170.0
 CRTS_BaseInnerPad = 22.0
@@ -104,7 +104,7 @@ CRTS_CrtGlow = Color(18,26,32)
 CRTS_CrtFore = Color(205,215,235)
 CRTS_ScanlineAlpha = 14
 
-# ---- fonts / families (unchanged) ----
+# ---- fonts / families ----
 CRTS_MonoCands = ["IBM Plex Mono","Consolas","Courier New","Nimbus Mono L","Lucida Console","Monospaced"]
 CRTS_RailCands = ["BritishRailLightNormal","British Rail Light Normal","Rail Alphabet","RailAlphabet",
                   "Arial","Helvetica","SansSerif"]
@@ -445,10 +445,37 @@ class CRTS_CRTPanel(swing.JPanel):
             g2.drawLine(x0+8, y, x0+innerW-8, y)
             y += 2
 
+# ---- stable listeners for correct add/remove behaviour ----
+class CRTS_RefreshPropertyChangeListener(PropertyChangeListener):
+    def __init__(self, Window):
+        self.Window = Window
+
+    def propertyChange(self, Event):
+        # Keep the callback small; the window method does the work.
+        try:
+            self.Window.refresh(Event)
+        except:
+            pass
+
+
+class CRTS_WindowCloseAdapter(WindowAdapter):
+    def __init__(self, Window):
+        self.Window = Window
+
+    def windowClosing(self, Event):
+        try:
+            self.Window.HandleUserClose()
+        except:
+            pass
+
 # ---- main window ----
 class CRTS_CRTPIDWindow(object):
-    def __init__(self, platform):
+    def __init__(self, platform, OnCloseCallback=None):
         self.platform = str(platform)
+        self.OnCloseCallback = OnCloseCallback
+        self.CleanedUp = False
+        self.RefreshListener = None
+        self.CloseAdapter = None
 
         # Compute sizes from 4:3 glass
         glassW = CRTS_CrtGlassWidth
@@ -552,18 +579,24 @@ class CRTS_CRTPIDWindow(object):
         self.crt.add(self.cancelLabel)
 
         # Listeners
-        CRTS_TimeMem.addPropertyChangeListener(self.refresh)
-        CRTS_DayMem.addPropertyChangeListener(self.refresh)
+        self.RefreshListener = CRTS_RefreshPropertyChangeListener(self)
+        CRTS_TimeMem.addPropertyChangeListener(self.RefreshListener)
+        CRTS_DayMem.addPropertyChangeListener(self.RefreshListener)
         if CRTS_TimetableMem is not None:
-            CRTS_TimetableMem.addPropertyChangeListener(self.refresh)
+            CRTS_TimetableMem.addPropertyChangeListener(self.RefreshListener)
         if CRTS_OverridesMem is not None:
-            CRTS_OverridesMem.addPropertyChangeListener(self.refresh)
+            CRTS_OverridesMem.addPropertyChangeListener(self.RefreshListener)
         if CRTS_DepartTPMem is not None:
-            CRTS_DepartTPMem.addPropertyChangeListener(self.refresh)
+            CRTS_DepartTPMem.addPropertyChangeListener(self.RefreshListener)
         if CRTS_WithInMinMem is not None:
-            CRTS_WithInMinMem.addPropertyChangeListener(self.refresh)
-        if CRTS_EcsFilterMem is not None:  # NEW: react to ECS filter changes
-            CRTS_EcsFilterMem.addPropertyChangeListener(self.refresh)
+            CRTS_WithInMinMem.addPropertyChangeListener(self.RefreshListener)
+        if CRTS_EcsFilterMem is not None: # NEW: react to ECS filter changes
+            CRTS_EcsFilterMem.addPropertyChangeListener(self.RefreshListener)
+
+        # Ensure user close runs our cleanup, unregisters from manager, then disposes.
+        self.frame.setDefaultCloseOperation(swing.JFrame.DO_NOTHING_ON_CLOSE)
+        self.CloseAdapter = CRTS_WindowCloseAdapter(self)
+        self.frame.addWindowListener(self.CloseAdapter)
 
         self.frame.pack()
         
@@ -909,44 +942,92 @@ class CRTS_CRTPIDWindow(object):
             )
             lbl.setText(html)
 
-    # ===========================================================================
+    # =========================================================================== 
+    def HandleUserClose(self):
+        # Called from the WindowAdapter on user close.
+        try:
+            self.cleanup()
+        except:
+            pass
+        try:
+            if self.OnCloseCallback is not None:
+                self.OnCloseCallback(self.platform, self)
+        except:
+            pass
+        try:
+            self.frame.dispose()
+        except:
+            pass
+      
     def cleanup(self):
+        if self.CleanedUp:
+            return
+        self.CleanedUp = True
+
+        # Remove frame window listener (belt-and-braces).
         try:
-            CRTS_TimeMem.removePropertyChangeListener(self.refresh)
-        except:
-            pass
-        try:
-            CRTS_DayMem.removePropertyChangeListener(self.refresh)
-        except:
-            pass
-        try:
-            if CRTS_TimetableMem is not None:
-                CRTS_TimetableMem.removePropertyChangeListener(self.refresh)
-        except:
-            pass
-        try:
-            if CRTS_OverridesMem is not None:
-                CRTS_OverridesMem.removePropertyChangeListener(self.refresh)
-        except:
-            pass
-        try:
-            if CRTS_DepartTPMem is not None:
-                CRTS_DepartTPMem.removePropertyChangeListener(self.refresh)
-        except:
-            pass
-        try:
-            if CRTS_WithInMinMem is not None:
-                CRTS_WithInMinMem.removePropertyChangeListener(self.refresh)
-        except:
-            pass
-        try:
-            if CRTS_EcsFilterMem is not None:  # NEW
-                CRTS_EcsFilterMem.removePropertyChangeListener(self.refresh)
+            if self.CloseAdapter is not None:
+                self.frame.removeWindowListener(self.CloseAdapter)
         except:
             pass
 
+        # Remove property change listeners using the exact same listener object.
+        L = self.RefreshListener
+
+        try:
+            if L is not None:
+                CRTS_TimeMem.removePropertyChangeListener(L)
+        except:
+            pass
+        try:
+            if L is not None:
+                CRTS_DayMem.removePropertyChangeListener(L)
+        except:
+            pass
+        try:
+            if L is not None and CRTS_TimetableMem is not None:
+                CRTS_TimetableMem.removePropertyChangeListener(L)
+        except:
+            pass
+        try:
+            if L is not None and CRTS_OverridesMem is not None:
+                CRTS_OverridesMem.removePropertyChangeListener(L)
+        except:
+            pass
+        try:
+            if L is not None and CRTS_DepartTPMem is not None:
+                CRTS_DepartTPMem.removePropertyChangeListener(L)
+        except:
+            pass
+        try:
+            if L is not None and CRTS_WithInMinMem is not None:
+                CRTS_WithInMinMem.removePropertyChangeListener(L)
+        except:
+            pass
+        try:
+            if L is not None and CRTS_EcsFilterMem is not None: # NEW
+                CRTS_EcsFilterMem.removePropertyChangeListener(L)
+        except:
+            pass
+
+        self.RefreshListener = None
+        self.CloseAdapter = None
+
 # ---- manager ----
 class CRTS_PlatformCRTManager(object):
+    
+    def UnregisterPlatform(self, Platform, WindowObj):
+        # Remove the window from the manager dict when user closes it.
+        try:
+            p = str(Platform)
+        except:
+            p = Platform
+        try:
+            if p in self.windows and self.windows.get(p) is WindowObj:
+                del self.windows[p]
+        except:
+            pass
+
     def __init__(self):
         self.windows = {}
         if CRTS_TimetableMem is not None:
@@ -969,7 +1050,7 @@ class CRTS_PlatformCRTManager(object):
                 plats.add(p)
         for p in sorted(plats, key=lambda s: (s.isdigit(), int(s) if s.isdigit() else s)):
             if p not in self.windows:
-                self.windows[p] = CRTS_CRTPIDWindow(p)
+                self.windows[p] = CRTS_CRTPIDWindow(p, self.UnregisterPlatform)
         for p in [x for x in self.windows.keys() if x not in plats]:
             try:
                 self.windows[p].cleanup()
@@ -986,8 +1067,11 @@ class CRTS_PlatformCRTManager(object):
         self.refresh_all()
 
     def refresh_all(self, e=None):
-        for w in self.windows.values():
-            w.refresh()
+        for w in list(self.windows.values()):
+            try:
+                w.refresh()
+            except:
+                pass
 
 # ---- run ----
 CRTS_Manager = CRTS_PlatformCRTManager()
