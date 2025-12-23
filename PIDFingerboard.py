@@ -1,5 +1,3 @@
-# -*- coding: utf-8 -*-
-
 # This file is part of the Timetable Automation System by James E. Petts
 #
 # The Timetable Automation System is free software: you can redistribute it and/or modify it under the terms of the 
@@ -351,6 +349,24 @@ class FBP_FingerBoardPanel(swing.JPanel):
             self.repaint()
         self.repaintTimer = Timer(800, _doRepaint)
         self.repaintTimer.start()
+        
+        
+    # --- cleanup helpers: stop the repaint timer when panel goes away ---
+    def stopRepaintTimer(self):
+        try:
+            if hasattr(self, "repaintTimer") and self.repaintTimer is not None:
+                self.repaintTimer.stop()
+                self.repaintTimer = None
+        except:
+            pass
+
+    def removeNotify(self):
+        # Called when the component is removed from a container
+        try:
+            self.stopRepaintTimer()
+        finally:
+            super(FBP_FingerBoardPanel, self).removeNotify()
+
 
     def computePreferred(self):
         boardW = 980
@@ -596,7 +612,29 @@ class FBP_FingerBoardWindow(object):
             print("[PIDCRTFingerboard] Failed to set PID window icon: " + str(ex))
        
         self.frame.setResizable(False)
-        self.frame.setVisible(True)
+        self.frame.setVisible(True)     
+        
+        # Ensure closing the window disposes it and triggers cleanup
+        self.frame.setDefaultCloseOperation(swing.JFrame.DISPOSE_ON_CLOSE)
+
+        # Correct import for WindowAdapter (java.awt.event, not javax.swing.event)
+        from java.awt.event import WindowAdapter
+
+        class CloseListener(WindowAdapter):
+            def __init__(self, owner):
+                self.owner = owner
+            def windowClosed(self, e):
+                try:
+                    self.owner.onWindowClosed()
+                except:
+                    pass
+            def windowClosing(self, e):
+                try:
+                    self.owner.onWindowClosed()
+                except:
+                    pass
+
+        self.frame.addWindowListener(CloseListener(self))
 
         # listeners
         FBP_TimeMem.addPropertyChangeListener(self.refresh)
@@ -614,10 +652,17 @@ class FBP_FingerBoardWindow(object):
         m = FBP_PickNextTrainForPlatform(self.platform)
         self.panel.setModel(m)
 
-    def cleanup(self):
-        try: FBP_TimeMem.removePropertyChangeListener(self.refresh)
+    def cleanup(self):   
+        # Stop the repaint timer even when cleanup is called programmatically
+        try:
+            self.panel.stopRepaintTimer()
+        except:
+            pass
+        try: 
+            FBP_TimeMem.removePropertyChangeListener(self.refresh)
         except: pass
-        try: FBP_DayMem.removePropertyChangeListener(self.refresh)
+        try: 
+            FBP_DayMem.removePropertyChangeListener(self.refresh)
         except: pass
         try:
             if FBP_TimetableMem is not None: FBP_TimetableMem.removePropertyChangeListener(self.refresh)
@@ -637,6 +682,23 @@ class FBP_FingerBoardWindow(object):
         try:
             if FBP_HideClocksEmptyMem is not None: FBP_HideClocksEmptyMem.removePropertyChangeListener(self.refresh)
         except: pass
+     
+    def onWindowClosed(self):
+        # Called by the window listener for both 'closing' and 'closed' events
+        try:
+            self.panel.stopRepaintTimer()
+        except:
+            pass
+        self.cleanup()
+        # Remove from manager to allow GC and prevent stale references
+        try:
+            if 'FBP_Manager' in globals() and FBP_Manager is not None:
+                try:
+                    FBP_Manager.handleWindowClosed(self.platform)
+                except:
+                    pass
+        except:
+            pass
 
 # -------------------- MANAGER — windows per platform --------------------
 def FBP_DetectPlatforms():
@@ -679,6 +741,20 @@ class FBP_PlatformFingerBoards(object):
     def refresh_all(self, e=None):
         for w in self.windows.values():
             w.refresh()
+               
+    def handleWindowClosed(self, platform):
+        # Remove the window entry when its frame has been closed
+        try:
+            key = str(platform)
+            w = self.windows.get(key)
+            if w is not None:
+                try:
+                    w.cleanup()  # idempotent
+                except:
+                    pass
+                del self.windows[key]
+        except:
+            pass
 
 # -------------------- RUN --------------------
 FBP_Manager = FBP_PlatformFingerBoards()
