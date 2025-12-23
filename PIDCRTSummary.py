@@ -1,5 +1,3 @@
-# -*- coding: utf-8 -*-
-
 # This file is part of the Timetable Automation System by James E. Petts
 #
 # The Timetable Automation System is free software: you can redistribute it and/or modify it under the terms of the 
@@ -14,7 +12,7 @@
 # If not, see <https://www.gnu.org/licenses/>. 
 #
 #
-# JMRI 5.12 — 1980s/90s monochrome CRT PID (station‑wide summary of departures)
+# 1980s monochrome CRT PID (station‑wide summary of departures)
 # Uniquified global/class names to avoid cross-script shadowing.
 # CLEAR-ON-DEPARTURE: remove a working once a departure is logged at the configured timing point(s)
 # ECS FILTER: hide ECS/empty-to-depot workings (class-5 or keyword-matched; keywords configurable).
@@ -30,6 +28,8 @@ from jmri import InstanceManager
 import os, csv
 import TASBeanLookup as TBL
 import java.text.SimpleDateFormat as SimpleDateFormat
+from java.beans import PropertyChangeListener
+from java.awt.event import WindowAdapter
 from DisruptionRegister import getDisruption
 import TimingRegister as TR  # read-only timing tuples: (reportingNumber, direction, time, day)
 
@@ -257,6 +257,36 @@ def CRTSUM_IsEcsWorking(row):
         if t and t in hay:
             return True
     return False
+    
+class CRTSUM_PropertyListener(PropertyChangeListener):
+    def __init__(self, owner):
+        self.owner = owner
+
+    def propertyChange(self, e):
+        # Forward the event to the window instance refresh method
+        self.owner.refresh(e)
+
+
+class CRTSUM_WindowCloseHandler(WindowAdapter):
+    def __init__(self, owner):
+        self.owner = owner
+
+    def windowClosing(self, e):
+        # Ensure listeners are removed before disposing the frame
+        try:
+            self.owner.cleanup()
+        finally:
+            try:
+                self.owner.frame.dispose()
+            except:
+                pass
+
+    def windowClosed(self, e):
+        # Safety net: if dispose happens via other route
+        try:
+            self.owner.cleanup()
+        except:
+            pass
 
 # ------------------------- PANELS -------------------------
 class CRTSUM_CabinetPanel(swing.JPanel):
@@ -486,12 +516,21 @@ class CRTSUM_CRTSummaryWindow(object):
         self.crt.add(self.table)
 
         # Listeners
-        CRTSUM_TimeMem.addPropertyChangeListener(self.refresh)
-        CRTSUM_DayMem.addPropertyChangeListener(self.refresh)
-        if CRTSUM_TimetableMem is not None: CRTSUM_TimetableMem.addPropertyChangeListener(self.refresh)
-        if CRTSUM_OverridesMem is not None: CRTSUM_OverridesMem.addPropertyChangeListener(self.refresh)
-        if CRTSUM_DepartTPMem is not None: CRTSUM_DepartTPMem.addPropertyChangeListener(self.refresh)
-        if CRTSUM_EcsFilterMem is not None: CRTSUM_EcsFilterMem.addPropertyChangeListener(self.refresh)  # NEW
+        self._pcl = CRTSUM_PropertyListener(self)
+        CRTSUM_TimeMem.addPropertyChangeListener(self._pcl)
+        CRTSUM_DayMem.addPropertyChangeListener(self._pcl)
+        if CRTSUM_TimetableMem is not None:
+            CRTSUM_TimetableMem.addPropertyChangeListener(self._pcl)
+        if CRTSUM_OverridesMem is not None:
+            CRTSUM_OverridesMem.addPropertyChangeListener(self._pcl)
+        if CRTSUM_DepartTPMem is not None:
+            CRTSUM_DepartTPMem.addPropertyChangeListener(self._pcl)
+        if CRTSUM_EcsFilterMem is not None:
+            CRTSUM_EcsFilterMem.addPropertyChangeListener(self._pcl)
+
+        self._windowCloser = CRTSUM_WindowCloseHandler(self)
+        self.frame.setDefaultCloseOperation(swing.JFrame.DO_NOTHING_ON_CLOSE)
+        self.frame.addWindowListener(self._windowCloser)
 
         self._rows_cache = None
         self.frame.pack(); self.frame.setResizable(False)
@@ -662,23 +701,65 @@ class CRTSUM_CRTSummaryWindow(object):
         
         self._tightened_once = True
 
+    
     def cleanup(self):
-        try: CRTSUM_TimeMem.removePropertyChangeListener(self.refresh)
-        except: pass
-        try: CRTSUM_DayMem.removePropertyChangeListener(self.refresh)
-        except: pass
+        # Remove property listeners using the same listener object that was added
         try:
-            if CRTSUM_TimetableMem is not None: CRTSUM_TimetableMem.removePropertyChangeListener(self.refresh)
-        except: pass
+            pcl = getattr(self, "_pcl", None)
+        except:
+            pcl = None
+
+        if pcl is not None:
+            try:
+                CRTSUM_TimeMem.removePropertyChangeListener(pcl)
+            except:
+                pass
+            try:
+                CRTSUM_DayMem.removePropertyChangeListener(pcl)
+            except:
+                pass
+            try:
+                if CRTSUM_TimetableMem is not None:
+                    CRTSUM_TimetableMem.removePropertyChangeListener(pcl)
+            except:
+                pass
+            try:
+                if CRTSUM_OverridesMem is not None:
+                    CRTSUM_OverridesMem.removePropertyChangeListener(pcl)
+            except:
+                pass
+            try:
+                if CRTSUM_DepartTPMem is not None:
+                    CRTSUM_DepartTPMem.removePropertyChangeListener(pcl)
+            except:
+                pass
+            try:
+                if CRTSUM_EcsFilterMem is not None:
+                    CRTSUM_EcsFilterMem.removePropertyChangeListener(pcl)
+            except:
+                pass
+
+        # Remove window listener (not strictly required after dispose, but safe)
         try:
-            if CRTSUM_OverridesMem is not None: CRTSUM_OverridesMem.removePropertyChangeListener(self.refresh)
-        except: pass
+            wc = getattr(self, "_windowCloser", None)
+        except:
+            wc = None
+
+        if wc is not None:
+            try:
+                self.frame.removeWindowListener(wc)
+            except:
+                pass
+
+        # Drop references to help GC
         try:
-            if CRTSUM_DepartTPMem is not None: CRTSUM_DepartTPMem.removePropertyChangeListener(self.refresh)
-        except: pass
+            self._pcl = None
+        except:
+            pass
         try:
-            if CRTSUM_EcsFilterMem is not None: CRTSUM_EcsFilterMem.removePropertyChangeListener(self.refresh)
-        except: pass
+            self._windowCloser = None
+        except:
+            pass
 
 # ------------------------- Manager -------------------------
 class CRTSUM_CRTSummaryManager(object):
