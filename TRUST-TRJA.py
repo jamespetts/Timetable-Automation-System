@@ -1,5 +1,3 @@
-# -*- coding: utf-8 -*-
-
 # This file is part of the Timetable Automation System by James E. Petts
 #
 # The Timetable Automation System is free software: you can redistribute it and/or modify it under the terms of the 
@@ -13,7 +11,7 @@
 # You should have received a copy of the GNU General Public License along with the Timetable Automation System.
 # If not, see <https://www.gnu.org/licenses/>. 
 #
-# TRUST-TRJA Enquiry Output — hides TAS-default reporting numbers in the "Train" column.
+# TRUST-TRJA Enquiry Output - hides TAS-default reporting numbers in the "Train" column.
 #
 # <<SIG-DISP-NAME: TRUST TRJA output>>
 # <<DESCRIPTION: Shows a line-up of trains due at this location, simulating the BR/Network Rail TRUST TRJA output>>
@@ -361,7 +359,8 @@ TRJA_Table.setColumnSelectionAllowed(False)
 TRJA_Table.setCellSelectionEnabled(False)
 TRJA_Table.setFocusable(False)
 TRJA_Table.setEnabled(False)
-
+# --- Cleanup guard ---
+TRJA_IsClosed = [False]
 
 class TRJA_BulletRendererClass(swing.table.DefaultTableCellRenderer):
     def getTableCellRendererComponent(self, tbl, value, isSelected, hasFocus, row, col):
@@ -372,13 +371,23 @@ class TRJA_BulletRendererClass(swing.table.DefaultTableCellRenderer):
         comp.setHorizontalAlignment(swing.SwingConstants.LEFT)
         return comp
 TRJA_BulletRenderer = TRJA_BulletRendererClass()
+
 def TRJA_ApplyBulletFormatting():
+    tries = [0]
+
     def _run():
+        if TRJA_IsClosed[0]:
+            return
         cm = TRJA_Table.getColumnModel()
         if cm and cm.getColumnCount() >= 1:
             col0 = cm.getColumn(0)
             col0.setCellRenderer(TRJA_BulletRenderer)
             col0.setPreferredWidth(6)
+            return
+        tries[0] += 1
+        if tries[0] < 10:
+            SwingUtilities.invokeLater(_run)
+
     SwingUtilities.invokeLater(_run)
 
 class TRJA_HeaderCellRenderer(swing.table.DefaultTableCellRenderer):
@@ -393,27 +402,33 @@ class TRJA_HeaderCellRenderer(swing.table.DefaultTableCellRenderer):
         comp.setHorizontalAlignment(self._align)
         return comp
 
+
 def TRJA_ApplyColumnFormatting():
+    tries = [0]
+
     def _run():
+        if TRJA_IsClosed[0]:
+            return
         cm = TRJA_Table.getColumnModel()
         if cm is None or cm.getColumnCount() < 8:
+            tries[0] += 1
+            if tries[0] < 10:
+                SwingUtilities.invokeLater(_run)
             return
 
-        cm.getColumn(0).setPreferredWidth(6)    # bullet
-        cm.getColumn(1).setPreferredWidth(82)   # Train
-        cm.getColumn(2).setPreferredWidth(72)   # arr
-        cm.getColumn(3).setPreferredWidth(72)   # dep
-        cm.getColumn(4).setPreferredWidth(190)  # booked TP
-        cm.getColumn(5).setPreferredWidth(100)  # Last reported
-        cm.getColumn(6).setPreferredWidth(140)  # status
-        cm.getColumn(7).setPreferredWidth(180)  # Overdue reports
+        cm.getColumn(0).setPreferredWidth(6) # bullet
+        cm.getColumn(1).setPreferredWidth(82) # Train
+        cm.getColumn(2).setPreferredWidth(72) # arr
+        cm.getColumn(3).setPreferredWidth(72) # dep
+        cm.getColumn(4).setPreferredWidth(190) # booked TP
+        cm.getColumn(5).setPreferredWidth(100) # Last reported
+        cm.getColumn(6).setPreferredWidth(140) # status
+        cm.getColumn(7).setPreferredWidth(180) # Overdue reports
 
-        hdr = TRJA_Table.getTableHeader()
         cm.getColumn(4).setHeaderRenderer(TRJA_HeaderCellRenderer(swing.SwingConstants.LEFT))
         cm.getColumn(5).setHeaderRenderer(TRJA_HeaderCellRenderer(swing.SwingConstants.LEFT))
         cm.getColumn(6).setHeaderRenderer(TRJA_HeaderCellRenderer(swing.SwingConstants.LEFT))
         cm.getColumn(7).setHeaderRenderer(TRJA_HeaderCellRenderer(swing.SwingConstants.LEFT))
-
         defaultHdr = TRJA_HeaderCellRenderer(swing.SwingConstants.LEFT)
         cm.getColumn(1).setHeaderRenderer(defaultHdr)
         cm.getColumn(2).setHeaderRenderer(defaultHdr)
@@ -500,7 +515,9 @@ TRJA_FooterPanel.add(TRJA_InfoPanel)
 
 # ------ FastClock integration ------
 TRJA_FastClock = jmri.InstanceManager.getDefault(jmri.Timebase)
-def TRJA_UpdateClock(event=None):
+def TRJA_UpdateClock(event=None):   
+    if TRJA_IsClosed[0]:
+        return
     running = TRJA_FastClock.getRun()
     rate = TRJA_FastClock.getRate()
     if running:
@@ -510,7 +527,8 @@ def TRJA_UpdateClock(event=None):
         TRJA_ClockStatusLabel.setForeground(awt.Color.RED)
         TRJA_ClockStatusLabel.setText("Clock paused")
     TRJA_ClockRateLabel.setText("<html>Clock rate: <font color=#00FF00>%.1f</font></html>" % rate)
-TRJA_FastClock.addPropertyChangeListener(TRJA_UpdateClock)
+TRJA_FastClockListener = TRJA_UpdateClock
+TRJA_FastClock.addPropertyChangeListener(TRJA_FastClockListener)
 TRJA_UpdateClock()
 
 # ------ Header rows ------
@@ -590,7 +608,8 @@ def TRJA_PositionBookedHeaderLater():
 
 class TRJA_HeaderResizer(ComponentAdapter):
     def componentResized(self, e): TRJA_PositionBookedHeaderLater()
-TRJA_Table.getTableHeader().addComponentListener(TRJA_HeaderResizer())
+TRJA_HeaderResizerListener = TRJA_HeaderResizer()
+TRJA_Table.getTableHeader().addComponentListener(TRJA_HeaderResizerListener)
 
 class TRJA_ColModelListener(TableColumnModelListener):
     def columnAdded(self, e): TRJA_PositionBookedHeaderLater()
@@ -598,10 +617,66 @@ class TRJA_ColModelListener(TableColumnModelListener):
     def columnMoved(self, e): TRJA_PositionBookedHeaderLater()
     def columnMarginChanged(self, e): TRJA_PositionBookedHeaderLater()
     def columnSelectionChanged(self, e): pass
-TRJA_Table.getColumnModel().addColumnModelListener(TRJA_ColModelListener())
+
+TRJA_ColModelListenerInstance = TRJA_ColModelListener()
+TRJA_Table.getColumnModel().addColumnModelListener(TRJA_ColModelListenerInstance)
 
 TRJA_Frame = swing.JFrame("WinVV Session 1")
 TRJA_Frame.setDefaultCloseOperation(swing.JFrame.DISPOSE_ON_CLOSE)
+
+def TRJA_Cleanup():
+    if TRJA_IsClosed[0]:
+        return
+    TRJA_IsClosed[0] = True
+
+    # Remove external listeners (critical)
+    try:
+        TRJA_FastClock.removePropertyChangeListener(TRJA_FastClockListener)
+    except:
+        pass
+    try:
+        TRJA_TimetableMem.removePropertyChangeListener(TRJA_TimetableListener)
+    except:
+        pass
+    try:
+        TRJA_TimeMem.removePropertyChangeListener(TRJA_TimeListener)
+    except:
+        pass
+    try:
+        TRJA_DayMem.removePropertyChangeListener(TRJA_DayListener)
+    except:
+        pass
+
+    # Remove UI listeners (good hygiene)
+    try:
+        TRJA_Frame.removeKeyListener(TRJA_PageKeyListenerInstance)
+    except:
+        pass
+    try:
+        TRJA_Table.getTableHeader().removeComponentListener(TRJA_HeaderResizerListener)
+    except:
+        pass
+    try:
+        TRJA_Table.getColumnModel().removeColumnModelListener(TRJA_ColModelListenerInstance)
+    except:
+        pass
+
+    # Help GC
+    try:
+        TRJA_FilteredData[:] = []
+        TRJA_TodayTrains[:] = []
+        TRJA_TomorrowTrains[:] = []
+    except:
+        pass
+
+class TRJA_WindowCloser(event.WindowAdapter):
+    def windowClosing(self, e):
+        TRJA_Cleanup()
+
+    def windowClosed(self, e):
+        TRJA_Cleanup()
+
+TRJA_Frame.addWindowListener(TRJA_WindowCloser())
 TRJA_Frame.setSize(800, 600)
 
 # Set window icon using TASIcon utility
@@ -709,7 +784,7 @@ def TRJA_RebuildFilteredData():
         baseReportMin = TRJA_FindLatestTimingForRNAtTP(TRJA_BaseTPName, rn, currentDay_local)
         lastTPName, lastSchedMin = TRJA_GetLastScheduledTP(row)
         lastTPReportMin = TRJA_FindLatestTimingForRNAtTP(lastTPName, rn, currentDay_local) if lastTPName else None       
-        # Time-warp & timing-based RT: if we saw a timing at base or last scheduled TP within ±1 minute of now, treat as RT TIME
+        # Time-warp & timing-based RT: if we saw a timing at base or last scheduled TP within +/- 1 minute of now, treat as RT TIME
         if status == "":
             if (baseReportMin is not None and currentMinutes is not None and abs(currentMinutes - baseReportMin) <= 1) \
                or (lastTPReportMin is not None and currentMinutes is not None and abs(currentMinutes - lastTPReportMin) <= 1):
@@ -765,13 +840,17 @@ def TRJA_RebuildFilteredData():
     TRJA_FilteredData[:] = [entry for _, entry in TRJA_TodayTrains]
     TRJA_ClampPageAndRefreshIndicator()
 
-def TRJA_UpdateTimetable(event=None):
+def TRJA_UpdateTimetable(event=None):   
+    if TRJA_IsClosed[0]:
+        return
     value = TRJA_TimetableMem.getValue() or ""
     TRJA_TimetableLabel.setText("Timetable: " + value)
     TRJA_RebuildFilteredData()
     TRJA_UpdateTable()
 
 def TRJA_UpdateHeader(event=None):
+    if TRJA_IsClosed[0]:
+        return
     currentTime_local = TRJA_TimeMem.getValue() or ""
     currentDay_local = TRJA_DayMem.getValue() or ""
     try:
@@ -784,9 +863,12 @@ def TRJA_UpdateHeader(event=None):
     TRJA_LineupLabel.setText("TRUST LineUp for %s at %s %s + trains not departed" % (TRJA_Profile.getName(), currentDay_local, formattedTime))
     TRJA_UpdateTable()
 
-TRJA_TimetableMem.addPropertyChangeListener(TRJA_UpdateTimetable)
-TRJA_TimeMem.addPropertyChangeListener(TRJA_UpdateHeader)
-TRJA_DayMem.addPropertyChangeListener(TRJA_UpdateHeader)
+TRJA_TimetableListener = TRJA_UpdateTimetable
+TRJA_TimeListener = TRJA_UpdateHeader
+TRJA_DayListener = TRJA_UpdateHeader
+TRJA_TimetableMem.addPropertyChangeListener(TRJA_TimetableListener)
+TRJA_TimeMem.addPropertyChangeListener(TRJA_TimeListener)
+TRJA_DayMem.addPropertyChangeListener(TRJA_DayListener)
 
 # ------ Build initial content ------
 TRJA_RebuildFilteredData()
@@ -806,7 +888,8 @@ class TRJA_PageKeyListener(event.KeyAdapter):
                 TRJA_CurrentPage[0] -= 1
                 TRJA_UpdateTable()
 
-TRJA_Frame.addKeyListener(TRJA_PageKeyListener())
+TRJA_PageKeyListenerInstance = TRJA_PageKeyListener()
+TRJA_Frame.addKeyListener(TRJA_PageKeyListenerInstance)
 TRJA_Frame.setFocusable(True)
 TRJA_Frame.requestFocusInWindow()
 TRJA_Frame.setVisible(True)
