@@ -57,7 +57,21 @@ PLAYER_HIT_FLASH_MS = 60
 LEVEL_SPEED_INCREMENT = 0.15
 EXPLOSION_TOTAL_MS = 96 
 EXPLOSION_FRAME_MS = 48 
-EXPLOSION_PIXEL = 5 
+EXPLOSION_PIXEL = 5
+MOTHER_W = 56 
+MOTHER_H = 18 
+MOTHER_Y = 34 
+MOTHER_SPEED = 2.2 
+MOTHER_SPAWN_CHANCE = 0.0012 
+MOTHER_SCORE = 200 
+MOTHER_DISABLE_FIRE_MS = 3000
+SHIELD_COUNT = 4 
+SHIELD_PIXEL = 5 
+SHIELD_ROWS = 8 
+SHIELD_COLS = 14 
+SHIELD_Y = PANEL_H - 150 
+SHIELD_MARGIN_X = 70 
+SHIELD_ERODE_RADIUS = 2 
 
 # Animation pacing (larger = slower alien wiggle)
 ANIM_TICKS_PER_FLIP = 8
@@ -65,6 +79,8 @@ ANIM_TICKS_PER_FLIP = 8
 # Dynamic speed-up as aliens are destroyed
 # EffectiveSpeed = Base * (1 + DeadFraction * (ALIEN_ACCEL_MAX_MULT - 1))
 ALIEN_ACCEL_MAX_MULT = 2.2
+ALIEN_ACCEL_LEVEL_FACTOR = 0.18
+ALIEN_ACCEL_LEVEL_CAP = 3.0
 
 # Per-row alien colors (phase-0 and phase-1 for subtle blink)
 ROW_COLORS_PHASE0 = [
@@ -107,6 +123,8 @@ CLR_PLAYER = Color(255, 210, 60)
 CLR_SHOT = Color(255, 255, 100)
 CLR_ENEMY_SHOT = Color(255, 90, 90)
 CLR_UI = Color(180, 180, 200)
+CLR_MOTHER = Color(255, 60, 60)
+CLR_SHIELD = Color(80, 255, 80)
 
 # ----------------------------------------------------------------------
 # High score file path (profile-relative, no absolute paths)
@@ -145,10 +163,14 @@ def DrawShip(g2, x, y, w, h):
     notchW = int(0.06*bw); notchH = int(0.08*bh)
     g2.fillRect(bx + int(0.47*bw), by + int(0.18*bh), notchW, notchH)
 
-def DrawAlienSprite(g2, x, y, w, h, kind, phase, rowIdx):
+def DrawAlienSprite(g2, x, y, w, h, kind, phase, rowIdx, FlashWhite=False):
     ax = int(x); ay = int(y); aw = int(w); ah = int(h)
     baseCol = ROW_COLORS_PHASE0[min(max(0, rowIdx), len(ROW_COLORS_PHASE0)-1)]
-    altCol = ROW_COLORS_PHASE1[min(max(0, rowIdx), len(ROW_COLORS_PHASE1)-1)]
+    altCol = ROW_COLORS_PHASE1[min(max(0, rowIdx), len(ROW_COLORS_PHASE1)-1)]  
+    # Flash white on the alternate animation phase when aliens are fire-disabled
+    if FlashWhite and phase == 1:
+        baseCol = Color(255, 255, 255)
+        altCol = Color(255, 255, 255)
     g2.setColor(baseCol if (phase == 0) else altCol)
 
     if kind == "SQUID":
@@ -229,7 +251,38 @@ def DrawExplosion(g2, x, y, w, h, col, phase):
     for (dx, dy) in offs:
         px = cx + dx * ps - half
         py = cy + dy * ps - half
-        g2.fillRect(int(px), int(py), ps, ps)
+        g2.fillRect(int(px), int(py), ps, ps)    
+
+def DrawMotherShip(g2, x, y, w, h):
+    bx = int(x); by = int(y); bw = int(w); bh = int(h)
+
+    # Base body (blocky)
+    g2.setColor(CLR_MOTHER)
+    g2.fillRect(bx + 6, by + 8, bw - 12, bh - 10)
+    g2.fillRect(bx + 14, by + 3, bw - 28, 6)
+    g2.fillRect(bx + 2, by + 10, 4, bh - 14)
+    g2.fillRect(bx + bw - 6, by + 10, 4, bh - 14)
+
+    # Windows (cut-outs)
+    g2.setColor(CLR_PANEL)
+    g2.fillRect(bx + 18, by + 10, 6, 4)
+    g2.fillRect(bx + 28, by + 10, 6, 4)
+    g2.fillRect(bx + 38, by + 10, 6, 4)
+       
+def DrawShield(g2, shield):
+    # shield = {"x":..., "y":..., "grid":[[bool...]], "cols":..., "rows":...}
+    px = int(shield.get("x", 0))
+    py = int(shield.get("y", 0))
+    grid = shield.get("grid", None)
+    if grid is None:
+        return
+
+    g2.setColor(CLR_SHIELD)
+    for ry in range(len(grid)):
+        row = grid[ry]
+        for cx in range(len(row)):
+            if row[cx]:
+                g2.fillRect(px + cx * SHIELD_PIXEL, py + ry * SHIELD_PIXEL, SHIELD_PIXEL, SHIELD_PIXEL)
 
 # ----------------------------------------------------------------------
 # High score I/O (Top-10, TSV) - strictly ASCII, no timestamp
@@ -322,6 +375,7 @@ class GamePanel(JPanel):
         self.FontScore = Font("Monospaced", Font.BOLD, 16)
         self.FontScoreTitle = Font("Monospaced", Font.BOLD, 28)
 
+    
     def ResetFull(self):
         self.Score = 0
         self.Lives = LIVES_START
@@ -330,19 +384,29 @@ class GamePanel(JPanel):
         self.Attract = True
         self.ShowScores = False
         self.PromptedHS = False
+
         self.PlayerX = PANEL_W / 2 - PLAYER_W / 2
         self.PlayerY = PANEL_H - 64
-        self.PlayerCooldownMs = 0   
-        self.PlayerShots = [] 
-        self.EnemyShots = [] 
+        self.PlayerCooldownMs = 0
+        self.PlayerShots = []
+        self.EnemyShots = []
+
         self.PlayerHitFlashMs = 0
         self.Explosions = []
+
+        self.MotherActive = False
+        self.MotherX = -MOTHER_W
+        self.MotherDir = 1
+        self.AlienFireDisableMs = 0
+
         self.AlienDir = 1
         self.AlienSpeed = ALIEN_BASE_SPEED
         self.AlienStepDownPending = False
         self.TickPhase = 0
         self.AnimTickCount = 0
+
         self.BuildAliens()
+        self.BuildShields()
 
     def BuildAliens(self):
         self.Aliens = []
@@ -354,7 +418,150 @@ class GamePanel(JPanel):
                 y = ALIEN_START_Y + r * (ALIEN_H + ALIEN_V_GAP)
                 row.append({"x": float(x), "y": float(y), "w": ALIEN_W, "h": ALIEN_H, "alive": True, "kind": kind})
             self.Aliens.append(row)
+  
+    def BuildShields(self):
+        # Build classic-ish bunker shapes as a grid of chunky pixels.
+        # Pattern uses 'X' for a filled cell, ' ' for empty.
+        pattern = [
+            "XXXXXXXXXXXXXX",
+            "XXXXXXXXXXXXXX",
+            "XXXXXXXXXXXXXX",
+            "XXXXXXXXXXXXXX",
+            "XXXXXX  XXXXXX",
+            "XXXXX    XXXXX",
+            "XXXX      XXXX",
+            "XXX        XXX",
+        ]
 
+        cols = SHIELD_COLS
+        rows = SHIELD_ROWS
+
+        # Safety: ensure pattern matches the configured size
+        if len(pattern) != rows:
+            rows = len(pattern)
+        if rows > 0:
+            cols = len(pattern[0])
+
+        shieldW = cols * SHIELD_PIXEL
+        usableW = PANEL_W - (2 * SHIELD_MARGIN_X)
+
+        if SHIELD_COUNT > 1:
+            gap = (usableW - (SHIELD_COUNT * shieldW)) / float(SHIELD_COUNT - 1)
+        else:
+            gap = 0.0
+
+        self.Shields = []
+        for i in range(SHIELD_COUNT):
+            sx = SHIELD_MARGIN_X + i * (shieldW + gap)
+            sy = SHIELD_Y
+
+            grid = []
+            for ry in range(rows):
+                line = pattern[ry]
+                row = []
+                for cx in range(cols):
+                    row.append(line[cx] == "X")
+                grid.append(row)
+
+            self.Shields.append({"x": float(sx), "y": float(sy), "grid": grid, "cols": cols, "rows": rows})
+
+    def DamageShieldAt(self, hitX, hitY, radiusCells):
+        # Erode any shield cells around the impact point.
+        # Returns True if any cell was removed.
+        if not hasattr(self, "Shields"):
+            return False
+
+        removed = False
+        r = int(radiusCells)
+
+        for sh in self.Shields:
+            sx = float(sh.get("x", 0))
+            sy = float(sh.get("y", 0))
+            cols = int(sh.get("cols", 0))
+            rows = int(sh.get("rows", 0))
+            grid = sh.get("grid", None)
+            if grid is None:
+                continue
+
+            w = cols * SHIELD_PIXEL
+            h = rows * SHIELD_PIXEL
+
+            if hitX < sx or hitX >= sx + w or hitY < sy or hitY >= sy + h:
+                continue
+
+            # Convert to cell coordinates
+            cx = int((hitX - sx) / SHIELD_PIXEL)
+            cy = int((hitY - sy) / SHIELD_PIXEL)
+
+            for yy in range(max(0, cy - r), min(rows, cy + r + 1)):
+                dy = yy - cy
+                for xx in range(max(0, cx - r), min(cols, cx + r + 1)):
+                    dx = xx - cx
+                    # Cheap circular-ish mask
+                    if (dx * dx + dy * dy) <= (r * r + 1):
+                        if grid[yy][xx]:
+                            grid[yy][xx] = False
+                            removed = True
+
+        return removed
+  
+    def DamageShieldRect(self, rx, ry, rw, rh):
+        # Remove any shield cells overlapped by the given rectangle.
+        # Returns True if any cell was removed.
+        if not hasattr(self, "Shields"):
+            return False
+
+        removed = False
+
+        x0 = float(rx)
+        y0 = float(ry)
+        x1 = float(rx) + float(rw)
+        y1 = float(ry) + float(rh)
+
+        for sh in self.Shields:
+            sx = float(sh.get("x", 0))
+            sy = float(sh.get("y", 0))
+            cols = int(sh.get("cols", 0))
+            rows = int(sh.get("rows", 0))
+            grid = sh.get("grid", None)
+            if grid is None:
+                continue
+
+            sw = float(cols * SHIELD_PIXEL)
+            shh = float(rows * SHIELD_PIXEL)
+
+            ox0 = max(x0, sx)
+            oy0 = max(y0, sy)
+            ox1 = min(x1, sx + sw)
+            oy1 = min(y1, sy + shh)
+
+            if ox0 >= ox1 or oy0 >= oy1:
+                continue
+
+            # Convert overlap bounds to cell indices (inclusive)
+            c0 = int((ox0 - sx) / float(SHIELD_PIXEL))
+            c1 = int((ox1 - sx - 1.0) / float(SHIELD_PIXEL))
+            r0 = int((oy0 - sy) / float(SHIELD_PIXEL))
+            r1 = int((oy1 - sy - 1.0) / float(SHIELD_PIXEL))
+
+            if c0 < 0:
+                c0 = 0
+            if r0 < 0:
+                r0 = 0
+            if c1 >= cols:
+                c1 = cols - 1
+            if r1 >= rows:
+                r1 = rows - 1
+
+            for yy in range(r0, r1 + 1):
+                row = grid[yy]
+                for xx in range(c0, c1 + 1):
+                    if row[xx]:
+                        row[xx] = False
+                        removed = True
+
+        return removed
+    
     def SetKeyLeft(self, down):  self.KeyLeft = bool(down)
     def SetKeyRight(self, down): self.KeyRight = bool(down)
     def SetKeyFire(self, down):  self.KeyFire = bool(down)
@@ -372,6 +579,9 @@ class GamePanel(JPanel):
 
         if self.PlayerHitFlashMs > 0: 
             self.PlayerHitFlashMs = max(0, self.PlayerHitFlashMs - FPS_MS)
+                    
+        if self.AlienFireDisableMs > 0: 
+            self.AlienFireDisableMs = max(0, self.AlienFireDisableMs - FPS_MS) 
                        
         # Update explosions
         for i in range(len(self.Explosions) - 1, -1, -1):
@@ -419,7 +629,37 @@ class GamePanel(JPanel):
             r.y += ENEMY_SHOT_SPEED
             if r.y > PANEL_H:
                 del self.EnemyShots[i]
-
+          
+        # Collisions: player shots vs shields
+        for i in range(len(self.PlayerShots) - 1, -1, -1):
+            ps = self.PlayerShots[i]
+            hitX = ps.x + ps.width / 2.0
+            hitY = ps.y  # top of shot (moving up)
+            if self.DamageShieldAt(hitX, hitY, SHIELD_ERODE_RADIUS):
+                del self.PlayerShots[i]     
+        
+        # Collisions: enemy shots vs shields
+        for i in range(len(self.EnemyShots) - 1, -1, -1):
+            es = self.EnemyShots[i]
+            hitX = es.x + es.width / 2.0
+            hitY = es.y + es.height  # bottom of shot (moving down)
+            if self.DamageShieldAt(hitX, hitY, SHIELD_ERODE_RADIUS):
+                del self.EnemyShots[i]
+      
+        # Collisions: player shots vs enemy shots (both destroyed)
+        for pi in range(len(self.PlayerShots) - 1, -1, -1):
+            ps = self.PlayerShots[pi]
+            shotHit = False
+            for ei in range(len(self.EnemyShots) - 1, -1, -1):
+                es = self.EnemyShots[ei]
+                if Intersects(ps, es):
+                    del self.PlayerShots[pi]
+                    del self.EnemyShots[ei]
+                    shotHit = True
+                    break
+            if shotHit:
+                continue
+      
         # Dynamic speed-up as fewer aliens remain
         totalAliens = ALIEN_ROWS * ALIEN_COLS
         aliveCount = 0
@@ -430,8 +670,12 @@ class GamePanel(JPanel):
         deadFraction = 0.0
         if totalAliens > 0:
             deadFraction = float(totalAliens - aliveCount) / float(totalAliens)
-        baseSpeed = self.AlienSpeed
-        effSpeed = baseSpeed * (1.0 + deadFraction * (ALIEN_ACCEL_MAX_MULT - 1.0))
+        baseSpeed = self.AlienSpeed     
+        levelAccel = 1.0 + float(self.Level - 1) * float(ALIEN_ACCEL_LEVEL_FACTOR)
+        dynMult = 1.0 + deadFraction * (ALIEN_ACCEL_MAX_MULT - 1.0) * levelAccel
+        if dynMult > ALIEN_ACCEL_LEVEL_CAP:
+            dynMult = ALIEN_ACCEL_LEVEL_CAP
+        effSpeed = baseSpeed * dynMult
 
         # Move aliens horizontally
         edgeHit = False
@@ -454,30 +698,80 @@ class GamePanel(JPanel):
                         continue
                     a["y"] += ALIEN_STEP_DOWN
             self.AlienStepDownPending = False
-
+                               
+        # Aliens eat through shields while moving (horizontal and step-down)
+        if hasattr(self, "Shields"):
+            biteH = SHIELD_PIXEL * 2
+            for r in range(ALIEN_ROWS):
+                for c in range(ALIEN_COLS):
+                    a = self.Aliens[r][c]
+                    if not a["alive"]:
+                        continue
+                    biteY = float(a["y"]) + float(a["h"]) - float(biteH)
+                    self.DamageShieldRect(float(a["x"]), biteY, float(a["w"]), float(biteH))
+        
+        # Mother ship spawn / movement
+        if not self.MotherActive:
+            if self.Rng.nextFloat() < MOTHER_SPAWN_CHANCE:
+                self.MotherActive = True
+                self.MotherDir = 1 if self.Rng.nextBoolean() else -1
+                if self.MotherDir == 1:
+                    self.MotherX = -float(MOTHER_W)
+                else:
+                    self.MotherX = float(PANEL_W + MOTHER_W)
+        else:
+            spd = float(MOTHER_SPEED) + 0.03 * float(self.Level - 1)
+            self.MotherX += float(self.MotherDir) * spd
+            if self.MotherDir == 1 and self.MotherX > float(PANEL_W + MOTHER_W):
+                self.MotherActive = False
+            elif self.MotherDir == -1 and self.MotherX < -float(MOTHER_W):
+                self.MotherActive = False
+        
         # Enemy shooting: lowest alive per column
-        for c in range(ALIEN_COLS):
-            lowest = None
-            for r in range(ALIEN_ROWS - 1, -1, -1):
-                a = self.Aliens[r][c]
-                if a["alive"]:
-                    lowest = a
-                    break
-            if lowest and self.Rng.nextFloat() < ALIEN_SHOOT_CHANCE:
-                sx = lowest["x"] + lowest["w"] / 2 - ENEMY_SHOT_W / 2
-                sy = lowest["y"] + lowest["h"]
-                self.EnemyShots.append(Rect(sx, sy, ENEMY_SHOT_W, ENEMY_SHOT_H))
+        if self.AlienFireDisableMs == 0:
+            for c in range(ALIEN_COLS):
+                lowest = None
+                for r in range(ALIEN_ROWS - 1, -1, -1):
+                    a = self.Aliens[r][c]
+                    if a["alive"]:
+                        lowest = a
+                        break
+                if lowest and self.Rng.nextFloat() < ALIEN_SHOOT_CHANCE:
+                    sx = lowest["x"] + lowest["w"] / 2 - ENEMY_SHOT_W / 2
+                    sy = lowest["y"] + lowest["h"]
+                    self.EnemyShots.append(Rect(sx, sy, ENEMY_SHOT_W, ENEMY_SHOT_H))
 
         # Collisions: player shots vs aliens
         for i in range(len(self.PlayerShots) - 1, -1, -1):
             ps = self.PlayerShots[i]
+
+            # Collisions: player shots vs mother ship
+            if self.MotherActive:
+                msRect = Rect(self.MotherX, MOTHER_Y, MOTHER_W, MOTHER_H)
+                if Intersects(ps, msRect):
+                    del self.PlayerShots[i]
+                    self.Score += MOTHER_SCORE
+                    self.MotherActive = False
+                    self.AlienFireDisableMs = MOTHER_DISABLE_FIRE_MS
+
+                    # Optional: reuse explosion effect for mother ship
+                    self.Explosions.append({
+                        "x": float(self.MotherX),
+                        "y": float(MOTHER_Y),
+                        "w": MOTHER_W,
+                        "h": MOTHER_H,
+                        "ms": int(EXPLOSION_TOTAL_MS),
+                        "col": CLR_MOTHER,
+                    })
+                    continue
+
             hit = False
             for r in range(ALIEN_ROWS):
                 for c in range(ALIEN_COLS):
                     a = self.Aliens[r][c]
                     if not a["alive"]:
                         continue
-                    
+
                     if Intersects(ps, Rect(a["x"], a["y"], a["w"], a["h"])):
                         # Explosion uses the same color the alien is currently drawn with
                         rowCol0 = ROW_COLORS_PHASE0[min(max(0, r), len(ROW_COLORS_PHASE0) - 1)]
@@ -498,6 +792,8 @@ class GamePanel(JPanel):
                         del self.PlayerShots[i]
                         hit = True
                         break
+                if hit:
+                    break
      
         # Collisions: enemy shots vs player 
         playerRect = Rect(self.PlayerX, self.PlayerY, PLAYER_W, PLAYER_H) 
@@ -515,7 +811,7 @@ class GamePanel(JPanel):
                 if Intersects(es, playerRect): 
                     del self.EnemyShots[i] 
                     break
-
+        
         # Aliens reach player line
         for r in range(ALIEN_ROWS):
             for c in range(ALIEN_COLS):
@@ -543,6 +839,8 @@ class GamePanel(JPanel):
             self.PlayerShots[:] = []
             self.Explosions[:] = [] 
             self.BuildAliens()
+            self.MotherActive = False 
+            self.AlienFireDisableMs = 0 
 
         self.repaint()
 
@@ -638,14 +936,23 @@ class GamePanel(JPanel):
         else: 
             g2.setColor(CLR_PLAYER) 
         DrawShip(g2, int(self.PlayerX), int(self.PlayerY), PLAYER_W, PLAYER_H) 
+              
+        # Mother ship
+        if self.MotherActive:
+            DrawMotherShip(g2, int(self.MotherX), int(MOTHER_Y), MOTHER_W, MOTHER_H)
 
+        # Shields
+        if hasattr(self, "Shields"):
+            for sh in self.Shields:
+                DrawShield(g2, sh)
+                
         # Aliens (per-row color)
         for r in range(ALIEN_ROWS):
             for c in range(ALIEN_COLS):
                 a = self.Aliens[r][c]
                 if not a["alive"]:
                     continue
-                DrawAlienSprite(g2, int(a["x"]), int(a["y"]), a["w"], a["h"], a["kind"], self.TickPhase, r)
+                DrawAlienSprite(g2, int(a["x"]), int(a["y"]), a["w"], a["h"], a["kind"], self.TickPhase, r, (self.AlienFireDisableMs > 0))
        
         # Explosions (simple 2-frame chunky pixels)
         for e in self.Explosions:

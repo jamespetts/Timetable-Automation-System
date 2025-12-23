@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 # This file is part of the Timetable Automation System by James E. Petts
 #
 # The Timetable Automation System is free software: you can redistribute it and/or modify it under the terms of the 
@@ -50,6 +49,19 @@ NSECLK_GrayStrip  = awt.Color(190, 190, 190)
 NSECLK_Blue       = awt.Color(0, 100, 190)
 NSECLK_White      = awt.Color(255, 255, 255)
 NSECLK_LogoRed    = awt.Color(190, 20, 20)
+
+# --------------------- VISUAL ADJUSTMENT PARAMETERS (pixel offsets) ---------------------
+# Pixel offsets
+# Positive X moves right; positive Y moves down.
+NSECLK_SecPaintOffsetX = 8
+NSECLK_SecPaintOffsetY = 10
+NSECLK_DotOffsetX = 0
+NSECLK_DotOffsetY = 10
+NSECLK_DotRadius = 4
+
+# Height of the black digit area (ClockPanel will be vertically centered within this).
+# Increase this to add equal black padding above and below the digits without changing their layout.
+NSECLK_ClockHolderHeight = 175
 
 def NSECLK_Log(msg):
     print("[NSEClock] " + msg)
@@ -166,43 +178,198 @@ class NSECLK_HMView(swing.JComponent):
         self._font = font if font is not None else awt.Font("Monospaced", awt.Font.BOLD, 168)
         self._fg = fg
         self._bg = bg
-        self._pref = awt.Dimension(430, 170)  # exact original size
+        self._pref = awt.Dimension(470, 140)
         self.setOpaque(True)
-    def setFont(self, f): self._font = f
-    def getFont(self): return self._font
+
+    def setFont(self, f):
+        self._font = f
+
+    def getFont(self):
+        return self._font
+
     def setText(self, t):
         if t != self._text:
             self._text = t
             self.repaint()
-    def getPreferredSize(self): return self._pref
+
+    def getPreferredSize(self):
+        return self._pref
+
     def paintComponent(self, g):
         if self.isOpaque():
-            g.setColor(self._bg); g.fillRect(0, 0, self.getWidth(), self.getHeight())
+            g.setColor(self._bg)
+            g.fillRect(0, 0, self.getWidth(), self.getHeight())
+
         try:
-            g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON)
+            g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING,
+                               RenderingHints.VALUE_TEXT_ANTIALIAS_ON)
+            g.setRenderingHint(RenderingHints.KEY_ANTIALIASING,
+                               RenderingHints.VALUE_ANTIALIAS_ON)
+        except:
+            pass
+
+        text = self._text
+        base = self._font
+    
+        padX = 6
+        padY = 2
+
+        availW = max(1, self.getWidth() - 2 * padX)
+        availH = max(1, self.getHeight() - 2 * padY)
+
+        fmBase = self.getFontMetrics(base)
+        textW = max(1, fmBase.stringWidth(text))
+        textH = max(1, fmBase.getAscent() + fmBase.getDescent())
+
+        scaleW = float(availW) / float(textW)
+        scaleH = float(availH) / float(textH)
+        scale = min(scaleW, scaleH) * 0.98
+
+        newPt = max(12.0, base.getSize2D() * scale)
+        draw = base.deriveFont(float(newPt))
+     
+        # Centre using glyph visual bounds; FontMetrics ascent/descent can mis-center this font visually.
+        try:
+            frc = g.getFontRenderContext()
+            gv = draw.createGlyphVector(frc, text)
+            vb = gv.getVisualBounds()
+
+            x = padX + int((availW - vb.getWidth()) / 2.0 - vb.getX())
+            y = padY + int((availH - vb.getHeight()) / 2.0 - vb.getY())
+
+            g.setColor(self._fg)
+            g.drawGlyphVector(gv, float(x), float(y))
+        except:
+            fm = self.getFontMetrics(draw)
+            drawW = fm.stringWidth(text)
+            x = padX + (availW - drawW) // 2
+            textBoxH = fm.getAscent() + fm.getDescent()
+            y = padY + (availH - textBoxH) // 2 + fm.getAscent()
+            g.setColor(self._fg)
+            g.setFont(draw)
+            g.drawString(text, x, y)
+
+
+class NSECLK_SecView(swing.JComponent):
+    def __init__(self, text="00", font=None, fg=NSECLK_RedDigits, bg=NSECLK_BlackPanel):
+        swing.JComponent.__init__(self)
+        self._text = text
+        self._font = font if font is not None else awt.Font("Monospaced", awt.Font.BOLD, 84)
+        self._fg = fg
+        self._bg = bg
+        self._pref = awt.Dimension(140, 140)
+        self.setOpaque(True)
+
+    def setFont(self, f):
+        self._font = f
+
+    def getFont(self):
+        return self._font
+
+    def setText(self, t):
+        if t != self._text:
+            self._text = t
+            self.repaint()
+
+    def getPreferredSize(self):
+        return self._pref
+
+    def paintComponent(self, g):
+        if self.isOpaque():
+            g.setColor(self._bg)
+            g.fillRect(0, 0, self.getWidth(), self.getHeight())
+
+        try:
+            g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING,
+                               RenderingHints.VALUE_TEXT_ANTIALIAS_ON)
+            g.setRenderingHint(RenderingHints.KEY_ANTIALIASING,
+                               RenderingHints.VALUE_ANTIALIAS_ON)
+        except:
+            pass
+
+        text = self._text
+        base = self._font
+
+        # Smaller padding than before so the digits fill the window better
+        padX = 6
+        padY = 2
+
+        availW = max(1, self.getWidth() - 2 * padX)
+        availH = max(1, self.getHeight() - 2 * padY)
+
+        fmBase = self.getFontMetrics(base)
+        textW = max(1, fmBase.stringWidth(text))
+        textH = max(1, fmBase.getAscent() + fmBase.getDescent())
+
+        scaleW = float(availW) / float(textW)
+        scaleH = float(availH) / float(textH)
+        scale = min(scaleW, scaleH) * 0.995
+
+        newPt = max(12.0, base.getSize2D() * scale)
+        draw = base.deriveFont(float(newPt))
+
+        # Centre using glyph visual bounds; FontMetrics ascent/descent can mis-center this font visually.
+        try:
+            frc = g.getFontRenderContext()
+            gv = draw.createGlyphVector(frc, text)
+            vb = gv.getVisualBounds()
+         
+            x = padX + int((availW - vb.getWidth()) / 2.0 - vb.getX())
+            y = padY + int((availH - vb.getHeight()) / 2.0 - vb.getY())
+
+            # Offset seconds to match the real clock positioning.
+            x += NSECLK_SecPaintOffsetX
+            y += NSECLK_SecPaintOffsetY
+
+            g.setColor(self._fg)
+            g.drawGlyphVector(gv, float(x), float(y))
+        except:
+            fm = self.getFontMetrics(draw)          
+            drawW = fm.stringWidth(text)
+            x = padX + (availW - drawW) // 2
+            textBoxH = fm.getAscent() + fm.getDescent()
+            y = padY + (availH - textBoxH) // 2 + fm.getAscent()
+
+            # Offset seconds to match the prototype positioning.
+            x += NSECLK_SecPaintOffsetX
+            y += NSECLK_SecPaintOffsetY
+
+            g.setColor(self._fg)
+            g.setFont(draw)
+            g.drawString(text, x, y)
+
+
+class NSECLK_MinSecDotView(swing.JComponent):
+    def __init__(self, fg=NSECLK_Yellow, bg=NSECLK_BlackPanel):
+        swing.JComponent.__init__(self)
+        self._fg = fg
+        self._bg = bg
+        self._pref = awt.Dimension(18, 140)
+        self.setOpaque(True)
+
+    def getPreferredSize(self):
+        return self._pref
+
+    def paintComponent(self, g):
+        if self.isOpaque():
+            g.setColor(self._bg)
+            g.fillRect(0, 0, self.getWidth(), self.getHeight())
+
+        try:
             g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
         except:
             pass
-        text = self._text
-        base = self._font
-        fm = self.getFontMetrics(base)
-        pad = 6
-        avail = max(0, self.getWidth() - 2*pad)
-        draw = base
-        width = fm.stringWidth(text)
-        if width > avail and avail > 0:
-            scale = float(avail) / float(width)
-            new_pt = max(12.0, base.getSize2D() * scale * 0.995)
-            draw = base.deriveFont(new_pt)
-            fm = self.getFontMetrics(draw)
-            width = fm.stringWidth(text)
-        x = (self.getWidth() - width) // 2
-        y = (self.getHeight() + fm.getAscent() - fm.getDescent()) // 2
-        g.setColor(self._fg)
-        g.setFont(draw)
-        g.drawString(text, x, y)
 
-# ----------------------- Frame & Panels (unchanged sizes) -----------------------
+        # Draw a single dot with a small offset to match the prototype.
+        w = self.getWidth()
+        h = self.getHeight()
+        r = NSECLK_DotRadius
+        cx = (w // 2) + NSECLK_DotOffsetX
+        cy = (h // 2) + NSECLK_DotOffsetY
+        g.setColor(self._fg)
+        g.fillOval(cx - r, cy - r, 2 * r, 2 * r)
+
+# ----------------------- Frame & Panels -----------------------
 NSECLK_Frame = swing.JFrame("Network SouthEast Clock")
 NSECLK_Frame.defaultCloseOperation = swing.JFrame.DISPOSE_ON_CLOSE
 NSECLK_Frame.getContentPane().setBackground(NSECLK_RedFrame)
@@ -212,63 +379,131 @@ NSECLK_OuterPanel = swing.JPanel()
 NSECLK_OuterPanel.setBackground(NSECLK_RedFrame)
 NSECLK_OuterPanel.setOpaque(True)
 NSECLK_OuterPanel.setLayout(awt.BorderLayout())
-NSECLK_OuterPanel.setBorder(swing.BorderFactory.createEmptyBorder(4, 6, 4, 6))  # original surround
-
+NSECLK_OuterPanel.setBorder(swing.BorderFactory.createEmptyBorder(22, 32, 14, 32))
 NSECLK_ClockPanel = swing.JPanel()
 NSECLK_ClockPanel.setBackground(NSECLK_BlackPanel)
 NSECLK_ClockPanel.setOpaque(True)
-NSECLK_ClockPanel.setLayout(awt.FlowLayout(awt.FlowLayout.CENTER, 6, 4))  # original gaps
-NSECLK_ClockPanel.setPreferredSize(awt.Dimension(620, 180))
+NSECLK_ClockPanel.setLayout(awt.FlowLayout(awt.FlowLayout.CENTER, 6, 0))
+NSECLK_ClockPanel.setPreferredSize(awt.Dimension(660, 140))
 NSECLK_ClockPanel.setBorder(swing.BorderFactory.createLineBorder(NSECLK_BlackPanel, 2))
 
 # Fonts
 NSECLK_FontHM, NSECLK_FontSec = NSECLK_GetFonts()
 
-# HH:MM custom painter + seconds label (original sizes)
+# HH:MM custom painter + seconds label
 NSECLK_HmView = NSECLK_HMView(font=NSECLK_FontHM, fg=NSECLK_Yellow, bg=NSECLK_BlackPanel)
-NSECLK_LabelSec = swing.JLabel("00", swing.JLabel.CENTER)
-NSECLK_LabelSec.setForeground(NSECLK_RedDigits)
-NSECLK_LabelSec.setFont(NSECLK_FontSec)
-NSECLK_LabelSec.setBackground(NSECLK_BlackPanel)
-NSECLK_LabelSec.setOpaque(True)
-NSECLK_LabelSec.setPreferredSize(awt.Dimension(110, 170))  # original
-
+NSECLK_MinSecDot = NSECLK_MinSecDotView(fg=NSECLK_Yellow, bg=NSECLK_BlackPanel)
+NSECLK_LabelSec = NSECLK_SecView(text="00", font=NSECLK_FontSec, fg=NSECLK_RedDigits, bg=NSECLK_BlackPanel)
 NSECLK_ClockPanel.add(NSECLK_HmView)
+NSECLK_ClockPanel.add(NSECLK_MinSecDot)
 NSECLK_ClockPanel.add(NSECLK_LabelSec)
 
-# Logo panel (unchanged)
+# Holder that vertically centers the clock row so changing the overall height adds padding
+# instead of pushing the digits to the top.
+NSECLK_ClockHolder = swing.JPanel(awt.GridBagLayout())
+NSECLK_ClockHolder.setOpaque(True)
+NSECLK_ClockHolder.setBackground(NSECLK_BlackPanel)
+
+# Changing NSECLK_ClockHolderHeight will change the digit area height.
+NSECLK_ClockHolder.setPreferredSize(awt.Dimension(660, NSECLK_ClockHolderHeight))
+
+NSECLK_Gbc = awt.GridBagConstraints()
+NSECLK_Gbc.gridx = 0
+NSECLK_Gbc.gridy = 0
+NSECLK_Gbc.weightx = 1.0
+NSECLK_Gbc.weighty = 1.0
+NSECLK_Gbc.anchor = awt.GridBagConstraints.CENTER
+NSECLK_Gbc.fill = awt.GridBagConstraints.NONE
+
+NSECLK_ClockHolder.add(NSECLK_ClockPanel, NSECLK_Gbc)
+
+# Logo panel
 class NSECLK_LogoPanel(swing.JPanel):
     def paintComponent(self, g):
         if self.isOpaque():
-            g.setColor(self.getBackground()); g.fillRect(0, 0, self.getWidth(), self.getHeight())
-        w = self.getWidth(); h = self.getHeight()
-        if w <= 0 or h <= 0: return
-        grayHeight = int(h * 0.55)
-        g.setColor(NSECLK_GrayStrip); g.fillRect(0, 0, w, grayHeight)
-        blockWidth = min(420, int(w * 0.6)); blockLeft = (w - blockWidth) // 2
-        stripeW = 36; num = int(blockWidth / stripeW) + 4; blockBottom = h
-        for i in range(-2, num):
-            x = blockLeft + i * stripeW
-            pts_x = [x, x + stripeW, x + stripeW + stripeW//2, x + stripeW//2]
-            pts_y = [blockBottom, blockBottom, int(grayHeight), int(grayHeight)]
-            g.setColor(NSECLK_Blue); g.fillPolygon(awt.Polygon(pts_x, pts_y, 4))
-            g.setColor(NSECLK_White); g.fillPolygon(awt.Polygon(
-                [x + stripeW, x + stripeW*2, x + stripeW*2 + stripeW//2, x + stripeW + stripeW//2], pts_y, 4))
-            g.setColor(NSECLK_LogoRed); g.fillPolygon(awt.Polygon(
-                [x + stripeW*2, x + stripeW*3, x + stripeW*3 + stripeW//2, x + stripeW*2 + stripeW//2], pts_y, 4))
+            g.setColor(self.getBackground())
+            g.fillRect(0, 0, self.getWidth(), self.getHeight())
+
+        w = self.getWidth()
+        h = self.getHeight()
+        if w <= 0 or h <= 0:
+            return
+
+        # D1: Draw a single long grey bar with a single stripe wedge on the left.
+        # Stripe direction: bottom-left to top-right.
+        # Stripe order (left->right): thin white, thick red, thin white, thick blue, thin white.
+        # Thin are about 1/4 of thick (wider red/blue).
+
+        # Base bar
+        g.setColor(NSECLK_GrayStrip)
+        g.fillRect(0, 0, w, h)
+
+        # Subtle top/bottom edging
+        g.setColor(awt.Color(150, 150, 150))
+        g.fillRect(0, 0, w, 2)
+
+        # Lead-in grey slanted block (behind stripes)
+        leadW = int(w * 0.16)
+        shift = int(h * 0.55)  # positive shift => bottom-left to top-right
+        g.setColor(awt.Color(175, 175, 175))
+        g.fillPolygon(awt.Polygon(
+            [0, leadW, leadW + shift, shift],
+            [h, h, 0, 0],
+            4
+        ))
+
+        # Stripe sizing
+        thinW = max(4, int(h * 0.18))
+        thickW = thinW * 4  # widened red/blue
+
+        widths = [thinW, thickW, thinW, thickW, thinW]
+        colors = [NSECLK_White, NSECLK_LogoRed, NSECLK_White, NSECLK_Blue, NSECLK_White]
+
+        # Position the stripe wedge near the left
+        x = int(w * 0.10)
+
+        for i in range(len(widths)):
+            bw = widths[i]
+            g.setColor(colors[i])
+            g.fillPolygon(awt.Polygon(
+                [x, x + bw, x + bw + shift, x + shift],
+                [h, h, 0, 0],
+                4
+            ))
+            x += bw
 
 NSECLK_Logo = NSECLK_LogoPanel()
-NSECLK_Logo.setPreferredSize(awt.Dimension(620, 48))
+# Logo strip height
+NSECLK_Logo.setPreferredSize(awt.Dimension(660, 24))
 NSECLK_Logo.setBackground(NSECLK_RedFrame)
 NSECLK_Logo.setOpaque(True)
 
 # Assemble
-NSECLK_Content = swing.JPanel(awt.BorderLayout())
-NSECLK_Content.setOpaque(False)
-NSECLK_Content.add(NSECLK_ClockPanel, awt.BorderLayout.CENTER)
-NSECLK_Content.add(NSECLK_Logo, awt.BorderLayout.SOUTH)
+# The real clock has the black aperture and grey strip as part of the same internal assembly.
+NSECLK_DisplayStack = swing.JPanel(awt.BorderLayout())
+NSECLK_DisplayStack.setOpaque(True)
+NSECLK_DisplayStack.setBackground(NSECLK_BlackPanel)
+NSECLK_DisplayStack.add(NSECLK_ClockHolder, awt.BorderLayout.CENTER)
+NSECLK_DisplayStack.add(NSECLK_Logo, awt.BorderLayout.SOUTH)
 
-NSECLK_OuterPanel.add(NSECLK_Content, awt.BorderLayout.CENTER)
+# Bezel: create a stepped red frame to better match the real clock.
+NSECLK_OuterStepBorder = swing.BorderFactory.createMatteBorder(4, 6, 4, 6, awt.Color(80, 0, 0))
+NSECLK_InnerStepBorder = swing.BorderFactory.createMatteBorder(2, 3, 2, 3, awt.Color(120, 0, 0))
+
+NSECLK_InsetBorder = swing.BorderFactory.createEmptyBorder(6, 8, 0, 8)
+NSECLK_BezelBorder = swing.BorderFactory.createCompoundBorder(
+    NSECLK_OuterStepBorder,
+    swing.BorderFactory.createCompoundBorder(NSECLK_InnerStepBorder, NSECLK_InsetBorder)
+)
+
+NSECLK_AperturePanel = swing.JPanel(awt.BorderLayout())
+NSECLK_AperturePanel.setOpaque(True)
+NSECLK_AperturePanel.setBackground(NSECLK_RedFrame)
+NSECLK_AperturePanel.setBorder(NSECLK_BezelBorder)
+NSECLK_AperturePanel.add(NSECLK_DisplayStack, awt.BorderLayout.CENTER)
+
+NSECLK_OuterPanel.add(NSECLK_AperturePanel, awt.BorderLayout.CENTER)
+
 NSECLK_Frame.getContentPane().add(NSECLK_OuterPanel, awt.BorderLayout.CENTER)
 NSECLK_Frame.pack()
 
@@ -310,18 +545,50 @@ def NSECLK_GetHmsFromTimebase():
 # ----------------------- Update (minute-only for HH:MM) -----------------------
 NSECLK_LastHM = [None]
 
-def NSECLK_UpdateClock(event=None):
+def NSECLK_UpdateClock(event=None):   
+    try:
+        if NSECLK_Frame is None or not NSECLK_Frame.isDisplayable():
+            if NSECLK_Timer is not None and NSECLK_Timer.isRunning():
+                NSECLK_Timer.stop()
+            return
+    except:
+        pass
+    
     hh, mm, ss = NSECLK_GetHmsFromTimebase()
     hm = "%02d:%02d" % (hh, mm)
     if hm != NSECLK_LastHM[0]:
         NSECLK_HmView.setText(hm)
         NSECLK_LastHM[0] = hm
         f = NSECLK_HmView.getFont()
-        NSECLK_Log("HM font in use — family: '%s', name: '%s', PS: '%s', size: %spt"
+        NSECLK_Log("HM font in use - family: '%s', name: '%s', PS: '%s', size: %spt"
                    % (f.getFamily(), f.getFontName(), f.getPSName(), f.getSize()))
     NSECLK_LabelSec.setText("%02d" % ss)
 
+
+import java.awt.event as awt_event
+
 NSECLK_Timer = swing.Timer(1000, NSECLK_UpdateClock)
 NSECLK_Timer.setInitialDelay(0)
+
+class NSECLK_CloseHandler(awt_event.WindowAdapter):
+    def windowClosing(self, e):
+        try:
+            if NSECLK_Timer is not None and NSECLK_Timer.isRunning():
+                NSECLK_Timer.stop()
+        except:
+            pass
+
+    def windowClosed(self, e):
+        try:
+            if NSECLK_Timer is not None and NSECLK_Timer.isRunning():
+                NSECLK_Timer.stop()
+        except:
+            pass
+
+try:
+    NSECLK_Frame.addWindowListener(NSECLK_CloseHandler())
+except:
+    pass
+
 NSECLK_Timer.start()
 NSECLK_UpdateClock()
