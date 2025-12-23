@@ -1,0 +1,11 @@
+Verion 1.1
+
+* Fix an error whereby the setup would crash if the user were not running a Loconet connxion
+* The UI windows now clean up properly on closedown
+* Improved Network SouthEast clock
+* Fix an error whereby the system would not cope with different prefixes for memory variables
+
+
+Version 1.0
+
+* First public release

@@ -271,7 +271,7 @@ def BuildTitleLines(g, family, style, maxPt, minPt, text, maxWidth):
     f1 = FitFontForSingleLine(g, family, style, maxPt, minPt, text, maxWidth)
     return (f1, [text])
 
-# ------------------ Licence loader - external scripts:Licence.txt (portable path) ------------------
+# ------------------ Licence loader - external scripts: Licence.txt (portable path) ------------------
 
 def LoadLicenceText():
     try:
@@ -296,6 +296,29 @@ def LoadLicenceText():
 # Compatibility helper for legacy external scripts that expect ReadMemStr(...)
 def ReadMemStr(Name, Default=""):
     return TBL.SafeGetOrCreateMemoryValue(Name, Default)
+    
+# ------------------ Change log loader - external scripts: changelog.txt (portable path) ------------------
+
+def LoadChangeLogText():
+    try:
+        stream = jmri.util.FileUtil.findInputStream("scripts:changelog.txt")
+        if stream is None:
+            return None
+        try:
+            reader = BufferedReader(InputStreamReader(stream, "US-ASCII"))
+            lines = []
+            while True:
+                line = reader.readLine()
+                if line is None:
+                    break
+                lines.append(line)
+            return "\n".join(lines)
+        finally:
+            stream.close()
+    except Exception as ex:
+        print("Change log load failed: " + str(ex))
+        return None
+
 
 # ------------------ Cover panel ------------------
 
@@ -741,12 +764,24 @@ class AboutDialog(JDialog):
         self.Txt.setLineWrap(True)
         self.Txt.setWrapStyleWord(True)
         self.Txt.setFont(Font(FontFamily, Font.PLAIN, 12))
-        LicencePanel.add(JScrollPane(self.Txt), BorderLayout.CENTER)
+        LicencePanel.add(JScrollPane(self.Txt), BorderLayout.CENTER)       
         Tabs.addTab("Licence", LicencePanel)
+
+        # --- Change log tab (reads scripts:changelog.txt) ---
+        ChgPanel = JPanel()
+        ChgPanel.setLayout(BorderLayout())
+        self.ChgTxt = JTextArea()
+        self.ChgTxt.setEditable(False)
+        self.ChgTxt.setLineWrap(True)
+        self.ChgTxt.setWrapStyleWord(True)
+        self.ChgTxt.setFont(Font(FontFamily, Font.PLAIN, 12))
+        ChgPanel.add(JScrollPane(self.ChgTxt), BorderLayout.CENTER)
+        Tabs.addTab("Change log", ChgPanel)
 
         self.add(Tabs, BorderLayout.CENTER)
 
         lic = LoadLicenceText()
+
         if lic is None or len(lic.strip()) == 0:
             self.Txt.setText(
                 "GNU GPL v3.0 (summary)\n\n"
@@ -757,10 +792,23 @@ class AboutDialog(JDialog):
                 "Full licence text:\n"
                 "https://www.gnu.org/licenses/gpl-3.0.en.html\n"
             )
+
         else:
-            self.Txt.setText(lic)   
-            
-        self.Txt.setCaretPosition(0)    
+            self.Txt.setText(lic)
+        self.Txt.setCaretPosition(0)
+
+        # Load and set Change log text
+        chg = LoadChangeLogText()
+        if chg is None or len(chg.strip()) == 0:
+            self.ChgTxt.setText(
+                "Change log\n\n"
+                "No changelog.txt found in the scripts folder.\n"
+                "Create 'changelog.txt' next to 'Licence.txt' to populate this tab.\n"
+            )
+        else:
+            self.ChgTxt.setText(chg)
+        self.ChgTxt.setCaretPosition(0)
+
         Buttons = JPanel()
         BtnClose = JButton("Close")
         Buttons.add(BtnClose)
