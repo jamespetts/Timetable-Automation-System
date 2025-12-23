@@ -35,6 +35,8 @@ from java.awt.geom import RoundRectangle2D
 from javax.swing import JPanel, JLabel, BoxLayout, BorderFactory, Timer, JButton
 from javax.swing.border import EmptyBorder
 import TASBeanLookup as TBL
+from java.awt.event import WindowAdapter
+from javax.swing import WindowConstants
 
 # ------------------------------ UI Configuration ------------------------------
 REALTIME_REFRESH_MS = 4000
@@ -163,7 +165,7 @@ def _active_preset_name():
         pass
     return 'Maesteg_Sep2017'
 
-# ------------------------------ spacing helpers (no Box.*) ------------------------------
+# ------------------------------ spacing helpers (no Box.) ------------------------------
 def gapV(h):
     p = JPanel(); p.setOpaque(False)
     p.setPreferredSize(Dimension(1, h))
@@ -572,8 +574,6 @@ class WeatherForecastUI(jmri.jmrit.automat.AbstractAutomaton):
             self._applyProTitle()
 
         self.ad.setUpgradeCallback(_enableProMode)
-
-        self.frame.pack()
         
         # Set window icon using TASIcon utility
         try:
@@ -585,7 +585,27 @@ class WeatherForecastUI(jmri.jmrit.automat.AbstractAutomaton):
         self.frame.setSize(540, 960) # phone-like portrait
         self.frame.setLocationByPlatform(True)
         self.frame.setVisible(True)
+            
+        # Ensure the frame is actually disposed by Swing, not just hidden
+        self.frame.setDefaultCloseOperation(WindowConstants.DISPOSE_ON_CLOSE)
 
+        # Close handler: stop timers and halt the automaton
+        class _WXClose(WindowAdapter):
+            def windowClosing(this, e):
+                try:
+                    self._cleanup()
+                finally:
+                    # Halt the AbstractAutomaton thread now
+                    self.stop()
+            def windowClosed(this, e):
+                # Safety net if the window is disposed programmatically
+                try:
+                    self._cleanup()
+                finally:
+                    self.stop()
+
+        self.frame.addWindowListener(_WXClose())
+        
         # Wire tabs
         self.btnToday.addActionListener(lambda e: self._setPage(0))
         self.btnTomorrow.addActionListener(lambda e: self._setPage(1))
@@ -598,6 +618,55 @@ class WeatherForecastUI(jmri.jmrit.automat.AbstractAutomaton):
         self._reload_ads_from_mem()
         self._apply_ad_visibility_and_timer()
         self._applyProTitle()
+            
+    def _cleanup(self):
+        # Idempotent shutdown: stop timers and detach listeners
+        try:
+            self._Log("Cleanup starting")
+        except:
+            pass
+        try:
+            if getattr(self, 'timer', None) is not None:
+                try:
+                    self.timer.stop()
+                except:
+                    pass
+                self.timer = None
+        except:
+            pass
+        try:
+            if getattr(self, 'adTimer', None) is not None:
+                try:
+                    self.adTimer.stop()
+                except:
+                    pass
+                self.adTimer = None
+        except:
+            pass
+        # Remove action listeners to avoid lingering references
+        try:
+            for b in (self.btnToday, self.btnTomorrow, self.btnDay2):
+                try:
+                    for l in b.getActionListeners():
+                        b.removeActionListener(l)
+                except:
+                    pass
+            try:
+                for l in self.ad.cta.getActionListeners():
+                    self.ad.cta.removeActionListener(l)
+            except:
+                pass
+        except:
+            pass
+        # Hide frame (dispose is driven by the window system)
+        try:
+            self.frame.setVisible(False)
+        except:
+            pass
+        try:
+            self._Log("Cleanup done")
+        except:
+            pass
 
     # ------------------------------ Helpers ------------------------------
     def _minutes_of_day(self):
