@@ -912,6 +912,171 @@ class WeatherForecastNewspaper(jmri.jmrit.automat.AbstractAutomaton):
 
         self.frame.setLocationByPlatform(True)
         self.frame.setVisible(True)
+        
+        # ---- CLEANUP ON WINDOW CLOSE ----
+        # Ensure proper disposal and clear module/global state so repeat opens are fresh.
+        try:
+            from javax.swing import WindowConstants
+            self.frame.setDefaultCloseOperation(WindowConstants.DISPOSE_ON_CLOSE)
+        except Exception:
+            pass
+
+        # Lightweight component detacher to hasten GC; ASCII and Jython-safe.
+        def _DetachAll(p):
+            # Remove listeners we added (none dynamic here), clear editors, and remove children.
+            try:
+                p.setVisible(False)
+            except Exception:
+                pass
+            try:
+                # Clear large editors' content to drop Document references.
+                if isinstance(p, JEditorPane):
+                    p.setEditorKit(None)
+                    p.setText("")
+            except Exception:
+                pass
+            try:
+                # Recurse and remove all children from containers.
+                if hasattr(p, "getComponentCount"):
+                    for i in range(p.getComponentCount() - 1, -1, -1):
+                        c = p.getComponent(i)
+                        _DetachAll(c)
+                        try:
+                            p.remove(i)
+                        except Exception:
+                            pass
+            except Exception:
+                pass
+
+        from java.awt.event import WindowAdapter
+        from javax.swing import SwingUtilities
+        from java.lang import Runnable
+
+        # Hold a reference to the outer automaton for use inside the listener.
+        outer = self
+
+        class _CleanupOnClose(WindowAdapter):
+            def windowClosing(self, ev):
+                # 1) Clear module-level edition state.
+                try:
+                    global _EDITION_RNG, _ED_USED_LINES
+                    _EDITION_RNG = None
+                    if _ED_USED_LINES is not None:
+                        _ED_USED_LINES.clear()
+                    _ED_USED_LINES = None
+                except Exception:
+                    pass
+                # 2) Detach UI components and drop references.
+                try:
+                    cp = outer.frame.getContentPane()
+                    _DetachAll(cp)
+                except Exception:
+                    pass
+                # 3) Drop strong refs held by this automaton instance.
+                try:
+                    outer.sunTimes = None
+                    outer.timebase = None
+                except Exception:
+                    pass
+                # 4) Ensure dispose runs on the EDT.
+                try:
+                    class _DoDispose(Runnable):
+                        def run(self):
+                            try:
+                                ev.getWindow().dispose()
+                            except Exception:
+                                pass
+                    SwingUtilities.invokeLater(_DoDispose())
+                except Exception:
+                    # Last resort: direct dispose (should already be on EDT)
+                    try:
+                        ev.getWindow().dispose()
+                    except Exception:
+                        pass
+        try:
+            self.frame.addWindowListener(_CleanupOnClose())
+        except Exception:
+            pass
+
+
+        # Lightweight component detacher to hasten GC; ASCII and Jython-safe.
+        def _DetachAll(p):
+            # Remove listeners we added (none dynamic here), clear icons, and remove children.
+            try:
+                p.setVisible(False)
+            except Exception:
+                pass
+            try:
+                # Clear large editors' content to drop Document references.
+                if isinstance(p, JEditorPane):
+                    p.setEditorKit(None)
+                    p.setText("")
+            except Exception:
+                pass
+            try:
+                # Recurse and remove all children from containers.
+                if hasattr(p, "getComponentCount"):
+                    for i in range(p.getComponentCount() - 1, -1, -1):
+                        c = p.getComponent(i)
+                        _DetachAll(c)
+                        try:
+                            p.remove(i)
+                        except Exception:
+                            pass
+            except Exception:
+                pass
+
+        from java.awt.event import WindowAdapter
+        from java.lang import Runnable
+
+        class _CleanupOnClose(WindowAdapter):
+            def windowClosing(self, ev):
+                # 1) Clear module-level edition state.
+                try:
+                    global _EDITION_RNG, _ED_USED_LINES
+                    _EDITION_RNG = None
+                    if _ED_USED_LINES is not None:
+                        _ED_USED_LINES.clear()
+                    _ED_USED_LINES = None
+                except Exception:
+                    pass
+                # 2) Detach UI components and drop references.
+                try:
+                    cp = self.frame.getContentPane()
+                    _DetachAll(cp)
+                    # Remove the content pane; JmriJFrame will dispose afterwards.
+                except Exception:
+                    pass
+                # 3) Drop strong refs held by this automaton instance.
+                try:
+                    self.sunTimes = None
+                    self.timebase = None
+                except Exception:
+                    pass
+                # 4) Ensure dispose runs on the EDT.
+                try:
+                    from javax.swing import SwingUtilities
+                    class _DoDispose(Runnable):
+                        def run(self):
+                            try:
+                                selfOuter = ev.getWindow()
+                                selfOuter.dispose()
+                            except Exception:
+                                pass
+                    SwingUtilities.invokeLater(_DoDispose())
+                except Exception:
+                    # Last resort: direct dispose (should already be on EDT)
+                    try:
+                        ev.getWindow().dispose()
+                    except Exception:
+                        pass
+
+        try:
+            self.frame.addWindowListener(_CleanupOnClose())
+        except Exception:
+            pass
+
+        # ---- CLEANUP ON WINDOW CLOSE ----
 
     def _profile_name(self):
         """Return the active profile name (fallback 'Layout')."""
