@@ -50,6 +50,18 @@ NSECLK_Blue       = awt.Color(0, 100, 190)
 NSECLK_White      = awt.Color(255, 255, 255)
 NSECLK_LogoRed    = awt.Color(190, 20, 20)
 
+# <<SETTING DESCRIPTION: Debranded>>
+TAS_USER_SETTING_Debranded = False  # When True: (1) plain red logo strip; (2) seconds digits use NSECLK_Yellow
+
+# Read persisted value (if any) via TASBeanLookup (prefix-agnostic)
+try:
+    import TASBeanLookup as TBL
+    _val = TBL.SafeGetOrCreateMemoryValue("DISPLAYOPT_NSECLOCK_DEBRANDED", "false")
+except Exception:
+    pass
+    _t = str(_val).strip().lower()
+
+
 # --------------------- VISUAL ADJUSTMENT PARAMETERS (pixel offsets) ---------------------
 # Pixel offsets
 # Positive X moves right; positive Y moves down.
@@ -370,7 +382,7 @@ class NSECLK_MinSecDotView(swing.JComponent):
         g.fillOval(cx - r, cy - r, 2 * r, 2 * r)
 
 # ----------------------- Frame & Panels -----------------------
-NSECLK_Frame = swing.JFrame("Network SouthEast Clock")
+NSECLK_Frame = swing.JFrame("Clock" if TAS_USER_SETTING_Debranded else "Network SouthEast Clock")
 NSECLK_Frame.defaultCloseOperation = swing.JFrame.DISPOSE_ON_CLOSE
 NSECLK_Frame.getContentPane().setBackground(NSECLK_RedFrame)
 NSECLK_Frame.getContentPane().setLayout(awt.BorderLayout())
@@ -393,7 +405,8 @@ NSECLK_FontHM, NSECLK_FontSec = NSECLK_GetFonts()
 # HH:MM custom painter + seconds label
 NSECLK_HmView = NSECLK_HMView(font=NSECLK_FontHM, fg=NSECLK_Yellow, bg=NSECLK_BlackPanel)
 NSECLK_MinSecDot = NSECLK_MinSecDotView(fg=NSECLK_Yellow, bg=NSECLK_BlackPanel)
-NSECLK_LabelSec = NSECLK_SecView(text="00", font=NSECLK_FontSec, fg=NSECLK_RedDigits, bg=NSECLK_BlackPanel)
+secColor = NSECLK_Yellow if TAS_USER_SETTING_Debranded else NSECLK_RedDigits
+NSECLK_LabelSec = NSECLK_SecView(text="00", font=NSECLK_FontSec, fg=secColor, bg=NSECLK_BlackPanel)
 NSECLK_ClockPanel.add(NSECLK_HmView)
 NSECLK_ClockPanel.add(NSECLK_MinSecDot)
 NSECLK_ClockPanel.add(NSECLK_LabelSec)
@@ -478,13 +491,29 @@ NSECLK_Logo.setPreferredSize(awt.Dimension(660, 24))
 NSECLK_Logo.setBackground(NSECLK_RedFrame)
 NSECLK_Logo.setOpaque(True)
 
+# Plain red logo replacement for debranded mode
+class NSECLK_PlainRedPanel(swing.JPanel):
+    def paintComponent(self, g):
+        if self.isOpaque():
+            g.setColor(self.getBackground())
+            g.fillRect(0, 0, self.getWidth(), self.getHeight())
+
+NSECLK_PlainLogo = NSECLK_PlainRedPanel()
+NSECLK_PlainLogo.setPreferredSize(awt.Dimension(660, 24))
+NSECLK_PlainLogo.setBackground(NSECLK_RedFrame)
+NSECLK_PlainLogo.setOpaque(True)
+
 # Assemble
 # The real clock has the black aperture and grey strip as part of the same internal assembly.
 NSECLK_DisplayStack = swing.JPanel(awt.BorderLayout())
 NSECLK_DisplayStack.setOpaque(True)
 NSECLK_DisplayStack.setBackground(NSECLK_BlackPanel)
 NSECLK_DisplayStack.add(NSECLK_ClockHolder, awt.BorderLayout.CENTER)
-NSECLK_DisplayStack.add(NSECLK_Logo, awt.BorderLayout.SOUTH)
+if TAS_USER_SETTING_Debranded:
+    NSECLK_DisplayStack.add(NSECLK_PlainLogo, awt.BorderLayout.SOUTH)
+else:
+    NSECLK_DisplayStack.add(NSECLK_Logo, awt.BorderLayout.SOUTH)
+
 
 # Bezel: create a stepped red frame to better match the real clock.
 NSECLK_OuterStepBorder = swing.BorderFactory.createMatteBorder(4, 6, 4, 6, awt.Color(80, 0, 0))
