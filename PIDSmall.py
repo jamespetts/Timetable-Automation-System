@@ -303,11 +303,29 @@ def HasAnyTimingToday(reportingNumber, dayName):
             if str(rn) == str(reportingNumber) and str(d) == str(dayName):
                 return True
     return False
+    
+import java.beans as beans
 
+class _PidPropertyChangeListener(beans.PropertyChangeListener):
+    def __init__(self, callback):
+        self._callback = callback
+
+    def propertyChange(self, event):
+        try:
+            self._callback(event)
+        except Exception as ex:
+            try:
+                print("PID propertyChange callback failed:", ex)
+            except:
+                pass
 
 # -------------------- PID WINDOW (per platform) --------------------
+
 class PIDWindow(object):
-    def __init__(self, platform):
+    def __init__(self, platform, onCloseCallback=None):
+        self.platform = str(platform)
+        self.onCloseCallback = onCloseCallback
+        self.cleaned = False
         self.platform = str(platform)
         # UI
         self.frame = swing.JFrame("Passenger information display: platform " + self.platform)
@@ -448,21 +466,27 @@ class PIDWindow(object):
         # Track last "HH:mm" so we refresh only when minute changes
         self.lastMinuteKey = None
 
-        # listeners
-        timeMem.addPropertyChangeListener(self.updateDisplay)
-        dayMem.addPropertyChangeListener(self.updateDisplay)
+        # listeners (store a real Java listener instance so we can remove it reliably)
+        self._displayListener = _PidPropertyChangeListener(self.updateDisplay)
+
+        timeMem.addPropertyChangeListener(self._displayListener)
+        dayMem.addPropertyChangeListener(self._displayListener)
         if timetableMem is not None:
-            timetableMem.addPropertyChangeListener(self.updateDisplay)
+            timetableMem.addPropertyChangeListener(self._displayListener)
         if overridesMem is not None:
-            overridesMem.addPropertyChangeListener(self.updateDisplay)
+            overridesMem.addPropertyChangeListener(self._displayListener)
         if departTPMem is not None:
-            departTPMem.addPropertyChangeListener(self.updateDisplay)
+            departTPMem.addPropertyChangeListener(self._displayListener)
 
         # close handler
         import java.awt.event as awtevent
         class CloseHandler(awtevent.WindowAdapter):
             def windowClosing(inner_self, e):
                 self.cleanup(e)
+
+            def windowClosed(inner_self, e):
+                self.cleanup(e)
+
         self.frame.addWindowListener(CloseHandler())
 
         # Kick off
@@ -813,32 +837,64 @@ class PIDWindow(object):
             self.stopAltTimer()
 
     def cleanup(self, event=None):
-        try: self.scrollTimer.stop()
-        except: pass
-        try: self.clockTimer.stop()
-        except: pass
+        if getattr(self, "cleaned", False):
+            return
+        self.cleaned = True
+
         try:
-            if self.altTimer: self.altTimer.stop()
-        except: pass
+            self.scrollTimer.stop()
+        except:
+            pass
         try:
-            if self.animTimer: self.animTimer.stop()
-        except: pass
-        try: timeMem.removePropertyChangeListener(self.updateDisplay)
-        except: pass
-        try: dayMem.removePropertyChangeListener(self.updateDisplay)
-        except: pass
+            self.clockTimer.stop()
+        except:
+            pass
         try:
-            if timetableMem is not None:
-                timetableMem.removePropertyChangeListener(self.updateDisplay)
-        except: pass
+            if self.altTimer:
+                self.altTimer.stop()
+        except:
+            pass
         try:
-            if overridesMem is not None:
-                overridesMem.removePropertyChangeListener(self.updateDisplay)
-        except: pass
+            if self.animTimer:
+                self.animTimer.stop()
+        except:
+            pass
+
+        # Remove property listeners using the exact listener instance we added
         try:
-            if departTPMem is not None:
-                departTPMem.removePropertyChangeListener(self.updateDisplay)
-        except: pass
+            if hasattr(self, "_displayListener") and self._displayListener is not None:
+                try:
+                    timeMem.removePropertyChangeListener(self._displayListener)
+                except:
+                    pass
+                try:
+                    dayMem.removePropertyChangeListener(self._displayListener)
+                except:
+                    pass
+                try:
+                    if timetableMem is not None:
+                        timetableMem.removePropertyChangeListener(self._displayListener)
+                except:
+                    pass
+                try:
+                    if overridesMem is not None:
+                        overridesMem.removePropertyChangeListener(self._displayListener)
+                except:
+                    pass
+                try:
+                    if departTPMem is not None:
+                        departTPMem.removePropertyChangeListener(self._displayListener)
+                except:
+                    pass
+        except:
+            pass
+
+        # Inform manager (if any) that this window is gone
+        try:
+            if self.onCloseCallback is not None:
+                self.onCloseCallback(self.platform)
+        except:
+            pass
 
 # -------------------- MANAGER: spawns one window per platform --------------------
 class PlatformPIDManager(object):
@@ -857,7 +913,7 @@ class PlatformPIDManager(object):
         # create missing
         for p in plats:
             if p not in self.windows:
-                self.windows[p] = PIDWindow(p)
+                self.windows[p] = PIDWindow(p, self.onWindowClosed)
         # remove surplus
         to_remove = [p for p in self.windows.keys() if p not in plats]
         for p in to_remove:
@@ -886,6 +942,14 @@ class PlatformPIDManager(object):
     def refreshAll(self):
         for w in self.windows.values():
             w.updateDisplay()
+
+    def onWindowClosed(self, platform):
+        # Called by PIDWindow.cleanup() when the user closes a window
+        try:
+            if platform in self.windows:
+                del self.windows[platform]
+        except:
+            pass
 
 # -------------------- RUN --------------------
 PID_Manager = PlatformPIDManager()
