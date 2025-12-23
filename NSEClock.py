@@ -50,17 +50,20 @@ NSECLK_Blue       = awt.Color(0, 100, 190)
 NSECLK_White      = awt.Color(255, 255, 255)
 NSECLK_LogoRed    = awt.Color(190, 20, 20)
 
-# <<SETTING DESCRIPTION: Debranded>>
+# <<SETTING DESCRIPTION BOOLEAN: Debranded>>
 TAS_USER_SETTING_Debranded = False  # When True: (1) plain red logo strip; (2) seconds digits use NSECLK_Yellow
 
 # Read persisted value (if any) via TASBeanLookup (prefix-agnostic)
 try:
     import TASBeanLookup as TBL
-    _val = TBL.SafeGetOrCreateMemoryValue("DISPLAYOPT_NSECLOCK_DEBRANDED", "false")
+    _val = TBL.SafeGetOrCreateMemoryValue("TAS_USER_SETTING_DEBRANDED", "false")
+    _t = str(_val).strip().lower()
+    if _t in ["1","true","yes","y","on","enabled"]:
+        TAS_USER_SETTING_Debranded = True
+    elif _t in ["0","false","no","n","off","disabled"]:
+        TAS_USER_SETTING_Debranded = False
 except Exception:
     pass
-    _t = str(_val).strip().lower()
-
 
 # --------------------- VISUAL ADJUSTMENT PARAMETERS (pixel offsets) ---------------------
 # Pixel offsets

@@ -774,6 +774,84 @@ _PID_TAG_RE  = re.compile(r"<<\s*PID-DISP-NAME\s*:\s*(.*?)\s*>>")
 _SIG_TAG_RE  = re.compile(r"<<\s*SIG-DISP-NAME\s*:\s*(.*?)\s*>>")
 _DESC_TAG_RE = re.compile(r"<<\s*DESCRIPTION\s*:\s*(.*?)\s*>>")
 
+# Detect user setting description lines, e.g.:
+#   # <<SETTING DESCRIPTION BOOLEAN: Debranded>>
+_SETTING_DESC_RE = re.compile(r"\<\<\s*SETTING\s+DESCRIPTION\s+([A-Za-z]+)\s*:\s*(.*?)\s*\>\>")
+
+# Optional: enum values line (future use), e.g.:
+#   # <<SETTING ENUM VALUES Debranded: On|Off|Classic>>
+# If not present, ENUM will degrade to a plain text field until values are defined.
+_SETTING_ENUMVALS_RE = re.compile(r"\<\<\s*SETTING\s+ENUM\s+VALUES\s+([A-Za-z0-9 _\-]+)\s*:\s*(.*?)\s*\>\>")
+
+def _UserSettingMemoryName(label):
+    # "Debranded" -> "TAS_USER_SETTING_DEBRANDED"
+    try:
+        s = str(label).strip()
+    except:
+        s = ""
+    import re as _re
+    key = _re.sub(r"[^A-Za-z0-9]+", "_", s).upper()
+    return "TAS_USER_SETTING_" + key
+
+def _ScanSettingsForScript(fullPath):
+    """
+    Returns a list of dicts: [{"type": "...", "label": "...", "memory": "...", "enumValues": [...]}, ...]
+    Looks only at the first ~64KB like the display tag scanner.
+    """
+    out = []
+    text = _ReadDisplayScriptText(fullPath)
+    if not text:
+        return out
+
+    # Collect optional ENUM values by label (future-proof)
+    enumValsByLabel = {}
+    for ln in text.split("\n"):
+        m2 = _SETTING_ENUMVALS_RE.search(ln)
+        if m2:
+            lbl = (m2.group(1) or "").strip()
+            raw = (m2.group(2) or "").strip()
+            vals = [v.strip() for v in raw.split("|") if v.strip() != ""]
+            enumValsByLabel[lbl] = vals
+
+    for ln in text.split("\n"):
+        m = _SETTING_DESC_RE.search(ln)
+        if not m:
+            continue
+        stype = (m.group(1) or "").strip().upper()
+        label = (m.group(2) or "").strip()
+        mem = _UserSettingMemoryName(label)
+        entry = {"type": stype, "label": label, "memory": mem, "enumValues": enumValsByLabel.get(label, [])}
+        out.append(entry)
+    return out
+
+def ScanDisplayOptions():
+    """
+    Returns: settingsMap = { fileName.py : [ {type,label,memory,enumValues}, ... ], ... }
+    Scans the profile:jython folder for settings descriptors.
+    """
+    settingsMap = {}
+    try:
+        jdir = FileUtil.getExternalFilename("profile:jython")
+    except:
+        jdir = None
+    if not jdir or not os.path.isdir(jdir):
+        return settingsMap
+
+    try:
+        for fn in os.listdir(jdir):
+            if not fn.lower().endswith(".py"):
+                continue
+            fullPath = os.path.join(jdir, fn)
+            if not os.path.isfile(fullPath):
+                continue
+            opts = _ScanSettingsForScript(fullPath)
+            if opts:
+                settingsMap[fn] = opts
+    except Exception as ex:
+        LogWarn("Options scan failed: " + str(ex), alsoDialog=False)
+    return settingsMap
+
+
 def _ReadDisplayScriptText(fullPath):
     # Read a limited amount for speed; tags are expected in comments near the top.
     try:
@@ -1363,8 +1441,227 @@ class TASSetupFrame(jmri.util.JmriJFrame):
         def SaveSignaller(selection):
             TBL.SafeSetMemoryValue(IMSignallerDisplayList, ",".join(selection))
 
-        # Discover scripts from profile:jython
+        # Discover scripts from profile: jython
         pidFiles, sigFiles, pidNames, sigNames, descMap = ScanDisplayScripts()
+             
+        # Discover per-file configurable options
+        settingsMap = ScanDisplayOptions()
+
+        # Options area (shared; appears above description)
+        optionsPanel = JPanel()
+        optionsPanel.setOpaque(False)
+        optionsPanel.setLayout(GridBagLayout())
+        opg = GridBagConstraints()
+        opg.insets = Insets(2,2,2,2)
+        opg.fill = GridBagConstraints.HORIZONTAL
+        opg.gridx = 0
+        opg.gridy = 0
+        opg.weightx = 1.0
+
+        # Heading (kept hidden when no options)
+        lblOptsHeading = MakeHeading("Options")
+        optionsPanel.add(lblOptsHeading, opg)
+
+        # Container for controls (replaced per selection)
+        opg.gridy = 1
+        optsInner = JPanel()
+        optsInner.setOpaque(False)
+        optsInner.setLayout(GridBagLayout())
+        optionsPanel.add(optsInner, opg)
+
+        def _ClearOptions():
+            try:
+                optsInner.removeAll()
+                optsInner.revalidate()
+                optsInner.repaint()
+            except:
+                pass
+      
+        def _AddBooleanRow(labelText, memName, rowIdx):
+            # Ensure bean exists with a concrete default
+            try:
+                TBL.SafeGetOrCreateMemoryValue(memName, "false")
+            except:
+                pass
+            row = Box.createHorizontalBox()
+            chk = JCheckBox(labelText)
+            chk.setOpaque(False)
+            chk.setSelected(GetMemoryBool(memName, False))
+            def _apply(e=None):
+                SetMemoryBool(memName, chk.isSelected())
+            chk.addActionListener(lambda e: _apply())
+            row.add(chk)
+            g = GridBagConstraints()
+            g.insets = Insets(2,2,2,2)
+            g.gridx = 0
+            g.gridy = int(rowIdx)
+            g.fill = GridBagConstraints.HORIZONTAL
+            g.weightx = 1.0
+            optsInner.add(row, g)
+
+        def _AddStringRow(labelText, memName, rowIdx):
+            # Ensure bean exists (empty string default is acceptable for text)
+            try:
+                TBL.SafeGetOrCreateMemoryValue(memName, "")
+            except:
+                pass
+            row = Box.createHorizontalBox()
+            lbl = JLabel(labelText + ":")
+            txt = JTextField(20)
+            txt.setText(TBL.SafeGetOrCreateMemoryValue(memName, ""))
+            def _commit():
+                TBL.SafeSetMemoryValue(memName, txt.getText().strip())
+            txt.addActionListener(lambda e: _commit())
+            class _Lost(FocusAdapter):
+                def focusLost(self, e): _commit()
+            txt.addFocusListener(_Lost())
+            row.add(lbl); row.add(Box.createHorizontalStrut(6)); row.add(txt)
+            g = GridBagConstraints(); g.insets = Insets(2,2,2,2)
+            g.gridx=0; g.gridy=int(rowIdx)
+            g.fill=GridBagConstraints.HORIZONTAL; g.weightx=1.0
+            optsInner.add(row, g)
+
+        def _AddNumberRow(labelText, memName, rowIdx):
+            # Ensure bean exists with numeric default "0"
+            try:
+                TBL.SafeGetOrCreateMemoryValue(memName, "0")
+            except:
+                pass
+            row = Box.createHorizontalBox()
+            lbl = JLabel(labelText + ":")
+            txt = JTextField(8)
+            txt.setText(TBL.SafeGetOrCreateMemoryValue(memName, "0"))
+            def _commit():
+                s = txt.getText().strip()
+                try:
+                    _ = float(s)  # validate
+                    TBL.SafeSetMemoryValue(memName, s)
+                except:
+                    txt.setText(TBL.SafeGetOrCreateMemoryValue(memName, "0"))
+            txt.addActionListener(lambda e: _commit())
+            class _Lost(FocusAdapter):
+                def focusLost(self, e): _commit()
+            txt.addFocusListener(_Lost())
+            row.add(lbl); row.add(Box.createHorizontalStrut(6)); row.add(txt)
+            g = GridBagConstraints(); g.insets = Insets(2,2,2,2)
+            g.gridx=0; g.gridy=int(rowIdx)
+            g.fill=GridBagConstraints.HORIZONTAL; g.weightx=1.0
+            optsInner.add(row, g)
+
+        def _AddColorRow(labelText, memName, rowIdx):
+            # Ensure bean exists with a safe default colour
+            try:
+                TBL.SafeGetOrCreateMemoryValue(memName, GetDefaultBackgroundRGB())
+            except:
+                pass
+            row = Box.createHorizontalBox()
+            lbl = JLabel(labelText + ":")
+            swatch = JPanel()
+            swatch.setOpaque(True)
+            swatch.setBorder(BorderFactory.createLineBorder(Color(80,80,80), 1))
+            sw, sh = 80, 22
+            swatch.setPreferredSize(Dimension(sw, sh))
+            memRgb = TBL.SafeGetOrCreateMemoryValue(memName, GetDefaultBackgroundRGB())
+            current = _RgbStrToColorOrDefault(memRgb, Color(240,238,220))
+            swatch.setBackground(current)
+            class _Click(MouseAdapter):
+                def mouseClicked(self, e):
+                    try:
+                        initial = swatch.getBackground()
+                        chosen = JColorChooser.showDialog(None, "Choose colour", initial)
+                        if chosen is not None:
+                            swatch.setBackground(chosen)
+                            TBL.SafeSetMemoryValue(memName, _ColorToRgbStr(chosen))
+                    except Exception as ex:
+                        LogWarn("Colour chooser failed: " + str(ex), alsoDialog=True)
+            swatch.addMouseListener(_Click())
+            btnReset = JButton("Reset")
+            def _doReset(e=None):
+                try:
+                    defaultColor = _RgbStrToColorOrDefault(GetDefaultBackgroundRGB(), Color(240,238,220))
+                    swatch.setBackground(defaultColor)
+                    TBL.SafeSetMemoryValue(memName, _ColorToRgbStr(defaultColor))
+                except Exception as ex:
+                    LogWarn("Reset failed: " + str(ex), alsoDialog=True)
+            btnReset.addActionListener(lambda e: _doReset())
+            row.add(lbl); row.add(Box.createHorizontalStrut(6)); row.add(swatch); row.add(Box.createHorizontalStrut(6)); row.add(btnReset)
+            g = GridBagConstraints(); g.insets = Insets(2,2,2,2)
+            g.gridx=0; g.gridy=int(rowIdx)
+            g.fill=GridBagConstraints.HORIZONTAL; g.weightx=1.0
+            optsInner.add(row, g)
+
+        def _AddEnumRow(labelText, memName, values, rowIdx):
+            # Ensure bean exists; leave value unchanged if already set
+            try:
+                TBL.SafeGetOrCreateMemoryValue(memName, "" if not values else values[0])
+            except:
+                pass
+            if isinstance(values, list) and len(values) > 0:
+                row = Box.createHorizontalBox()
+                lbl = JLabel(labelText + ":")
+                cmb = JComboBox(values)
+                current = TBL.SafeGetOrCreateMemoryValue(memName, values[0])
+                try:
+                    if current in values:
+                        cmb.setSelectedItem(current)
+                except:
+                    pass
+                def _apply(e=None):
+                    val = str(cmb.getSelectedItem())
+                    TBL.SafeSetMemoryValue(memName, val)
+                cmb.addActionListener(lambda e: _apply())
+                row.add(lbl); row.add(Box.createHorizontalStrut(6)); row.add(cmb)
+                g = GridBagConstraints(); g.insets = Insets(2,2,2,2)
+                g.gridx=0; g.gridy=int(rowIdx)
+                g.fill=GridBagConstraints.HORIZONTAL; g.weightx=1.0
+                optsInner.add(row, g)
+            else:
+                _AddStringRow(labelText, memName, rowIdx)
+
+        def ShowOptionsForFile(fname):
+            """
+            Rebuild the options controls for the currently selected display script.
+            Hidden when there are no settings for this script.
+            """
+            _ClearOptions()
+            opts = settingsMap.get(fname, [])
+            hasOpts = isinstance(opts, list) and len(opts) > 0
+
+            try:
+                lblOptsHeading.setVisible(hasOpts)
+            except:
+                pass
+            try:
+                optionsPanel.setVisible(hasOpts)
+            except:
+                pass
+
+            if not hasOpts:
+                return
+
+            # Build rows
+            r = 0
+            for o in opts:
+                stype = (o.get("type","") or "").upper()
+                label = o.get("label","") or ""
+                mem = o.get("memory","") or _UserSettingMemoryName(label)
+                if stype == "BOOLEAN":
+                    _AddBooleanRow(label, mem, r)
+                elif stype == "STRING":
+                    _AddStringRow(label, mem, r)
+                elif stype == "NUMBER":
+                    _AddNumberRow(label, mem, r)
+                elif stype == "COLOR":
+                    _AddColorRow(label, mem, r)
+                elif stype == "ENUM":
+                    _AddEnumRow(label, mem, o.get("enumValues", []), r)
+                else:
+                    # Unknown -> treat as STRING to avoid breaking
+                    _AddStringRow(label, mem, r)
+                r += 1
+
+        # (Existing description area code continues below)
+
 
         # Description area (shared between both panels)
         from javax.swing import JTextArea
@@ -1378,15 +1675,21 @@ class TASSetupFrame(jmri.util.JmriJFrame):
             BorderFactory.createLineBorder(Color(180,170,150), 1),
             BorderFactory.createEmptyBorder(6,6,6,6)
         ))
-
+     
         def ShowDescriptionForFile(fname):
             try:
+                # Update description text
                 txt = descMap.get(fname, "")
                 if txt is None:
                     txt = ""
                 descArea.setText(str(txt))
                 try:
                     descArea.setCaretPosition(0)
+                except:
+                    pass
+                # ALSO update the options pane for this selection
+                try:
+                    ShowOptionsForFile(fname)
                 except:
                     pass
             except:
@@ -1436,10 +1739,17 @@ class TASSetupFrame(jmri.util.JmriJFrame):
         descScroll.getViewport().setBackground(THEME_PAPER)
         descScroll.setPreferredSize(Dimension(660, 110))
         descPanel.add(descScroll, dg)
-
+         
+        # Row 2: Options panel (visible only when a selected display has options)
         gbc.gridx = 0
         gbc.gridy = 2
+        gbc.weighty = 0.0
+        root.add(optionsPanel, gbc)
+
+        # Row 3: Description box (moved down one row)
+        gbc.gridy = 3
         gbc.weighty = 0.10
+
         root.add(descPanel, gbc)
 
         return root
