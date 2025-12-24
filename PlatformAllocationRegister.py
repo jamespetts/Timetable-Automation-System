@@ -23,27 +23,67 @@ from jmri.util import FileUtil
 from java.lang import Runtime, Thread, Runnable
 from jmri.implementation import AbstractShutDownTask
 from jmri import ShutDownManager
+from jmri.beans import PropertyChangeSupport  # thread-safe event helper
 
 register = Hashtable()
 
 _SAVE_PATH = os.path.join(FileUtil.getProfilePath(), "platform_allocation_register.json")
 
+# Event helper for property-change listeners (thread-safe)
+_pcs = PropertyChangeSupport()
+
+# This will fire an event whenever a platform is registered.
+# It is up to the consuming script to check whether the platform registration amounts to a platform *alteration* 
+# by cross-checking against the allocated platform in the timetable.
 def registerPlatform(reportingNumber, platform):
     print("Registering", reportingNumber, "at platform", platform)
-    register.put(reportingNumber, str(platform))
+    oldVal = register.get(reportingNumber)
+    newVal = str(platform)
+    register.put(reportingNumber, newVal)
+    try:
+        _pcs.firePropertyChange("platformAllocationChanged",
+                                oldVal,
+                                {"rn": str(reportingNumber), "platform": newVal, "op": "register"})
+    except Exception as e:
+        print("PlatformAllocationRegister: event dispatch failed (register):", str(e))
 
 def getPlatform(reportingNumber):
     return register.get(reportingNumber)
 
 def deregisterPlatform(reportingNumber):
-    register.remove(reportingNumber)
+    # Only fire if the RN existed in the register
+    if register.containsKey(reportingNumber):
+        oldVal = register.get(reportingNumber)
+        register.remove(reportingNumber)
+        try:
+            _pcs.firePropertyChange("platformAllocationChanged",
+                                    oldVal,
+                                    {"rn": str(reportingNumber), "platform": None, "op": "deregister"})
+        except Exception as e:
+            print("PlatformAllocationRegister: event dispatch failed (deregister):", str(e))
     
 def updatePlatform(reportingNumber, platform):
     if register.containsKey(reportingNumber):
-        register.put(reportingNumber, str(platform))
-        return True  # Indicate success
+        oldVal = register.get(reportingNumber)
+        newVal = str(platform)
+        register.put(reportingNumber, newVal)
+        try:
+            _pcs.firePropertyChange("platformAllocationChanged",
+                                    oldVal,
+                                    {"rn": str(reportingNumber), "platform": newVal, "op": "update"})
+        except Exception as e:
+            print("PlatformAllocationRegister: event dispatch failed (update):", str(e))
+        return True
     else:
-        return False  # Indicate failure (train not found)
+        return False
+
+def addPlatformListener(listener):
+    # listener must implement java.beans.PropertyChangeListener (Jython object with propertyChange(self, evt))
+    _pcs.addPropertyChangeListener("platformAllocationChanged", listener)
+    _pcs.addPropertyChangeListener("platformRegisterLoaded", listener)
+
+def removePlatformListener(listener):
+    _pcs.removePropertyChangeListener(listener)
 
 def save():
     d = {}

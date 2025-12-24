@@ -30,6 +30,10 @@ import TASBeanLookup as TBL
 import java.text.SimpleDateFormat as SimpleDateFormat
 from java.beans import PropertyChangeListener
 from java.awt.event import WindowAdapter
+from java.awt.event import ActionListener  # for Timer tick
+from javax.swing import Timer              # 500ms flash timer
+from java.lang import System               # currentTimeMillis for 1-minute flash window
+import PlatformAllocationRegister as PAR   # precedence + event listener
 from DisruptionRegister import getDisruption
 import TimingRegister as TR  # read-only timing tuples: (reportingNumber, direction, time, day)
 
@@ -288,6 +292,34 @@ class CRTSUM_WindowCloseHandler(WindowAdapter):
         except:
             pass
 
+class CRTSUM_PlatformChangeListener(PropertyChangeListener):
+    """Listens to PlatformAllocationRegister events and triggers refresh + flashing."""
+    def __init__(self, owner):
+        self.owner = owner
+    def propertyChange(self, e):
+        try:
+            if str(e.getPropertyName()) != "platformAllocationChanged":
+                return
+            payload = e.getNewValue()
+            if not isinstance(payload, dict):
+                return
+            rn = str(payload.get("rn") or "")
+            # Start a 1-minute visual flash on PLAT for this RN, then refresh
+            self.owner._startPlatformFlash(rn)
+            self.owner.refresh()
+        except Exception as ex:
+            print("[PIDCRTSummary] Platform listener error:", str(ex))
+
+class CRTSUM_FlashTick(ActionListener):
+    """Toggles visibility of flashing platforms every 500ms and stops at 1 minute."""
+    def __init__(self, owner):
+        self.owner = owner
+    def actionPerformed(self, e):
+        try:
+            self.owner._onFlashTick()
+        except Exception as ex:
+            print("[PIDCRTSummary] FlashTick error:", str(ex))
+
 # ------------------------- PANELS -------------------------
 class CRTSUM_CabinetPanel(swing.JPanel):
     def __init__(self):
@@ -373,7 +405,12 @@ class CRTSUM_SummaryTablePanel(swing.JPanel):
         self.W_TO = 22; self.W_PL = 4; self.W_TI = 4; self.W_EX = 9
         self.color = CRTSUM_CrtTextAmber
         self._last_meas = None  # (cw, lineH, rows, cols, fontSize)
-        self._locked_size = None  # when set, freeze font size
+        self._locked_size = None  # when set, freeze font size 
+        self.flashMap = {}  # rn -> {"show": bool, "until": millisDeadline}
+
+    def setFlashMap(self, flashMap):
+        # Called by window to update current flash states per RN
+        self.flashMap = flashMap or {}
     def lockFontSize(self, size):
         self._locked_size = size
         self.repaint()
@@ -453,20 +490,28 @@ class CRTSUM_SummaryTablePanel(swing.JPanel):
         # Rows
         y += lineH
         for it in self.items:
-            to  = (it.get("dest") or "").upper()
-            pl  = (str(it.get("plat") or "")).upper()
+            rn = (it.get("rn") or "").strip()
+            to = (it.get("dest") or "").upper()
+            pl_val = (str(it.get("plat") or "")).upper()
             tim = CRTSUM_FormatHHmm(it.get("time") or "")
-            exp = (it.get("_expected_text") or "")  # sentence-case
+            exp = (it.get("_expected_text") or "")
+
             def pad(s, w):
                 s = (s or "")
                 if len(s) > w: s = s[:w]
                 return s + " " * max(0, w - len(s))
-            to  = pad(to,  self.W_TO)
-            pl  = pad(pl,  self.W_PL)
+
+            # Flash logic: if rn has a flash entry and 'show' is False, draw blanks in PLAT
+            flashEntry = self.flashMap.get(rn) if self.flashMap else None
+            platShown = (flashEntry is None) or bool(flashEntry.get("show", True))
+            pl = pad(pl_val if platShown else "", self.W_PL)
+
+            to = pad(to, self.W_TO)
             tim = pad(tim, self.W_TI)
             exp = pad(exp, self.W_EX)
-            g2.drawString(to,  x_to, y)
-            g2.drawString(pl,  x_pl, y)
+
+            g2.drawString(to, x_to, y)
+            g2.drawString(pl, x_pl, y)
             g2.drawString(tim, x_tm, y)
             g2.drawString(exp, x_ex, y)
             y += lineH
@@ -535,11 +580,73 @@ class CRTSUM_CRTSummaryWindow(object):
         self._rows_cache = None
         self.frame.pack(); self.frame.setResizable(False)
         self.refresh(); self.frame.setVisible(True)
+              
+        # --- Platform allocation listener + flash timer (500ms on/off for 1 minute) ---
+        self._flashMap = {}            # rn -> {"show": True/False, "until": millisDeadline}
+        self._flashTick = CRTSUM_FlashTick(self)
+        self._flashTimer = None        # javax.swing.Timer
+        self.table.setFlashMap(self._flashMap)
+
+        # Subscribe to PlatformAllocationRegister events
+        self._parListener = CRTSUM_PlatformChangeListener(self)
+        try:
+            PAR.addPlatformListener(self._parListener)
+        except Exception as ex:
+            print("[PIDCRTSummary] Failed to add platform listener:", str(ex))
 
     def _applyTableBounds(self, crtPanelW, crtPanelH):
         # Fill glass; the panel itself will center content inside using margins
         self.table.setBounds(CRTSUM_BezelInset, CRTSUM_BezelInset,
                              crtPanelW - 2*CRTSUM_BezelInset, crtPanelH - 2*CRTSUM_BezelInset)
+
+    def _startPlatformFlash(self, rn):
+        """Begin a 1-minute flash for this RN; 500ms cadence."""
+        if not rn:
+            return
+        # Set deadline and initial visible-state
+        self._flashMap[rn] = {"show": True, "until": System.currentTimeMillis() + 60 * 1000}
+        self.table.setFlashMap(self._flashMap)
+        # Start timer if needed
+        if self._flashTimer is None:
+            try:
+                self._flashTimer = Timer(500, self._flashTick)  # 500ms
+                self._flashTimer.setRepeats(True)
+                self._flashTimer.start()
+            except Exception as ex:
+                print("[PIDCRTSummary] Failed to start flash timer:", str(ex))
+        # Ensure a repaint now so first 'on' state is visible immediately
+        try:
+            self.table.repaint()
+        except:
+            pass
+
+    def _onFlashTick(self):
+        """Timer tick: flip visibility; end flash when deadline passes."""
+        now = System.currentTimeMillis()
+        stale = []
+        for rn, st in self._flashMap.items():
+            if st.get("until", now) <= now:
+                stale.append(rn)
+            else:
+                st["show"] = not bool(st.get("show", True))
+        # Drop expired RN entries
+        for rn in stale:
+            try:
+                del self._flashMap[rn]
+            except:
+                pass
+        # Stop timer if no active flashes
+        if not self._flashMap and self._flashTimer is not None:
+            try:
+                self._flashTimer.stop()
+            except:
+                pass
+            self._flashTimer = None
+        # Repaint table to reflect new visibility state
+        try:
+            self.table.repaint()
+        except:
+            pass
 
     # -------- Data helpers --------
     def _rows_today(self):
@@ -570,8 +677,13 @@ class CRTSUM_CRTSummaryWindow(object):
             rn = (row.get("Reporting number","") or "").strip()
             # ---- NEW: skip ECS/empty-to-depot workings
             if CRTSUM_IsEcsWorking(row):
-                continue
-            plat = CRTSUM_GetOverride(rn) or CRTSUM_PlatformField(row)
+                continue          
+            # Platform precedence: allocation register > timetable 
+            alloc = PAR.getPlatform(rn)
+            if alloc is not None and str(alloc).strip():
+                plat = str(alloc)
+            else:
+                plat = CRTSUM_GetOverride(rn) or CRTSUM_PlatformField(row)
             depMin = CRTSUM_ParseMinutes(dep)
             if depMin is None or depMin < curMin:
                 continue
@@ -700,7 +812,6 @@ class CRTSUM_CRTSummaryWindow(object):
             print("[PIDCRTSummary] Failed to set PID window icon: " + str(ex))
         
         self._tightened_once = True
-
     
     def cleanup(self):
         # Remove property listeners using the same listener object that was added
@@ -750,6 +861,26 @@ class CRTSUM_CRTSummaryWindow(object):
                 self.frame.removeWindowListener(wc)
             except:
                 pass
+
+        # Unsubscribe from PlatformAllocationRegister and stop flash timer
+        try:
+            parL = getattr(self, "_parListener", None)
+        except:
+            parL = None
+        if parL is not None:
+            try:
+                PAR.removePlatformListener(parL)
+            except:
+                pass
+        try:
+            if self._flashTimer is not None:
+                self._flashTimer.stop()
+        except:
+            pass
+        try:
+            self._flashTimer = None
+        except:
+            pass
 
         # Drop references to help GC
         try:
