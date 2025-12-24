@@ -19,11 +19,12 @@ import jmri
 from jmri.util import FileUtil
 # Registers
 from DisruptionRegister import registerDisruption, updateDisruption, getDisruption, deregisterDisruption
-import DisruptionRegister as DR # enumerate all registered RNs safely
+import DisruptionRegister as DR # enumerate all registered reporting numbers safely
 import TimingRegister as TR
 import TASUtil as TU
 import TrainLocatorRegister as TLR
 import TASBeanLookup as TBL
+import PlatformAllocationRegister as PAR  # clear previous day's platform allocation on first disruption
 # -------------------------------------------------------------------------------------------------
 # In-memory, per-session state (NOT persisted)
 # Resets cleanly at layout-day rollover (IMDAYOFWEEK changes).
@@ -556,9 +557,13 @@ def _publish_at_virtual_tp(tpEvent, row, rn, dayName, actualMinute, curDelay):
     try:
         existing = getDisruption(rn)
         if isinstance(curDelay, int) and curDelay == 1442:
-            # Promote to cancelled (1441) at this TP
-            if existing is None:
-                registerDisruption(rn, 1441)
+            # Promote to cancelled (1441) at this TP       
+        if existing is None:
+            try: 
+                PAR.deregisterPlatform(rn)
+            except Exception: 
+                pass
+            registerDisruption(rn, 1441)
             else:
                 updateDisruption(rn, 1441)
             try:
@@ -568,6 +573,10 @@ def _publish_at_virtual_tp(tpEvent, row, rn, dayName, actualMinute, curDelay):
         else:
             val = int(curDelay or 0)
             if existing is None:
+                try: 
+                    PAR.deregisterPlatform(rn)
+                except Exception: 
+                    pass
                 registerDisruption(rn, val)
             else:
                 updateDisruption(rn, val)
@@ -927,7 +936,11 @@ def _ensure_initialized(nowMins, rn, firstTp, g, allowDelays, allowCancel, seed0
         if nowMins >= initMinute or nowMins >= firstTp:
             _master_initialize(rn, g, allowDelays, allowCancel, seed0)
             
-def _master_initialize(rn, g, allowDelays, allowCancel, seed0):
+def _master_initialize(rn, g, allowDelays, allowCancel, seed0): 
+    # Clear platform allocation at the moment that we first create disruption 
+    #(or register the lack thereof) for this reporting number
+    try: PAR.deregisterPlatform(rn)
+    except Exception: pass
     if not g:
         registerDisruption(rn, 0); return
     pDelay = g["pDelay"] if allowDelays else 0.0
@@ -1035,8 +1048,13 @@ def _init_state_for_train(row, rn, groups, ttName, dayName, mainTimes, klass, se
     firstRelevant = firstPre if firstPre is not None else mainTimes.get("main")
     st["firstRelevantMinute"] = firstRelevant
     st["lastSimMinute"] = firstRelevant
-    # Window-gated initialisation (unchanged behaviour)
-    if getDisruption(rn) is None and firstRelevant is not None:
+    # Window-gated initialisation
+    if getDisruption(rn) is None and firstRelevant is not None:    
+            # Clear platform allocation from the previous working just before we first register disruption
+            try: 
+                PAR.deregisterPlatform(rn)
+            except Exception: 
+                pass
         if g:
             a = max(0, int(g.get("checkMax", 60))); b = max(0, int(g.get("checkMin", 30)))
         else:
@@ -1113,20 +1131,24 @@ def _publish_due_virtuals(nowMins, row, rn, dayName, st, segment, allowDelays):
             try:
                 mag = int(st["planned"].get("mag") or 0)
             except Exception:
-                mag = 0
-            if pType == "delay" and mag > 0 and allowDelays:
-                if getDisruption(rn) is None:
-                    registerDisruption(rn, mag)
-                else:
-                    updateDisruption(rn, mag)
-                curInt = mag
-            elif pType == "early" and mag > 0 and allowDelays:
-                val = -mag
-                if getDisruption(rn) is None:
-                    registerDisruption(rn, val)
-                else:
-                    updateDisruption(rn, val)
-                curInt = val
+                mag = 0          
+        if pType == "delay" and mag > 0 and allowDelays:
+            if getDisruption(rn) is None:
+                try: PAR.deregisterPlatform(rn)
+                except Exception: pass
+                registerDisruption(rn, mag)
+            else:
+                updateDisruption(rn, mag)
+            curInt = mag
+        elif pType == "early" and mag > 0 and allowDelays:
+            val = -mag
+            if getDisruption(rn) is None:
+                try: PAR.deregisterPlatform(rn)
+                except Exception: pass
+                registerDisruption(rn, val)
+            else:
+                updateDisruption(rn, val)
+            curInt = val
 
         # --- Materialise planned at_tp outcome exactly once, if not yet manifested ---
         if st.get("planned") and st["planned"].get("manifest") == "at_tp" and not st.get("manifestedAtTP", False):
