@@ -31,6 +31,7 @@ import java.text.SimpleDateFormat as SimpleDateFormat
 from java.awt.geom import Area, RoundRectangle2D, Ellipse2D
 import TimingRegister as TR  # read-only tuples (reportingNumber, direction, time, day)
 import TASBeanLookup as TBL
+import PlatformAllocationRegister as PAR  # allocation takes precedence over timetable/overrides
 
 # -------------------- TYPEFACE & COLOURS --------------------
 def FBP_PickFamily(cands):
@@ -117,7 +118,7 @@ FBP_TimeParser12 = SimpleDateFormat("h:mm a")
 FBP_FmtHHmm = SimpleDateFormat("HH:mm")
 
 def FBP_ParseMinutes(s):
-    for p in [FBP_TimeParser24, FBP_TimeParser12]:
+    for p in [FBP_TimeParser12, FBP_TimeParser24]:
         try:
             d = p.parse(s); return d.getHours()*60 + d.getMinutes()
         except:
@@ -125,7 +126,7 @@ def FBP_ParseMinutes(s):
     return None
 
 def FBP_NormTime(s):
-    for p in [FBP_TimeParser24, FBP_TimeParser12]:
+    for p in [FBP_TimeParser12, FBP_TimeParser24]:
         try:
             d = p.parse(s); return FBP_FmtHHmm.format(d)
         except:
@@ -293,8 +294,13 @@ def FBP_PickNextTrainForPlatform(platform):
         if ((row.get(curDay,"") or "").strip().lower() != "true"):
             continue
 
-        rn   = (row.get("Reporting number","") or "").strip()
-        plat = FBP_GetOverride(rn) or FBP_PlatformField(row)
+        # Platform precedence: allocation register > overrides > timetable
+        rn = (row.get("Reporting number","") or "").strip()
+        alloc = PAR.getPlatform(rn)
+        if alloc is not None and str(alloc).strip():
+            plat = str(alloc).strip()
+        else:
+            plat = FBP_GetOverride(rn) or FBP_PlatformField(row)
         if str(plat) != str(platform):
             continue
 
@@ -646,6 +652,15 @@ class FBP_FingerBoardWindow(object):
         if FBP_WithInMinMem is not None: FBP_WithInMinMem.addPropertyChangeListener(self.refresh)
         if FBP_HideClocksEmptyMem is not None: FBP_HideClocksEmptyMem.addPropertyChangeListener(self.refresh)
 
+        # Also refresh immediately on platform allocation register events
+        try:
+            PAR.addPlatformListener(self.refresh)
+        except Exception as ex:
+            try:
+                print("[PIDFingerboard] Failed to add platform allocation listener:", ex)
+            except:
+                pass
+
         self.refresh()
 
     def refresh(self, e=None):
@@ -682,6 +697,11 @@ class FBP_FingerBoardWindow(object):
         try:
             if FBP_HideClocksEmptyMem is not None: FBP_HideClocksEmptyMem.removePropertyChangeListener(self.refresh)
         except: pass
+        # Remove platform allocation listener
+        try:
+            PAR.removePlatformListener(self.refresh)
+        except:
+            pass
      
     def onWindowClosed(self):
         # Called by the window listener for both 'closing' and 'closed' events
@@ -700,7 +720,7 @@ class FBP_FingerBoardWindow(object):
         except:
             pass
 
-# -------------------- MANAGER — windows per platform --------------------
+# -------------------- MANAGER - windows per platform --------------------
 def FBP_DetectPlatforms():
     plats = set()
     for r in FBP_CsvRows():

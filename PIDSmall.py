@@ -39,6 +39,7 @@ import java.text.SimpleDateFormat as SimpleDateFormat
 from DisruptionRegister import getDisruption
 import TimingRegister as TR  # read-only access to timing tuples
 import TASBeanLookup as TBL
+import PlatformAllocationRegister as PAR  # allocation takes precedence over timetable/overrides 
 
 # -------------------- THEME / UI CONFIG --------------------
 WINDOW_WIDTH = 800  # width of the content area (panels)
@@ -477,6 +478,15 @@ class PIDWindow(object):
             overridesMem.addPropertyChangeListener(self._displayListener)
         if departTPMem is not None:
             departTPMem.addPropertyChangeListener(self._displayListener)
+        
+        # Also refresh immediately on platform allocation register events
+        try:
+            PAR.addPlatformListener(self._displayListener)
+        except Exception as ex:
+            try:
+                print("[PIDSmall] Failed to add platform allocation listener:", ex)
+            except:
+                pass
 
         # close handler
         import java.awt.event as awtevent
@@ -701,10 +711,14 @@ class PIDWindow(object):
             depTime = (row.get("Dep", "") or "").strip()
             if not depTime:
                 continue
-
-            # platform from row or override
+                
+            # Platform precedence: allocation register > timetable
             rn = (row.get("Reporting number", "") or "").strip()
-            plat = getPlatformOverride(rn) or platform_field(row)
+            alloc = PAR.getPlatform(rn)
+            if alloc is not None and str(alloc).strip():
+                plat = str(alloc).strip()
+            else:
+                plat = getPlatformOverride(rn) or platform_field(row)
             if str(plat) != self.platform:
                 continue
 
@@ -888,6 +902,12 @@ class PIDWindow(object):
                     pass
         except:
             pass
+                      
+        # Remove platform allocation listener
+        try:
+            PAR.removePlatformListener(self._displayListener)
+        except:
+            pass
 
         # Inform manager (if any) that this window is gone
         try:
@@ -906,6 +926,17 @@ class PlatformPIDManager(object):
             overridesMem.addPropertyChangeListener(self.onOverridesChanged)
         if departTPMem is not None:
             departTPMem.addPropertyChangeListener(self.onOverridesChanged)
+                  
+        # Manager refresh on platform allocation changes
+        try:
+            self._parListener = _PidPropertyChangeListener(self.onOverridesChanged)
+            PAR.addPlatformListener(self._parListener)
+        except Exception as ex:
+            try:
+                print("[PIDSmall] Failed to add manager PAR listener:", ex)
+            except:
+                pass
+
         self.buildWindows()
 
     def buildWindows(self):

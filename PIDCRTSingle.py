@@ -33,6 +33,7 @@ from java.awt.event import WindowAdapter
 from DisruptionRegister import getDisruption
 import TimingRegister as TR  # read-only access to timing tuples (reportingNumber, direction, time, day)
 import TASBeanLookup as TBL
+import PlatformAllocationRegister as PAR   # allocation takes precedence over timetable/overrides
 
 # ==================
 # UNIFORM SCALING
@@ -512,6 +513,12 @@ class CRTS_CRTPIDWindow(object):
         self.crt.setBounds(CRTS_SideMargin, CRTS_HeaderHeight + CRTS_TopMargin, crtPanelW, crtPanelH)
         self.crt.setLayout(None)
         self.inner.add(self.crt)
+               
+        # Also refresh immediately on platform allocation changes (no flashing here)
+        try:
+            PAR.addPlatformListener(self.RefreshListener)
+        except Exception as ex:
+            print("[PIDCRTSingle] Failed to add platform allocation listener:", str(ex))
 
         # ---- layout inside CRT ----
         crtW, crtH = crtPanelW, crtPanelH
@@ -684,15 +691,23 @@ class CRTS_CRTPIDWindow(object):
             # NEW: skip ECS/empty-to-depot workings
             if CRTS_IsEcsWorking(row):
                 continue
+                
+            # Platform precedence: allocation register > timetable
+            alloc = PAR.getPlatform(rn)
+            if alloc is not None and str(alloc).strip():
+                plat = str(alloc).strip()
+            else:
+                plat = CRTS_GetOverride(rn) or CRTS_PlatformField(row)
 
-            plat = CRTS_GetOverride(rn) or CRTS_PlatformField(row)
             if str(plat) != self.platform:
                 continue
+
             depMin = CRTS_ParseMinutes(dep)
             if depMin is None:
                 continue
-            dest = (row.get("Destination","") or "").strip()
-            calling = (row.get("Calling pattern","") or "").strip()
+                           
+            destText = (row.get("Destination","") or "").strip()
+            callingText = (row.get("Calling pattern","") or "").strip()
 
             try:
                 d = getDisruption(rn)
@@ -733,6 +748,10 @@ class CRTS_CRTPIDWindow(object):
                     continue
 
             adjusted = expMin if expMin is not None else depMin
+        
+            # --- Ensure required fields are defined in this scope (avoid NameError) ---
+            destText = (row.get("Destination", "") or "").strip()
+            callingText = (row.get("Calling pattern", "") or "").strip()
 
             # Due-within-X constraint
             delta = (adjusted - curMin) % (24*60)
@@ -743,8 +762,8 @@ class CRTS_CRTPIDWindow(object):
                     "depMin": depMin,
                     "adjMin": adjusted,
                     "expMin": expMin,
-                    "dest": dest,
-                    "calling": calling,
+                    "dest": destText,
+                    "calling": callingText,
                     "cancelled": cancelled
                 })
             else:
