@@ -53,6 +53,8 @@ ENEMY_SHOT_H = 8
 ENEMY_SHOT_SPEED = 5
 
 LIVES_START = 3
+# Classic extra life: award once when the score reaches this threshold.
+EXTRA_LIFE_SCORE = 1500  # one-time bonus life at 1,500 points (arcade)  # [1](http://tips.retrogames.com/gamepage/invaders.html)
 PLAYER_HIT_FLASH_MS = 60
 LEVEL_SPEED_INCREMENT = 0.15
 EXPLOSION_TOTAL_MS = 96 
@@ -65,13 +67,18 @@ MOTHER_SPEED = 2.2
 MOTHER_SPAWN_CHANCE = 0.0012 
 MOTHER_SCORE = 200 
 MOTHER_DISABLE_FIRE_MS = 3000
+# After aliens regain fire, boost their fire chance for this duration (ms)
+ALIEN_FIRE_BOOST_MS = 1350
+# Red flash window (ms) before they recover fire
+ALIEN_FLASH_RED_WINDOW_MS = 500
 SHIELD_COUNT = 4 
 SHIELD_PIXEL = 5 
 SHIELD_ROWS = 8 
 SHIELD_COLS = 14 
 SHIELD_Y = PANEL_H - 150 
 SHIELD_MARGIN_X = 70 
-SHIELD_ERODE_RADIUS = 2 
+SHIELD_ERODE_RADIUS_PLAYER = 1
+SHIELD_ERODE_RADIUS_ENEMY = 2
 
 # Animation pacing (larger = slower alien wiggle)
 ANIM_TICKS_PER_FLIP = 8
@@ -114,6 +121,15 @@ HS_COLORS = [
 HS_HEADER_FG = Color(0, 255, 120)
 HS_BORDER = Color(140, 140, 160)
 HS_COLUMNS_FG = Color(210, 210, 220)
+
+# Classic Space Invaders scoring
+ALIEN_SCORE_BY_KIND = {
+    "SQUID": 30,   # top row
+    "CRAB": 20,    # middle rows
+    "OCTO": 10     # bottom row
+}
+# UFO (mother ship) classic mystery score: 50/100/150/300 (weighted by the original 15-shot loop)
+# We keep MOTHER_SCORE constant defined above for compatibility but won't use it for scoring.
 
 # Colors (game)
 CLR_BG = Color(16, 16, 20)
@@ -163,14 +179,19 @@ def DrawShip(g2, x, y, w, h):
     notchW = int(0.06*bw); notchH = int(0.08*bh)
     g2.fillRect(bx + int(0.47*bw), by + int(0.18*bh), notchW, notchH)
 
-def DrawAlienSprite(g2, x, y, w, h, kind, phase, rowIdx, FlashWhite=False):
+
+def DrawAlienSprite(g2, x, y, w, h, kind, phase, rowIdx, FlashWhite=False, FlashRed=False):
     ax = int(x); ay = int(y); aw = int(w); ah = int(h)
     baseCol = ROW_COLORS_PHASE0[min(max(0, rowIdx), len(ROW_COLORS_PHASE0)-1)]
-    altCol = ROW_COLORS_PHASE1[min(max(0, rowIdx), len(ROW_COLORS_PHASE1)-1)]  
-    # Flash white on the alternate animation phase when aliens are fire-disabled
-    if FlashWhite and phase == 1:
-        baseCol = Color(255, 255, 255)
-        altCol = Color(255, 255, 255)
+    altCol  = ROW_COLORS_PHASE1[min(max(0, rowIdx), len(ROW_COLORS_PHASE1)-1)]
+    # Flash effect on the alternate animation phase
+    if phase == 1:
+        if FlashRed:
+            baseCol = Color(255, 60, 60)   # bright red
+            altCol  = Color(255, 60, 60)
+        elif FlashWhite:
+            baseCol = Color(255, 255, 255)
+            altCol  = Color(255, 255, 255)
     g2.setColor(baseCol if (phase == 0) else altCol)
 
     if kind == "SQUID":
@@ -384,6 +405,7 @@ class GamePanel(JPanel):
         self.Attract = True
         self.ShowScores = False
         self.PromptedHS = False
+        self.BonusLifeAwarded = False  # one-time extra life has not yet been awarded
 
         self.PlayerX = PANEL_W / 2 - PLAYER_W / 2
         self.PlayerY = PANEL_H - 64
@@ -396,8 +418,11 @@ class GamePanel(JPanel):
 
         self.MotherActive = False
         self.MotherX = -MOTHER_W
-        self.MotherDir = 1
+        self.MotherDir = 1   
         self.AlienFireDisableMs = 0
+        self.AlienFireBoostMs = 0
+        
+        self.ShowGameOver = False
 
         self.AlienDir = 1
         self.AlienSpeed = ALIEN_BASE_SPEED
@@ -407,7 +432,19 @@ class GamePanel(JPanel):
 
         self.BuildAliens()
         self.BuildShields()
-
+   
+    def MaybeAwardBonusLife(self):
+        # Award exactly one extra life once the score reaches EXTRA_LIFE_SCORE.
+        # Safe against multiple calls; does nothing once awarded.
+        try:
+            if not hasattr(self, "BonusLifeAwarded"):
+                self.BonusLifeAwarded = False
+            if (not self.BonusLifeAwarded) and int(self.Score) >= int(EXTRA_LIFE_SCORE):
+                self.Lives += 1
+                self.BonusLifeAwarded = True
+        except:
+            pass
+    
     def BuildAliens(self):
         self.Aliens = []
         for r in range(ALIEN_ROWS):
@@ -561,6 +598,20 @@ class GamePanel(JPanel):
                         removed = True
 
         return removed
+     
+    def RandomMotherScore(self):
+        # Use the classic 15-shot loop's long-run distribution:
+        # 100 appears 8/15, 50 appears 4/15, 150 appears 2/15, 300 appears 1/15.
+        # We sample with those probabilities to keep it "mystery" but arcade-accurate.
+        i = self.Rng.nextInt(15)  # 0..14
+        if i == 8:
+            return 300
+        elif i in (4, 13):
+            return 150
+        elif i in (1, 2, 7, 12):
+            return 50
+        else:
+            return 100
     
     def SetKeyLeft(self, down):  self.KeyLeft = bool(down)
     def SetKeyRight(self, down): self.KeyRight = bool(down)
@@ -576,12 +627,18 @@ class GamePanel(JPanel):
         # Cooldown
         if self.PlayerCooldownMs > 0:
             self.PlayerCooldownMs = max(0, self.PlayerCooldownMs - FPS_MS)
-
-        if self.PlayerHitFlashMs > 0: 
+        if self.PlayerHitFlashMs > 0:
             self.PlayerHitFlashMs = max(0, self.PlayerHitFlashMs - FPS_MS)
-                    
-        if self.AlienFireDisableMs > 0: 
-            self.AlienFireDisableMs = max(0, self.AlienFireDisableMs - FPS_MS) 
+
+        # Handle alien fire disable and post-recovery boost
+        wasDisabled = (self.AlienFireDisableMs > 0)
+        if self.AlienFireDisableMs > 0:
+            self.AlienFireDisableMs = max(0, self.AlienFireDisableMs - FPS_MS)
+        # When the disable period ends, start the temporary boost
+        if wasDisabled and self.AlienFireDisableMs == 0:
+            self.AlienFireBoostMs = ALIEN_FIRE_BOOST_MS
+        if hasattr(self, "AlienFireBoostMs") and self.AlienFireBoostMs > 0:
+            self.AlienFireBoostMs = max(0, self.AlienFireBoostMs - FPS_MS)
                        
         # Update explosions
         for i in range(len(self.Explosions) - 1, -1, -1):
@@ -591,11 +648,17 @@ class GamePanel(JPanel):
                 del self.Explosions[i]
 
         if self.GameOver:
+            # Prompt for high score immediately (once), but DO NOT show the table yet.
             if not self.PromptedHS:
                 self.PromptHighScoreIfQualified()
-                self.Attract = True
-                self.ShowScores = True
                 self.PromptedHS = True
+
+            # Enter attract mode with a Game Over banner first.
+            self.Attract = True         
+            if self.ShowScores:
+                self.ShowGameOver = False
+            else:
+                self.ShowGameOver = True
             self.repaint()
             return
 
@@ -634,16 +697,16 @@ class GamePanel(JPanel):
         for i in range(len(self.PlayerShots) - 1, -1, -1):
             ps = self.PlayerShots[i]
             hitX = ps.x + ps.width / 2.0
-            hitY = ps.y  # top of shot (moving up)
-            if self.DamageShieldAt(hitX, hitY, SHIELD_ERODE_RADIUS):
-                del self.PlayerShots[i]     
+            hitY = ps.y  # top of shot (moving up)          
+            if self.DamageShieldAt(hitX, hitY, SHIELD_ERODE_RADIUS_PLAYER):
+                del self.PlayerShots[i]
         
         # Collisions: enemy shots vs shields
         for i in range(len(self.EnemyShots) - 1, -1, -1):
             es = self.EnemyShots[i]
             hitX = es.x + es.width / 2.0
-            hitY = es.y + es.height  # bottom of shot (moving down)
-            if self.DamageShieldAt(hitX, hitY, SHIELD_ERODE_RADIUS):
+            hitY = es.y + es.height  # bottom of shot (moving down)         
+            if self.DamageShieldAt(hitX, hitY, SHIELD_ERODE_RADIUS_ENEMY):
                 del self.EnemyShots[i]
       
         # Collisions: player shots vs enemy shots (both destroyed)
@@ -735,11 +798,14 @@ class GamePanel(JPanel):
                     a = self.Aliens[r][c]
                     if a["alive"]:
                         lowest = a
-                        break
-                if lowest and self.Rng.nextFloat() < ALIEN_SHOOT_CHANCE:
-                    sx = lowest["x"] + lowest["w"] / 2 - ENEMY_SHOT_W / 2
-                    sy = lowest["y"] + lowest["h"]
-                    self.EnemyShots.append(Rect(sx, sy, ENEMY_SHOT_W, ENEMY_SHOT_H))
+                        break           
+                if lowest:
+                    # Chance is tripled during the boost window immediately after disable ends
+                    chance = ALIEN_SHOOT_CHANCE * (3.0 if (hasattr(self, "AlienFireBoostMs") and self.AlienFireBoostMs > 0) else 1.0)
+                    if self.Rng.nextFloat() < chance:
+                        sx = lowest["x"] + lowest["w"] / 2 - ENEMY_SHOT_W / 2
+                        sy = lowest["y"] + lowest["h"]
+                        self.EnemyShots.append(Rect(sx, sy, ENEMY_SHOT_W, ENEMY_SHOT_H))
 
         # Collisions: player shots vs aliens
         for i in range(len(self.PlayerShots) - 1, -1, -1):
@@ -750,9 +816,11 @@ class GamePanel(JPanel):
                 msRect = Rect(self.MotherX, MOTHER_Y, MOTHER_W, MOTHER_H)
                 if Intersects(ps, msRect):
                     del self.PlayerShots[i]
-                    self.Score += MOTHER_SCORE
-                    self.MotherActive = False
+                    self.Score += int(self.RandomMotherScore())
+                    self.MaybeAwardBonusLife()
+                    self.MotherActive = False          
                     self.AlienFireDisableMs = MOTHER_DISABLE_FIRE_MS
+                    self.AlienFireBoostMs = 0
 
                     # Optional: reuse explosion effect for mother ship
                     self.Explosions.append({
@@ -788,7 +856,9 @@ class GamePanel(JPanel):
                         })
 
                         a["alive"] = False
-                        self.Score += 10
+                        # Classic per-row scoring
+                        self.Score += int(ALIEN_SCORE_BY_KIND.get(a.get("kind", "OCTO"), 10))
+                        self.MaybeAwardBonusLife()
                         del self.PlayerShots[i]
                         hit = True
                         break
@@ -910,26 +980,92 @@ class GamePanel(JPanel):
         g2.fillRoundRect(10, 10, self.getWidth() - 20, self.getHeight() - 20, 12, 12)
 
         g2.setFont(self.FontHud)
-        g2.setColor(CLR_UI)
-        hud = "Score: %d    Lives: %d    Level: %d" % (self.Score, self.Lives, self.Level)
+        g2.setColor(CLR_UI)    
+        
+        
+        # Score + Level (text)
+        hud = "Score: %d   Level: %d" % (self.Score, self.Level)
         g2.drawString(hud, 20, 30)
+
+        # Lives (icons): draw one small ship per remaining life, aligned to the right 
+        lifeCount = int(self.Lives)
+        if lifeCount > 0:
+            iconW = max(12, int(PLAYER_W / 2))
+            iconH = max(8,  int(PLAYER_H / 2))
+            gap   = 6
+
+            totalW = lifeCount * iconW + (lifeCount - 1) * gap
+            startX = int(self.getWidth() - 20 - totalW)
+            yTop   = 16
+
+            for i in range(lifeCount):
+                x = startX + i * (iconW + gap)
+                g2.setColor(CLR_PLAYER)  # DrawShip leaves color as CLR_PANEL; reset per icon
+                DrawShip(g2, int(x), int(yTop), int(iconW), int(iconH))
 
         # Attract mode
         if self.Attract:
             if self.ShowScores:
                 self.DrawHighScores(g2)
-            else:
+            elif self.ShowGameOver:
+                # Game Over banner that must be cleared with Space
                 g2.setFont(self.FontIntroTitle)
                 g2.setColor(CLR_TEXT)
-                g2.drawString(TITLE_TEXT, 20, 78)
+                fmTitle = g2.getFontMetrics(self.FontIntroTitle)
+                msg = "GAME OVER"
+                msgX = int((self.getWidth() - fmTitle.stringWidth(msg)) / 2)
+                g2.drawString(msg, msgX, 160)
 
                 g2.setFont(self.FontHud)
                 g2.setColor(CLR_UI)
-                g2.drawString("Left/Right = Move, Space = Fire, Esc = Quit", 20, 110)
-                g2.drawString("Press Space to start", 20, 130)
-                g2.drawString("Press H for High Scores", 20, 150)
+                sub1 = "Press Space to view High Scores"
+                sub2 = "Press Esc to quit"
+                fmHud = g2.getFontMetrics(self.FontHud)
+                s1X = int((self.getWidth() - fmHud.stringWidth(sub1)) / 2)
+                s2X = int((self.getWidth() - fmHud.stringWidth(sub2)) / 2)
+                g2.drawString(sub1, s1X, 200)
+                g2.drawString(sub2, s2X, 226)
+                return
+            else:
+                g2.setFont(self.FontIntroTitle)
+                g2.setColor(CLR_TEXT)
+                # Center title horizontally
+                fmTitle = g2.getFontMetrics(self.FontIntroTitle)
+                titleX = int((self.getWidth() - fmTitle.stringWidth(TITLE_TEXT)) / 2)
+                g2.drawString(TITLE_TEXT, titleX, 78)
+                # --- draw score advance table ABOVE the control instructions ---
+                tableBottom = self.DrawScoreAdvanceTable(g2)
+
+                # Prepare instruction strings and metrics
+                g2.setFont(self.FontHud)
+                g2.setColor(CLR_UI)
+                fmHud = g2.getFontMetrics(self.FontHud)
+                line1 = "Left/Right = Move, Space = Fire, Esc = Quit"
+                line2 = "Press Space to start"
+                line3 = "Press H for High Scores"
+                x1 = int((self.getWidth() - fmHud.stringWidth(line1)) / 2)
+                x2 = int((self.getWidth() - fmHud.stringWidth(line2)) / 2)
+                x3 = int((self.getWidth() - fmHud.stringWidth(line3)) / 2)
+
+                # Dynamic vertical placement BELOW the table
+                INSTR_MARGIN = 48    # generous gap after the table
+                STEP = 26            # vertical step between instruction lines
+
+                # Start where there is no chance to collide with the table
+                instrStartY = int(tableBottom + INSTR_MARGIN)
+
+                # Keep instructions inside the panel if fonts are very tall
+                bottomMargin = 16
+                maxFirstY = self.getHeight() - bottomMargin - (2 * STEP)
+                if instrStartY > maxFirstY:
+                    instrStartY = maxFirstY
+
+                g2.drawString(line1, x1, instrStartY)
+                g2.drawString(line2, x2, instrStartY + STEP)
+                g2.drawString(line3, x3, instrStartY + 2 * STEP)
+
             return
-      
+    
          # Player 
         if self.PlayerHitFlashMs > 0: 
             g2.setColor(Color(255, 255, 255)) 
@@ -951,8 +1087,12 @@ class GamePanel(JPanel):
             for c in range(ALIEN_COLS):
                 a = self.Aliens[r][c]
                 if not a["alive"]:
-                    continue
-                DrawAlienSprite(g2, int(a["x"]), int(a["y"]), a["w"], a["h"], a["kind"], self.TickPhase, r, (self.AlienFireDisableMs > 0))
+                    continue           
+                DrawAlienSprite(
+                    g2, int(a["x"]), int(a["y"]), a["w"], a["h"], a["kind"], self.TickPhase, r,
+                    (self.AlienFireDisableMs > ALIEN_FLASH_RED_WINDOW_MS),   # flash white only when > 500ms remaining
+                    (self.AlienFireDisableMs > 0 and self.AlienFireDisableMs <= ALIEN_FLASH_RED_WINDOW_MS)  # flash red in last 500ms
+                )
        
         # Explosions (simple 2-frame chunky pixels)
         for e in self.Explosions:
@@ -965,13 +1105,127 @@ class GamePanel(JPanel):
             DrawShot(g2, ps.x, ps.y, ps.width, ps.height, friendly=True)
         for es in self.EnemyShots:
             DrawShot(g2, es.x, es.y, es.width, es.height, friendly=False)
+                 
+    def DrawScoreAdvanceTable(self, g2):
+        # "SCORE ADVANCE TABLE" centered, dynamically spaced (ASCII-only, Python 2.7-safe).
+        # Returns the integer Y coordinate of the bottom of the table (for placing instructions below).
 
-        if self.GameOver:
-            g2.setFont(self.FontBig)
-            g2.setColor(CLR_TEXT)
-            g2.drawString("Game Over", 220, 220)
-            g2.setFont(self.FontHud)
-            g2.drawString("Press Space to restart, or Esc to quit", 180, 250)
+        # Vertical placement (above player instructions)
+        tableTitleY = 90
+
+        # Strings (ASCII only)
+        titleText = ""
+
+        # Points text (classic)
+        t1 = "= 30 PTS"    # Squid (top)
+        t2 = "= 20 PTS"    # Crab (middle)
+        t3 = "= 10 PTS"    # Octopus (bottom)
+        t4 = "= ?? PTS"    # UFO (mystery)
+
+        # Names/descriptions
+        d1 = "Cinnamon"
+        d2 = "Ginger"
+        d3 = "Cloves"
+        d4 = "Allspice"
+
+        # --- Metrics ---
+        g2.setFont(self.FontScore)
+        fmScore = g2.getFontMetrics(self.FontScore)
+        titleW = fmScore.stringWidth(titleText)
+        titleX = int((self.getWidth() - titleW) / 2)
+
+        scoreAscent  = fmScore.getAscent()
+        scoreDescent = fmScore.getDescent()
+        scoreLineH   = scoreAscent + scoreDescent
+
+        g2.setFont(self.FontHud)
+        fmHud = g2.getFontMetrics(self.FontHud)
+        hudAscent  = fmHud.getAscent()
+        hudDescent = fmHud.getDescent()
+        hudLineH   = hudAscent + hudDescent
+
+        # Sprite sizes
+        spriteW = 40; spriteH = 28
+        saucerW = 56; saucerH = 18
+
+        # Horizontal block: 160 px gap from sprite to text; center (sprite + gap + widest text)
+        g2.setFont(self.FontScore)
+        maxPtsW  = max(fmScore.stringWidth(t1), fmScore.stringWidth(t2),
+                       fmScore.stringWidth(t3), fmScore.stringWidth(t4))
+        g2.setFont(self.FontHud)
+        maxDescW = max(fmHud.stringWidth(d1), fmHud.stringWidth(d2),
+                       fmHud.stringWidth(d3), fmHud.stringWidth(d4))
+        maxTextW = max(maxPtsW, maxDescW)
+
+        spriteTextGap = 160
+        totalW = spriteTextGap + maxTextW
+        blockX = int((self.getWidth() - totalW) / 2)
+        sx = blockX
+        tx = blockX + spriteTextGap
+
+        # Draw table title
+        g2.setFont(self.FontScore)
+        g2.setColor(CLR_UI)
+        g2.drawString(titleText, titleX, tableTitleY)
+
+        # --- Spacing controls (roomy) ---
+        spriteBottomPad = 10           # space between sprite bottom and points baseline
+        ptsToDescGap    = 6            # space between points and description
+        rowGap          = max(14, hudLineH)  # space after description to next row (>= one HUD line)
+
+        # The first points baseline sits cleanly below title and sprite
+        yPts = tableTitleY + 34 + max(scoreLineH, spriteH)
+
+        # >>> Shift text up by exactly one row <<<
+        rowShift = hudLineH + rowGap   # amount to move text baselines upward
+        # ---------------------------------------------------------------------
+
+        # ---- Row 1: SQUID ----
+        spriteTopY = int((yPts - spriteBottomPad) - spriteH)
+        DrawAlienSprite(g2, sx, spriteTopY, spriteW, spriteH, "SQUID", 0, 0, False, False)
+        # Text baselines moved up one row
+        yText = yPts - rowShift
+        g2.setFont(self.FontScore); g2.setColor(CLR_UI); g2.drawString(t1, tx, yText)
+        g2.setFont(self.FontHud);   g2.setColor(HS_COLUMNS_FG)
+        descY = yText + ptsToDescGap + hudAscent
+        g2.drawString(d1, tx, descY)
+        # Advance yPts (sprite anchor) for next row as before
+        yPts = (yPts + (hudAscent + ptsToDescGap + hudDescent + rowGap))
+
+        # ---- Row 2: CRAB ----
+        spriteTopY = int((yPts - spriteBottomPad) - spriteH)
+        DrawAlienSprite(g2, sx, spriteTopY, spriteW, spriteH, "CRAB", 0, 1, False, False)
+        yText = yPts - rowShift
+        g2.setFont(self.FontScore); g2.setColor(CLR_UI); g2.drawString(t2, tx, yText)
+        g2.setFont(self.FontHud);   g2.setColor(HS_COLUMNS_FG)
+        descY = yText + ptsToDescGap + hudAscent
+        g2.drawString(d2, tx, descY)
+        yPts = (yPts + (hudAscent + ptsToDescGap + hudDescent + rowGap))
+
+        # ---- Row 3: OCTOPUS ----
+        spriteTopY = int((yPts - spriteBottomPad) - spriteH)
+        DrawAlienSprite(g2, sx, spriteTopY, spriteW, spriteH, "OCTO", 0, 3, False, False)
+        yText = yPts - rowShift
+        g2.setFont(self.FontScore); g2.setColor(CLR_UI); g2.drawString(t3, tx, yText)
+        g2.setFont(self.FontHud);   g2.setColor(HS_COLUMNS_FG)
+        descY = yText + ptsToDescGap + hudAscent
+        g2.drawString(d3, tx, descY)
+        yPts = (yPts + (hudAscent + ptsToDescGap + hudDescent + rowGap))
+
+        # ---- Row 4: UFO ----
+        saucerTopY = int((yPts - spriteBottomPad) - saucerH)
+        DrawMotherShip(g2, sx, saucerTopY, saucerW, saucerH)
+        # DrawMotherShip leaves g2 in CLR_PANEL; set visible colour for text
+        yText = yPts - rowShift
+        g2.setFont(self.FontScore); g2.setColor(CLR_UI); g2.drawString(t4, tx, yText)
+        g2.setFont(self.FontHud);   g2.setColor(HS_COLUMNS_FG)
+        descY = yText + ptsToDescGap + hudAscent
+        g2.drawString(d4, tx, descY)
+
+        # Return the bottom Y of the table (baseline + descent of the last description line)
+        bottomY = descY + hudDescent
+            
+        return int(bottomY)
 
     # High scores card (off-black, colored rows, no timestamp)
     def DrawHighScores(self, g2):
@@ -1041,16 +1295,37 @@ class GamePanel(JPanel):
                         pass
                     self.repaint()
                 except:
-                    pass
+                    pass            
         elif code == KeyEvent.VK_SPACE:
             if self.GameOver:
-                self.ResetFull()
-                self.Attract = False
+                # If the High Scores table is already visible, return to intro/attract instead of starting play.
+                if self.ShowScores:
+                    # Reset to clean attract state (title + instructions).
+                    # ResetFull sets GameOver=False and Attract=True, and clears ShowScores/ShowGameOver.
+                    self.ResetFull()
+                    # Ensure intro/attract (not play) is shown.
+                    self.Attract = True
+                    self.ShowScores = False
+                    self.ShowGameOver = False
+                    self.repaint()
+                    return
+                # Prompt for high score immediately (once)
+                if not self.PromptedHS:
+                    self.PromptHighScoreIfQualified()
+                    self.PromptedHS = True
+                # --- Unconditional view flip (outside the guard) ---
+                self.ShowGameOver = False
+                self.ShowScores = True
+                self.Attract = True
+                self.repaint()
+                return
             else:
+                # Normal behaviour: start game from attract, or fire in-game
                 if self.Attract:
                     self.Attract = False
                 else:
                     self.SetKeyFire(True)
+
         elif code == KeyEvent.VK_ESCAPE:
             try:
                 self.Timer.stop()
@@ -1084,8 +1359,9 @@ class SpiceInveiglersWindow(object):
         self.Frame.setFocusable(True)
         self.Frame.setVisible(True)
         self.Frame.requestFocusInWindow()       
-        class _Keys(KeyAdapter):
-            def keyPressed(_, e): self.Panel.OnKeyPress(e.getKeyCode(), e.isControlDown())
+        class _Keys(KeyAdapter):      
+            def keyPressed(_, e):
+                self.Panel.OnKeyPress(e.getKeyCode(), e.isControlDown())
             def keyReleased(_, e): self.Panel.OnKeyRelease(e.getKeyCode())
         self.Frame.addKeyListener(_Keys())     
         outerSelf = self

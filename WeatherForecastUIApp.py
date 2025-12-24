@@ -378,49 +378,70 @@ class AdBanner(Card):
         self.cta = BlueCtaButton(" ")
         self.cta.setBorder(BorderFactory.createEmptyBorder(6,12,6,12))  # inner padding
         self._onUpgrade = None  # optional callback supplied by parent UI
+        
+        # Attach a single, persistent listener once; never rewire.
+        # This avoids stacked listeners and multiple successive dialogs.
+        def _OnCta(e):
+            try:
+                self._HandleCtaClick()
+            except:
+                pass
+        self.cta.addActionListener(_OnCta)
 
         # Build the left text block and add it before the CTA button
         left = JPanel(); left.setOpaque(False); left.setLayout(BoxLayout(left, BoxLayout.Y_AXIS))
         left.add(self.badge); left.add(gapV(2)); left.add(self.brand); left.add(gapV(3)); left.add(self.l1); left.add(self.l2)
 
         self.add(left); self.add(gapH(12)); self.add(self.cta)
+          
+    def _HandleCtaClick(self):
+        # Decide at click time based on current label text; run exactly one action.
+        try:
+            br = str(self.brand.getText() or "").strip().lower()
+            txt = str(self.cta.getText() or "").strip().lower()
+        except:
+            br = ""; txt = ""
+
+        # 1) Upgrade path (brand "Weather" or CTA mentions upgrade/pro)
+        try:
+            if self._onUpgrade and (
+                br == "weather" or
+                (("upgrade" in txt) and ("pro" in txt))
+            ):
+                self._onUpgrade()
+                return
+        except:
+            pass
+
+        # 2) Spice Inveiglers path (brand match only)
+        try:
+            if br == "spice inveiglers":
+                from jmri.util import FileUtil
+                import os
+                execfile(os.path.join(FileUtil.getScriptsPath(), 'SecretScriptDoNotRun.py'), globals())
+                return
+        except:
+            pass
+
+        # 3) Default spoof payment-declined dialog for all other ads
+        try:
+            from javax.swing import JOptionPane
+            JOptionPane.showMessageDialog(
+                None,
+                "Payment declined.\nPlease contact your bank.",
+                "Payment Error",
+                JOptionPane.INFORMATION_MESSAGE
+            )
+        except:
+            pass
     
+
     def setAd(self, brand, l1, l2, cta):
+        # Text-only refresh; listener is persistent and decides at click time.
         self.brand.setText(str(brand or ""))
         self.l1.setText(str(l1 or ""))
         self.l2.setText(str(l2 or ""))
         self.cta.setText(str(cta or ""))
-
-        # If this is the special "Upgrade to Weather Pro" ad and a handler is present, wire it
-        try:
-            # Remove prior listeners by creating a fresh button action (simple approach in Jython)
-            for l in self.cta.getActionListeners(): self.cta.removeActionListener(l)
-        except:
-            pass
-        try:
-            txt = str(cta or "").strip().lower()
-            br  = str(brand or "").strip().lower()
-            if self._onUpgrade and (
-                txt == "upgrade to weather pro" or
-                ("upgrade" in txt and "pro" in txt) or
-                br == "weather"
-            ):
-                self.cta.addActionListener(lambda e: self._onUpgrade())
-        except:
-            pass            
-        
-        try:
-            txt_low = (str(cta or "")).strip().lower()
-            br_low  = (str(brand or "")).strip().lower()
-            if ("spice inveiglers" in txt_low) or (br_low == "spice inveiglers"):
-                from jmri.util import FileUtil
-                import os
-                # Run the game script from the JMRI scripts directory (no absolute paths)
-                self.cta.addActionListener(
-                    lambda e: execfile(os.path.join(FileUtil.getScriptsPath(), 'SecretScriptDoNotRun.py'), globals())
-                )
-        except:
-            pass
 
     def setUpgradeCallback(self, fn):
         self._onUpgrade = fn
@@ -675,6 +696,24 @@ class WeatherForecastUI(jmri.jmrit.automat.AbstractAutomaton):
         hh, mm = fmt.format(t).split(':')
         return int(hh)*60 + int(mm)
         
+    def _RunOnEdt(self, fn):
+        # Ensure Swing UI changes (incl. CTA handler rewiring) happen on the EDT.
+        try:
+            from javax.swing import SwingUtilities
+            if SwingUtilities.isEventDispatchThread():
+                try:
+                    fn()
+                except:
+                    pass
+            else:
+                SwingUtilities.invokeLater(fn)
+        except:
+            # Never crash the UI if SwingUtilities import fails.
+            try:
+                fn()
+            except:
+                pass
+        
     # --- DIAGNOSTIC: simple logger with HH:MM from Timebase ---    
     def _Log(self, msg):
         return # Remove this line to re-enable logging
@@ -859,19 +898,19 @@ class WeatherForecastUI(jmri.jmrit.automat.AbstractAutomaton):
         self._PushFirstAdIfNeeded(enabled)
     
     def _PushFirstAdIfNeeded(self, enabled):
-        # Only run when ads are enabled and there's at least one ad;
-        # Never call this at class scope-methods only.
+        # Only run when ads are enabled and there's at least one ad.
         try:
             if enabled == 1 and len(self.adList) > 0:
                 if self.adIndex < 0:
                     self._Log("ApplyAds pushing first ad now")
-                    self._advance_ad(first=True)
+                    # IMPORTANT: marshal to EDT to avoid race with Swing Timer.
+                    self._RunOnEdt(lambda: self._advance_ad(first=True))
         except:
             # Diagnostics must never crash the UI
             pass
     
     def _advance_ad(self, first=False):
-        """Advance ad index according to mode and push to banner."""
+        """Advance ad index according to mode and push to banner on the EDT."""
         if len(self.adList) == 0:
             try: self._Log("AdvanceAd skipped: adList empty")
             except: pass
@@ -893,17 +932,23 @@ class WeatherForecastUI(jmri.jmrit.automat.AbstractAutomaton):
                 self.adIndex = (self.adIndex + 1) % len(self.adList)
 
         ad = self.adList[self.adIndex]
+
         try:
             self._Log("AdvanceAd first=%s prev=%d next=%d mode=%s brand='%s' cta='%s'" % (
                 str(first), int(prev), int(self.adIndex), mode, ad.get('brand',''), ad.get('cta','')
             ))
         except:
             pass
-        self.ad.setAd(ad.get('brand',''), ad.get('l1',''), ad.get('l2',''), ad.get('cta',''))
-        try:
-            self.ad.revalidate(); self.ad.repaint()
-        except:
-            pass
+
+        # Push to the Swing UI strictly on the EDT
+        def push():
+            try:
+                self.ad.setAd(ad.get('brand',''), ad.get('l1',''), ad.get('l2',''), ad.get('cta',''))
+                self.ad.revalidate(); self.ad.repaint()
+            except:
+                pass
+
+        self._RunOnEdt(push)
 
     def _onAdTick(self, ev):
         enabled = self._read_enabled(ADS_ENABLED_MEM, True)
