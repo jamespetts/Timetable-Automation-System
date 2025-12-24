@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 # This file is part of the Timetable Automation System by James E. Petts
 #
 # The Timetable Automation System is free software: you can redistribute it and/or modify it under the terms of the 
@@ -152,7 +151,7 @@ def MakeWrappedLabel(htmlText, widthPx=560, lineHeight=1.25, bold=False):
     """
     Create a JLabel that wraps text using HTML with an explicit width and tuned line-height.
     - widthPx: wrapping width in pixels
-    - lineHeight: CSS line-height multiplier for compact spacing (e.g., 1.20–1.30)
+    - lineHeight: CSS line-height multiplier for compact spacing (e.g., 1.20-1.30)
     - bold: True for heading-style weight/size; False for body copy style
     """
     # Build HTML with controlled width and line-height.
@@ -520,7 +519,7 @@ def _CheckWorkingScripts():
                 arrPresent = hasArr and (row.get("Arr","") or "").strip() != ""
                 depPresent = hasDep and (row.get("Dep","") or "").strip() != ""
 
-                # If trigger and dep present but no arr → require only trigger script
+                # If trigger and dep present but no arr > require only trigger script
                 if triggerPresent:
                     direction = "Trigger"
                 elif arrPresent:
@@ -738,7 +737,9 @@ def MakeDualListPanel(TitleText, AvailableNames, NameMap, DescMap, InitialSelect
     gbc.gridy = 1
     gbc.weighty = 1.0
     leftScroll = JScrollPane(availList)
-    leftScroll.setPreferredSize(Dimension(220, 140))
+    # Wider but not huge; allow vertical growth too
+    leftScroll.setPreferredSize(Dimension(360, 200))
+    leftScroll.setMinimumSize(Dimension(280, 160))  # prevents overly small pack
     leftScroll.getViewport().setBackground(THEME_PAPER)
     panel.add(leftScroll, gbc)
 
@@ -756,7 +757,8 @@ def MakeDualListPanel(TitleText, AvailableNames, NameMap, DescMap, InitialSelect
     gbc.weightx = 1.0
     gbc.fill = GridBagConstraints.BOTH
     rightScroll = JScrollPane(selectedList)
-    rightScroll.setPreferredSize(Dimension(220, 140))
+    rightScroll.setPreferredSize(Dimension(360, 200))
+    rightScroll.setMinimumSize(Dimension(280, 160))
     rightScroll.getViewport().setBackground(THEME_PAPER)
     panel.add(rightScroll, gbc)
 
@@ -954,6 +956,12 @@ class TASSetupFrame(jmri.util.JmriJFrame):
         jmri.util.JmriJFrame.__init__(self, "Timetable Automation System setup")
         self.setDefaultCloseOperation(JDialog.DISPOSE_ON_CLOSE)
         self.setSize(780, 890)
+           
+        # Prevent the frame from ever packing smaller than the baseline.
+        try:
+            self.setMinimumSize(Dimension(780, 890))
+        except:
+            pass
 
         # --- CRITICAL: capture initial states BEFORE building tabs/UI ---
         # These are used by BuildGeneralTab()/BuildDayNightTab() to set initial checkbox states.
@@ -1067,14 +1075,14 @@ class TASSetupFrame(jmri.util.JmriJFrame):
         header.add(Box.createHorizontalGlue())
         panel.add(header, gbc)
 
-        # (A) NEW: Enable time-based actions (requires restart) — controls CheckWhenTimeChanges.py at Start-Up
+        # (A) Enable time-based actions (requires restart) - controls CheckWhenTimeChanges.py at Start-Up
         gbc.gridwidth = 3
         gbc.gridx = 0; gbc.gridy = 1
         timeRow = Box.createHorizontalBox()
         self.ChkTimeActions = JCheckBox("Enable time-based actions (requires restart)")
         self.ChkTimeActions.setOpaque(False)
         self.ChkTimeActions.setSelected(self.InitialTimeActions)
-        # (A0) Show TAS menu on Start-Up (requires restart) — controls TimetableAutomation.py at Start-Up
+        # (A0) Show TAS menu on Start-Up (requires restart) - controls TimetableAutomation.py at Start-Up
         gbc.gridwidth = 3
         gbc.gridx = 0; gbc.gridy = 1
         tasMenuRow = Box.createHorizontalBox()
@@ -1157,7 +1165,7 @@ class TASSetupFrame(jmri.util.JmriJFrame):
         # Now increment again for the second checkbox row
         gbc.gridy += 1
 
-        # (B) "Run trains automatically" row (checkbox + status label) — NOW uses IMTASAutoWorking memory only
+        # (B) "Run trains automatically" row (checkbox + status label) - NOW uses IMTASAutoWorking memory only
         gbc.gridwidth = 3
         gbc.gridx = 0
         gbc.gridy += 1  # move down below the TAS menu section
@@ -1187,7 +1195,7 @@ class TASSetupFrame(jmri.util.JmriJFrame):
         if not self.ChkTimeActions.isEnabled():
             self.ChkRunAuto.setEnabled(False)
 
-        # NOTE: Removed separate “Requires restart to take effect.” label — restart is for time-based actions only
+        # NOTE: Removed separate "Requires restart to take effect." label - restart is for time-based actions only
 
         # Current timetable heading + widgets
         gbc.gridwidth = 1
@@ -1428,7 +1436,10 @@ class TASSetupFrame(jmri.util.JmriJFrame):
         root = MakePaperPanel()
         root.setLayout(GridBagLayout())
         gbc = GridBagConstraints()
-        gbc.insets = Insets(8,8,8,8)   
+        gbc.insets = Insets(8,8,8,8) 
+        # Ensure every row (lists, options, description) fills horizontally
+        gbc.fill = GridBagConstraints.BOTH
+        gbc.weightx = 1.0        
     
         pubSel = [s for s in TBL.SafeGetOrCreateMemoryValue(IMPublicDisplayList, "").split(",")
                   if s.strip() not in ["", "..."]]
@@ -1660,8 +1671,25 @@ class TASSetupFrame(jmri.util.JmriJFrame):
                     _AddStringRow(label, mem, r)
                 r += 1
 
-        # (Existing description area code continues below)
+        # --- Ensure the outer setup window grows to fit these controls (but never shrinks in width) ---
+        try:
+            # Remember current width so options never cause the main window to narrow
+            prevW = int(self.getWidth())
 
+            # Revalidate inner panels first so preferred sizes are up to date
+            optsInner.revalidate()
+            optionsPanel.revalidate()
+            root.revalidate()
+
+            # Re-pack the frame; this can increase the overall window size if needed
+            self.PackAndCenter()
+
+            # Prevent any width reduction caused by pack()
+            if int(self.getWidth()) < prevW:
+                self.setSize(prevW, int(self.getHeight()))
+        except:
+            # Be tolerant of any LAF/EDT quirks
+            pass
 
         # Description area (shared between both panels)
         from javax.swing import JTextArea
@@ -1738,6 +1766,7 @@ class TASSetupFrame(jmri.util.JmriJFrame):
         descScroll = JScrollPane(descArea)
         descScroll.getViewport().setBackground(THEME_PAPER)
         descScroll.setPreferredSize(Dimension(660, 110))
+        descScroll.setMinimumSize(Dimension(520, 110))
         descPanel.add(descScroll, dg)
          
         # Row 2: Options panel (visible only when a selected display has options)
@@ -1935,7 +1964,7 @@ class TASSetupFrame(jmri.util.JmriJFrame):
         rowBg2.add(btnReset2)
         root.add(rowBg2, gbc)
         
-        # (B2.5) Ink colour (text/lines/boxes/button outlines) — JColorChooser
+        # (B2.5) Ink colour (text/lines/boxes/button outlines) - JColorChooser
         gbc.gridy += 1
         rowInk = Box.createHorizontalBox()
         lblInk = JLabel("Ink colour (text/lines/boxes/button outlines):")
@@ -2221,7 +2250,7 @@ class TASSetupFrame(jmri.util.JmriJFrame):
         # Heading
         root.add(MakeHeading("Working Timetable (WTT) display options"), gbc)
 
-        # (1) PAGE_MODE — drop-down (matches WTTDisplay recognized modes)
+        # (1) PAGE_MODE - drop-down (matches WTTDisplay recognized modes)
         gbc.gridy += 1
         rowMode = Box.createHorizontalBox()
         lblMode = JLabel("Page mode:")
@@ -2265,7 +2294,7 @@ class TASSetupFrame(jmri.util.JmriJFrame):
         rowMode.add(lblMode); rowMode.add(Box.createHorizontalStrut(8)); rowMode.add(cmbMode)
         root.add(rowMode, gbc)
 
-        # (2) TIME_24H — checkbox
+        # (2) TIME_24H - checkbox
         gbc.gridy += 1
         row24 = Box.createHorizontalBox()
         chk24 = JCheckBox("Use 24-hour time")
@@ -2277,7 +2306,7 @@ class TASSetupFrame(jmri.util.JmriJFrame):
         row24.add(chk24)
         root.add(row24, gbc)
 
-        # (3) TIME_SEPARATOR — single-character text field
+        # (3) TIME_SEPARATOR - single-character text field
         gbc.gridy += 1
         rowSep = Box.createHorizontalBox()
         lblSep = JLabel("Time separator (single character):")
@@ -2297,7 +2326,7 @@ class TASSetupFrame(jmri.util.JmriJFrame):
         rowSep.add(lblSep); rowSep.add(Box.createHorizontalStrut(8)); rowSep.add(txtSep)
         root.add(rowSep, gbc)
 
-        # (4) ECS_LABEL — single-line text field
+        # (4) ECS_LABEL - single-line text field
         gbc.gridy += 1
         rowEcsLabel = Box.createHorizontalBox()
         lblEcs = JLabel("ECS label (text):")
@@ -2313,7 +2342,7 @@ class TASSetupFrame(jmri.util.JmriJFrame):
         rowEcsLabel.add(lblEcs); rowEcsLabel.add(Box.createHorizontalStrut(8)); rowEcsLabel.add(txtEcs)
         root.add(rowEcsLabel, gbc)
 
-        # (5) _ECS_DEST_MATCH — multi-line tokens (one per line). Stored lowercased, comma-separated.
+        # (5) _ECS_DEST_MATCH - multi-line tokens (one per line). Stored lowercased, comma-separated.
         gbc.gridy += 1
         rowEcsMatch = Box.createHorizontalBox()
         lblMatch = JLabel("ECS destination synonyms (one per line):")
@@ -2339,7 +2368,7 @@ class TASSetupFrame(jmri.util.JmriJFrame):
         rowEcsMatch.add(lblMatch); rowEcsMatch.add(Box.createHorizontalStrut(8)); rowEcsMatch.add(sp)
         root.add(rowEcsMatch, gbc)
 
-        # (6) DIRECTION_SPLIT — checkbox
+        # (6) DIRECTION_SPLIT - checkbox
         gbc.gridy += 1
         rowDir = Box.createHorizontalBox()
         chkDir = JCheckBox("Split pages by direction (e.g., DOWN / UP)")
@@ -2351,7 +2380,7 @@ class TASSetupFrame(jmri.util.JmriJFrame):
         rowDir.add(chkDir)
         root.add(rowDir, gbc)
                 
-        # (7) Origin/Destination header orientation — checkbox
+        # (7) Origin/Destination header orientation - checkbox
         gbc.gridy += 1
         rowOdHdr = Box.createHorizontalBox()
         chkOdVertical = JCheckBox("Vertical headers")
@@ -2443,7 +2472,7 @@ class TASSetupFrame(jmri.util.JmriJFrame):
         rightPanel.setOpaque(True)
         rightPanel.setBackground(THEME_PAPER)
         rightPanel.setLayout(GridBagLayout())
-        # NOTE: no outer scroll here—editor has its own scroll pane; buttons remain fixed
+        # NOTE: no outer scroll here-editor has its own scroll pane; buttons remain fixed
 
         # Track editor state
         self.WorkingsDirty = False
@@ -2479,7 +2508,7 @@ class TASSetupFrame(jmri.util.JmriJFrame):
                 s = (line or "").strip()
                 return (s == "" or s.startswith("#") or s.startswith("import ") or s.startswith("from "))
 
-            # Index important lines (trimmed) — flexible header import
+            # Index important lines (trimmed) - flexible header import
             importHeaderIdx = None  # any single "import ..." line whose comma list contains jmri and os
             importFileUtil = None
             scriptsPathLine = None
@@ -2684,7 +2713,7 @@ class TASSetupFrame(jmri.util.JmriJFrame):
                     arrPresent = hasArr and (row.get("Arr", "") or "").strip() != ""
                     depPresent = hasDep and (row.get("Dep", "") or "").strip() != ""
 
-                    # If trigger and dep present but no arr → treat as trigger-only
+                    # If trigger and dep present but no arr > treat as trigger-only
                     if triggerPresent:
                         direction = "Trigger"
                     elif arrPresent:
@@ -2856,7 +2885,7 @@ class TASSetupFrame(jmri.util.JmriJFrame):
                     item.ValidScript = ValidateWorkingScript(item.ScriptPath)
                     UpdateExplain()
                     leftList.repaint()
-                    # No modal dialog on save—console log only
+                    # No modal dialog on save-console log only
                     LogInfo("Saved " + item.ScriptPath, alsoDialog=False, title="Saved")
                 except Exception as ex:
                     # Keep the error dialog for failures
@@ -3127,7 +3156,7 @@ class TASSetupFrame(jmri.util.JmriJFrame):
         return panel
     
     def BuildTimingPointsTab(self):
-        # "Timing points" tab — dual list: left = virtual TPs from timetable,
+        # "Timing points" tab - dual list: left = virtual TPs from timetable,
         # right = physical TPs (blocks assigned via TimingRegister).
         import TimingRegister as TR
         from jmri import InstanceManager
@@ -3463,7 +3492,7 @@ class TASSetupFrame(jmri.util.JmriJFrame):
                 "Either assign trains to the normal and inverted lists manually using the controls below, or, if "
                 "you have the appropraite hardware, configure hardware orientation sensing below.",
                 widthPx=560,    # tweak to taste; matches your tab width
-                lineHeight=1.25 # tighter than default; adjust 1.2–1.3 as desired
+                lineHeight=1.25 # tighter than default; adjust 1.2-1.3 as desired
             ),
             gbc
 )
@@ -3869,7 +3898,7 @@ class TASSetupFrame(jmri.util.JmriJFrame):
         gbc.weightx = 1.0
         gbc.gridx = 0
 
-        # (1) Day/Night enable — authoritative from Start-Up; clicking mutates Start-Up
+        # (1) Day/Night enable - authoritative from Start-Up; clicking mutates Start-Up
         gbc.gridy = 0
         row1 = Box.createHorizontalBox()
         chkDN = JCheckBox("Enable day/night cycle (requires restart)")
@@ -3923,7 +3952,7 @@ class TASSetupFrame(jmri.util.JmriJFrame):
         addrRow.add(lblCool); addrRow.add(Box.createHorizontalStrut(6)); addrRow.add(txtCool)
         root.add(addrRow, gbc)
 
-        # (3) Weather generator enable — from Start-Up; clicking mutates Start-Up
+        # (3) Weather generator enable - from Start-Up; clicking mutates Start-Up
         gbc.gridy = 3
         row3 = Box.createHorizontalBox()
         chkWX = JCheckBox("Use weather generator (requires restart)")
