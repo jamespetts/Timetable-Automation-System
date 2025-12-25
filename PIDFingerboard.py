@@ -23,8 +23,7 @@
 # User-configurable settings discovered by TASSetup:
 # Text composition
 # <<SETTING DESCRIPTION ENUM: Text layout>>
-# <<SETTING ENUM VALUES Text layout: CALLING_ONLY
-# DEST_THEN_CALLING>>
+# <<SETTING ENUM VALUES Text layout: Calling pattern only | Destination then calling pattern>>
 # <<SETTING DESCRIPTION STRING: Separator between calling points>>
 # <<SETTING DESCRIPTION STRING: Joiner between destination and calling text>>
 # <<SETTING DESCRIPTION BOOLEAN: Use uppercase letters>>
@@ -369,6 +368,29 @@ def FBP_SeedColorIfPlaceholder(memBean, defaultColor):
         return FBP_ParseColor(s, defaultColor)
     except:
         return defaultColor
+        
+def FBP_WriteColorSeed(newBean, legacyBean, colorObj):
+    """
+    Prefer writing to the 'friendly' bean (newBean). If that bean doesn't exist,
+    write to the legacy bean. Only seed when the current value is blank.
+    """
+    try:
+        rgb = _FBP_ColorToRgbStr(colorObj)
+
+        # Try friendly first
+        if newBean is not None:
+            cur = newBean.getValue()
+            if cur is None:
+                newBean.setValue(rgb)
+                return
+
+        # Fall back to legacy
+        if legacyBean is not None:
+            cur2 = legacyBean.getValue()
+            if cur2 is None:
+                legacyBean.setValue(rgb)
+    except:
+        pass
 
 # Dual beans: (new friendly, legacy) for each setting
 FBP_TextLayout_New,      FBP_TextMode_Leg = FBP_GetDualSettingBeans("Text layout",                  "TEXT_MODE")
@@ -413,6 +435,16 @@ FBP_CLOCK_HAND     = FBP_ReadColorDual(FBP_ClockHand_New,  FBP_ClockHand_Leg,  F
 FBP_LABEL_BOX_FILL = FBP_ReadColorDual(FBP_LabelFill_New,  FBP_LabelFill_Leg,  FBP_LABEL_BOX_FILL)
 FBP_LABEL_BOX_EDGE = FBP_ReadColorDual(FBP_LabelEdge_New,  FBP_LabelEdge_Leg,  FBP_LABEL_BOX_EDGE)
 FBP_BG_COLOR       = FBP_ReadColorDual(FBP_Background_New, FBP_Background_Leg, FBP_BG_COLOR)
+
+# Seed friendly/legacy memories with the script's defaults when blank or beige
+FBP_WriteColorSeed(FBP_TextColor_New,  FBP_TextColor_Leg,  FBP_TEXT_COLOR)
+FBP_WriteColorSeed(FBP_BoardFill_New,  FBP_BoardFill_Leg,  FBP_BOARD_FILL)
+FBP_WriteColorSeed(FBP_BoardEdge_New,  FBP_BoardEdge_Leg,  FBP_BOARD_EDGE)
+FBP_WriteColorSeed(FBP_ClockFace_New,  FBP_ClockFace_Leg,  FBP_CLOCK_FACE)
+FBP_WriteColorSeed(FBP_ClockHand_New,  FBP_ClockHand_Leg,  FBP_CLOCK_HAND)
+FBP_WriteColorSeed(FBP_LabelFill_New,  FBP_LabelFill_Leg,  FBP_LABEL_BOX_FILL)
+FBP_WriteColorSeed(FBP_LabelEdge_New,  FBP_LabelEdge_Leg,  FBP_LABEL_BOX_EDGE)
+FBP_WriteColorSeed(FBP_Background_New, FBP_Background_Leg, FBP_BG_COLOR)
 
 # Booleans
 FBP_UPPERCASE_ALL  = FBP_ReadBoolDual(FBP_Uppercase_New, FBP_Uppercase_Leg, FBP_UPPERCASE_ALL)

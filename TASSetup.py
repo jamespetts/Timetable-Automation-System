@@ -811,8 +811,9 @@ def _ScanSettingsForScript(fullPath):
         m2 = _SETTING_ENUMVALS_RE.search(ln)
         if m2:
             lbl = (m2.group(1) or "").strip()
-            raw = (m2.group(2) or "").strip()
-            vals = [v.strip() for v in raw.split("|") if v.strip() != ""]
+            raw = (m2.group(2) or "").strip()          
+            import re as _re
+            vals = [v.strip() for v in _re.split(r"[|,;]", raw) if v.strip() != ""]
             enumValsByLabel[lbl] = vals
 
     for ln in text.split("\n"):
