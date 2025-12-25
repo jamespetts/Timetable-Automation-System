@@ -1646,6 +1646,12 @@ class TASSetupFrame(jmri.util.JmriJFrame):
                 optionsPanel.setVisible(hasOpts)
             except:
                 pass
+            
+            # Also toggle the scroller itself
+            try:
+                optionsScroll.setVisible(hasOpts)
+            except:
+                pass
 
             if not hasOpts:
                 return
@@ -1671,26 +1677,17 @@ class TASSetupFrame(jmri.util.JmriJFrame):
                     _AddStringRow(label, mem, r)
                 r += 1
 
-        # --- Ensure the outer setup window grows to fit these controls (but never shrinks in width) ---
+        # Fit options into the scroller without stealing space from the list rows
         try:
-            # Remember current width so options never cause the main window to narrow
-            prevW = int(self.getWidth())
-
-            # Revalidate inner panels first so preferred sizes are up to date
-            optsInner.revalidate()
-            optionsPanel.revalidate()
-            root.revalidate()
-
-            # Re-pack the frame; this can increase the overall window size if needed
-            self.PackAndCenter()
-
-            # Prevent any width reduction caused by pack()
-            if int(self.getWidth()) < prevW:
-                self.setSize(prevW, int(self.getHeight()))
+            optH = int(optionsPanel.getPreferredSize().height)
+            # Clamp visible height to 200..360px; larger content scrolls
+            visH = max(200, min(360, optH))
+            optionsScroll.setPreferredSize(Dimension(660, visH))
+            optionsScroll.revalidate(); optionsScroll.repaint()
+            root.revalidate(); root.repaint()
         except:
-            # Be tolerant of any LAF/EDT quirks
             pass
-
+      
         # Description area (shared between both panels)
         from javax.swing import JTextArea
         descArea = JTextArea(4, 50)
@@ -1734,6 +1731,12 @@ class TASSetupFrame(jmri.util.JmriJFrame):
             OnSelectCallback=ShowDescriptionForFile
         )
         root.add(pubPanel, gbc)
+              
+        # Keep the public list pane readable even when options grow
+        try:
+            pubPanel.setMinimumSize(Dimension(520, 260))
+        except:
+            pass
 
         # Row 1: Signallers' displays
         gbc.gridx = 0
@@ -1746,6 +1749,12 @@ class TASSetupFrame(jmri.util.JmriJFrame):
             OnSelectCallback=ShowDescriptionForFile
         )
         root.add(sigPanel, gbc)
+             
+        # Keep the signallers' list pane readable even when options grow
+        try:
+            sigPanel.setMinimumSize(Dimension(520, 260))
+        except:
+            pass
 
         # Row 2: Description box at bottom
         descPanel = JPanel()
@@ -1768,12 +1777,32 @@ class TASSetupFrame(jmri.util.JmriJFrame):
         descScroll.setPreferredSize(Dimension(660, 110))
         descScroll.setMinimumSize(Dimension(520, 110))
         descPanel.add(descScroll, dg)
+             
+        # Keep the description area from collapsing when options grow
+        try:
+            descPanel.setMinimumSize(Dimension(520, 150))
+        except:
+            pass
          
-        # Row 2: Options panel (visible only when a selected display has options)
+        # Row 2: Options panel (scrollable) to prevent it from stealing all vertical space
+        from javax.swing import ScrollPaneConstants
+        optionsScroll = JScrollPane(optionsPanel)
+        optionsScroll.setOpaque(False)
+        try: optionsScroll.getViewport().setBackground(THEME_PAPER)
+        except: pass
+        try: optionsScroll.setBorder(BorderFactory.createEmptyBorder(0,0,0,0))
+        except: pass
+        optionsScroll.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER)
+        optionsScroll.setVerticalScrollBarPolicy(ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED)
+        # Baseline visible height; content beyond this scrolls
+        optionsScroll.setPreferredSize(Dimension(660, 260))
+        optionsScroll.setMinimumSize(Dimension(520, 200))
+        # Place the options scroller in its own row (row 2)
         gbc.gridx = 0
         gbc.gridy = 2
         gbc.weighty = 0.0
-        root.add(optionsPanel, gbc)
+        gbc.fill = GridBagConstraints.BOTH
+        root.add(optionsScroll, gbc)
 
         # Row 3: Description box (moved down one row)
         gbc.gridy = 3

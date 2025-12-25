@@ -19,6 +19,59 @@
 # <<PID-DISP-NAME: Platform fingerboard>>
 # <<DESCRIPTION: A wooden board with the destination and calling pattern of the next train painted on it>>
 
+# ----------------------------------------------------------------
+# User-configurable settings discovered by TASSetup:
+# Text composition
+# <<SETTING DESCRIPTION ENUM: Text layout>>
+# <<SETTING ENUM VALUES Text layout: CALLING_ONLY
+# DEST_THEN_CALLING>>
+# <<SETTING DESCRIPTION STRING: Separator between calling points>>
+# <<SETTING DESCRIPTION STRING: Joiner between destination and calling text>>
+# <<SETTING DESCRIPTION BOOLEAN: Use uppercase letters>>
+# Behaviour
+# <<SETTING DESCRIPTION NUMBER: Due window (minutes)>>
+# <<SETTING DESCRIPTION BOOLEAN: Hide clocks when empty>>
+# <<SETTING DESCRIPTION STRING: Extra ECS keywords>>
+# <<SETTING DESCRIPTION STRING: Departure timing point(s)>>
+# Colours (RGB r,g,b)
+# <<SETTING DESCRIPTION COLOR: Text colour>>
+# <<SETTING DESCRIPTION COLOR: Board fill colour>>
+# <<SETTING DESCRIPTION COLOR: Board edge colour>>
+# <<SETTING DESCRIPTION COLOR: Clock face colour>>
+# <<SETTING DESCRIPTION COLOR: Clock hands colour>>
+# <<SETTING DESCRIPTION COLOR: Label fill colour>>
+# <<SETTING DESCRIPTION COLOR: Label edge colour>>
+# <<SETTING DESCRIPTION COLOR: Background colour>>
+# Geometry / layout (numbers)
+# <<SETTING DESCRIPTION NUMBER: Clock diameter (px)>>
+# <<SETTING DESCRIPTION NUMBER: Label box max width (px)>>
+# <<SETTING DESCRIPTION NUMBER: Text maximum size (pt)>>
+# <<SETTING DESCRIPTION NUMBER: Text minimum size (pt)>>
+
+# ----------------------------------------------------------------
+
+# Friendly label -> legacy key
+# Text layout                  -> TEXT_MODE
+# Separator between calling... -> CALLING_SEPARATOR
+# Joiner between destination...-> DEST_CALL_JOINER
+# Use uppercase letters        -> UPPERCASE_ALL
+# Due window (minutes)         -> WITHIN_MINUTES
+# Hide clocks when empty       -> HIDE_CLOCKS_WHEN_EMPTY
+# Extra ECS keywords           -> EXTRA_ECS_TERMS
+# Departure timing point(s)    -> DEPARTURE_TP
+# Text colour                  -> TEXT_COLOR
+# Board fill colour            -> BOARD_FILL_COLOR
+# Board edge colour            -> BOARD_EDGE_COLOR
+# Clock face colour            -> CLOCK_FACE_COLOR
+# Clock hands colour           -> CLOCK_HAND_COLOR
+# Label fill colour            -> LABEL_FILL_COLOR
+# Label edge colour            -> LABEL_EDGE_COLOR
+# Background colour            -> BACKGROUND_COLOR
+# Clock diameter (px)          -> CLOCK_DIAMETER
+# Label box max width (px)     -> LABEL_BOX_MAX_W
+# Text maximum size (pt)       -> LINE_FONT_MAX
+# Text minimum size (pt)       -> LINE_FONT_MIN
+
 import javax.swing as swing
 import java.awt as awt
 from java.awt import Color, Font, GradientPaint, RenderingHints, BasicStroke, Dimension
@@ -112,6 +165,306 @@ FBP_DefaultWithinMinutes = 10
 # Optional authoritative fast clock for "now"
 FBP_Timebase      = InstanceManager.getDefault(jmri.Timebase)
 
+# -------------------- USER SETTINGS (via TASSetup) --------------------
+# Memory beans discovered by TASSetup from the <<SETTING ...>> tags.
+# We use ProvideMemoryBySuffix so the IM/I2M/I3M prefix is agnostic.
+FBP_TextModeMem     = TBL.ProvideMemoryBySuffix("TAS_USER_SETTING_TEXT_MODE", "")
+FBP_CallSepMem      = TBL.ProvideMemoryBySuffix("TAS_USER_SETTING_CALLING_SEPARATOR", "")
+FBP_DestJoinMem     = TBL.ProvideMemoryBySuffix("TAS_USER_SETTING_DEST_CALL_JOINER", "")
+FBP_UppercaseMem    = TBL.ProvideMemoryBySuffix("TAS_USER_SETTING_UPPERCASE_ALL", "")
+
+FBP_WithinMinMem2   = TBL.ProvideMemoryBySuffix("TAS_USER_SETTING_WITHIN_MINUTES", "")
+FBP_HideClocksMem2  = TBL.ProvideMemoryBySuffix("TAS_USER_SETTING_HIDE_CLOCKS_WHEN_EMPTY", "")
+FBP_ExtraEcsMem2    = TBL.ProvideMemoryBySuffix("TAS_USER_SETTING_EXTRA_ECS_TERMS", "")
+FBP_DepartTpMem2    = TBL.ProvideMemoryBySuffix("TAS_USER_SETTING_DEPARTURE_TP", "")
+
+# Colour memories (rgb string "r,g,b")
+FBP_TextColorMem    = TBL.ProvideMemoryBySuffix("TAS_USER_SETTING_TEXT_COLOR", "")
+FBP_BoardFillMem    = TBL.ProvideMemoryBySuffix("TAS_USER_SETTING_BOARD_FILL_COLOR", "")
+FBP_BoardEdgeMem    = TBL.ProvideMemoryBySuffix("TAS_USER_SETTING_BOARD_EDGE_COLOR", "")
+FBP_ClockFaceMem    = TBL.ProvideMemoryBySuffix("TAS_USER_SETTING_CLOCK_FACE_COLOR", "")
+FBP_ClockHandMem    = TBL.ProvideMemoryBySuffix("TAS_USER_SETTING_CLOCK_HAND_COLOR", "")
+FBP_LabelFillMem    = TBL.ProvideMemoryBySuffix("TAS_USER_SETTING_LABEL_FILL_COLOR", "")
+FBP_LabelEdgeMem    = TBL.ProvideMemoryBySuffix("TAS_USER_SETTING_LABEL_EDGE_COLOR", "")
+FBP_BackgroundMem   = TBL.ProvideMemoryBySuffix("TAS_USER_SETTING_BACKGROUND_COLOR", "")
+
+# Geometry memories (numbers)
+FBP_ClockDiamMem    = TBL.ProvideMemoryBySuffix("TAS_USER_SETTING_CLOCK_DIAMETER", "")
+FBP_LabelMaxWMem    = TBL.ProvideMemoryBySuffix("TAS_USER_SETTING_LABEL_BOX_MAX_W", "")
+FBP_LineFontMaxMem  = TBL.ProvideMemoryBySuffix("TAS_USER_SETTING_LINE_FONT_MAX", "")
+FBP_LineFontMinMem  = TBL.ProvideMemoryBySuffix("TAS_USER_SETTING_LINE_FONT_MIN", "")
+
+# Basic parsers for settings
+def FBP_ReadStr(memBean, defaultVal):
+    try:
+        v = memBean.getValue() if memBean is not None else None
+        s = ("" if v is None else str(v)).strip()
+        return s if s != "" else defaultVal
+    except:
+        return defaultVal
+
+def FBP_ReadBool(memBean, defaultVal):
+    try:
+        v = memBean.getValue() if memBean is not None else None
+        s = ("" if v is None else str(v)).strip().lower()
+        if s in ("1","true","yes","y","on","t"):   return True
+        if s in ("0","false","no","n","off","f"): return False
+        return defaultVal
+    except:
+        return defaultVal
+
+def FBP_ReadInt(memBean, defaultVal):
+    try:
+        v = memBean.getValue() if memBean is not None else None
+        s = ("" if v is None else str(v)).strip()
+        return int(float(s)) if s != "" else defaultVal
+    except:
+        return defaultVal
+
+def FBP_ParseColor(rgbStr, defaultColor):
+    try:
+        parts = [p.strip() for p in str(rgbStr).split(",")]
+        if len(parts) != 3: return defaultColor
+        r = max(0, min(255, int(float(parts[0]))))
+        g = max(0, min(255, int(float(parts[1]))))
+        b = max(0, min(255, int(float(parts[2]))))
+        return Color(r,g,b)
+    except:
+        return defaultColor
+
+def FBP_ReadColor(memBean, defaultColor):
+    try:
+        v = memBean.getValue() if memBean is not None else None
+        s = ("" if v is None else str(v)).strip()
+        return FBP_ParseColor(s, defaultColor) if s != "" else defaultColor
+    except:
+        return defaultColor
+          
+
+# --- Derive TAS user-setting memory suffix from a friendly label (same rule TASSetup uses) ---
+def FBP_MemSuffixFromLabel(label):
+    try:
+        s = str(label).strip()
+    except:
+        s = ""
+    import re
+    key = re.sub(r"[^A-Za-z0-9]+", "_", s).upper()
+    return "TAS_USER_SETTING_" + key
+
+# --- Obtain both new (friendly) and legacy (old ALLCAPS) beans for a setting ---
+def FBP_GetDualSettingBeans(friendlyLabel, legacyKey):
+    try:
+        newBean = TBL.ProvideMemoryBySuffix(FBP_MemSuffixFromLabel(friendlyLabel), "")
+    except:
+        newBean = None
+    try:
+        legacyBean = TBL.ProvideMemoryBySuffix("TAS_USER_SETTING_" + legacyKey, "")
+    except:
+        legacyBean = None
+    return newBean, legacyBean
+
+# --- Dual readers: prefer the friendly bean if it has a value; else fall back to legacy ---
+def FBP_ReadStrDual(newBean, legacyBean, defaultVal):
+    try:
+        v = newBean.getValue() if newBean is not None else None
+        s = ("" if v is None else str(v)).strip()
+        if s != "":
+            return s
+    except:
+        pass
+    try:
+        v2 = legacyBean.getValue() if legacyBean is not None else None
+        s2 = ("" if v2 is None else str(v2)).strip()
+        if s2 != "":
+            return s2
+    except:
+        pass
+    return defaultVal
+
+def FBP_ReadBoolDual(newBean, legacyBean, defaultVal):
+    def to_bool(x, d):
+        t = ("" if x is None else str(x)).strip().lower()
+        if t in ("1","true","yes","y","on","t"): return True
+        if t in ("0","false","no","n","off","f"): return False
+        return d
+    try:
+        v = newBean.getValue() if newBean is not None else None
+        s = ("" if v is None else str(v)).strip()
+        if s != "":
+            return to_bool(s, defaultVal)
+    except:
+        pass
+    try:
+        v2 = legacyBean.getValue() if legacyBean is not None else None
+        s2 = ("" if v2 is None else str(v2)).strip()
+        if s2 != "":
+            return to_bool(s2, defaultVal)
+    except:
+        pass
+    return defaultVal
+
+def FBP_ReadIntDual(newBean, legacyBean, defaultVal):
+    try:
+        v = newBean.getValue() if newBean is not None else None
+        s = ("" if v is None else str(v)).strip()
+        if s != "":
+            return int(float(s))
+    except:
+        pass
+    try:
+        v2 = legacyBean.getValue() if legacyBean is not None else None
+        s2 = ("" if v2 is None else str(v2)).strip()
+        if s2 != "":
+            return int(float(s2))
+    except:
+        pass
+    return defaultVal
+
+def FBP_ReadColorDual(newBean, legacyBean, defaultColor):
+    try:
+        v = newBean.getValue() if newBean is not None else None
+        s = ("" if v is None else str(v)).strip()
+        if s != "":
+            return FBP_ParseColor(s, defaultColor)
+    except:
+        pass
+    try:
+        v2 = legacyBean.getValue() if legacyBean is not None else None
+        s2 = ("" if v2 is None else str(v2)).strip()
+        if s2 != "":
+            return FBP_ParseColor(s2, defaultColor)
+    except:
+        pass
+    return defaultColor
+
+
+# --- Helpers to seed initial colour memories with sensible fingerboard defaults ---
+def _FBP_ColorToRgbStr(c):
+    try:
+        return "%d,%d,%d" % (c.getRed(), c.getGreen(), c.getBlue())
+    except:
+        return "0,0,0"
+
+def FBP_SeedColorIfPlaceholder(memBean, defaultColor):
+    """
+    If the colour memory is blank or equals a generic beige placeholder,
+    write the fingerboard's sensible default into the memory (so TASSetup
+    shows it), and return that default. Otherwise, return the user's colour.
+    """
+    try:
+        v = memBean.getValue() if memBean is not None else None
+        s = ("" if v is None else str(v)).strip()
+        if s == "":
+            # Blank -> seed with default
+            if memBean is not None:
+                memBean.setValue(_FBP_ColorToRgbStr(defaultColor))
+            return defaultColor
+        # Known placeholders used by TASSetup/WTTDisplay; treat as "unset"
+        placeholders = ["240,238,220", "249,246,238"]
+        if s in placeholders:
+            if memBean is not None:
+                memBean.setValue(_FBP_ColorToRgbStr(defaultColor))
+            return defaultColor
+        # Real user choice
+        return FBP_ParseColor(s, defaultColor)
+    except:
+        return defaultColor
+
+# Dual beans: (new friendly, legacy) for each setting
+FBP_TextLayout_New,      FBP_TextMode_Leg = FBP_GetDualSettingBeans("Text layout",                  "TEXT_MODE")
+FBP_CallSep_New,         FBP_CallSep_Leg  = FBP_GetDualSettingBeans("Separator between calling points", "CALLING_SEPARATOR")
+FBP_DestJoin_New,        FBP_DestJoin_Leg = FBP_GetDualSettingBeans("Joiner between destination and calling text", "DEST_CALL_JOINER")
+FBP_Uppercase_New,       FBP_Uppercase_Leg= FBP_GetDualSettingBeans("Use uppercase letters",         "UPPERCASE_ALL")
+
+FBP_Within_New,          FBP_Within_Leg   = FBP_GetDualSettingBeans("Due window (minutes)",          "WITHIN_MINUTES")
+FBP_HideClocks_New,      FBP_HideClocks_Leg=FBP_GetDualSettingBeans("Hide clocks when empty",        "HIDE_CLOCKS_WHEN_EMPTY")
+FBP_ExtraEcs_New,        FBP_ExtraEcs_Leg = FBP_GetDualSettingBeans("Extra ECS keywords",            "EXTRA_ECS_TERMS")
+FBP_DepartTp_New,        FBP_DepartTp_Leg = FBP_GetDualSettingBeans("Departure timing point(s)",     "DEPARTURE_TP")
+
+FBP_TextColor_New,       FBP_TextColor_Leg= FBP_GetDualSettingBeans("Text colour",                   "TEXT_COLOR")
+FBP_BoardFill_New,       FBP_BoardFill_Leg= FBP_GetDualSettingBeans("Board fill colour",             "BOARD_FILL_COLOR")
+FBP_BoardEdge_New,       FBP_BoardEdge_Leg= FBP_GetDualSettingBeans("Board edge colour",             "BOARD_EDGE_COLOR")
+FBP_ClockFace_New,       FBP_ClockFace_Leg= FBP_GetDualSettingBeans("Clock face colour",             "CLOCK_FACE_COLOR")
+FBP_ClockHand_New,       FBP_ClockHand_Leg= FBP_GetDualSettingBeans("Clock hands colour",            "CLOCK_HAND_COLOR")
+FBP_LabelFill_New,       FBP_LabelFill_Leg= FBP_GetDualSettingBeans("Label fill colour",             "LABEL_FILL_COLOR")
+FBP_LabelEdge_New,       FBP_LabelEdge_Leg= FBP_GetDualSettingBeans("Label edge colour",             "LABEL_EDGE_COLOR")
+FBP_Background_New,      FBP_Background_Leg=FBP_GetDualSettingBeans("Background colour",             "BACKGROUND_COLOR")
+
+FBP_ClockDiam_New,       FBP_ClockDiam_Leg= FBP_GetDualSettingBeans("Clock diameter (px)",           "CLOCK_DIAMETER")
+FBP_LabelMaxW_New,       FBP_LabelMaxW_Leg= FBP_GetDualSettingBeans("Label box max width (px)",      "LABEL_BOX_MAX_W")
+FBP_LineFontMax_New,     FBP_LineFontMax_Leg=FBP_GetDualSettingBeans("Text maximum size (pt)",       "LINE_FONT_MAX")
+FBP_LineFontMin_New,     FBP_LineFontMin_Leg=FBP_GetDualSettingBeans("Text minimum size (pt)",       "LINE_FONT_MIN")
+
+# -------------------- APPLY USER SETTINGS (after helpers are defined) --------------------
+
+# Text composition
+tmp_mode = FBP_ReadStrDual(FBP_TextLayout_New, FBP_TextMode_Leg, FBP_TEXT_MODE).upper()
+if tmp_mode in ("CALLING_ONLY", "DEST_THEN_CALLING"):
+    FBP_TEXT_MODE = tmp_mode
+FBP_CALLING_SEPARATOR = FBP_ReadStrDual(FBP_CallSep_New,  FBP_CallSep_Leg,  FBP_CALLING_SEPARATOR)
+FBP_DEST_CALL_JOINER  = FBP_ReadStrDual(FBP_DestJoin_New, FBP_DestJoin_Leg, FBP_DEST_CALL_JOINER)
+
+# Colours
+FBP_TEXT_COLOR     = FBP_ReadColorDual(FBP_TextColor_New,  FBP_TextColor_Leg,  FBP_TEXT_COLOR)
+FBP_BOARD_FILL     = FBP_ReadColorDual(FBP_BoardFill_New,  FBP_BoardFill_Leg,  FBP_BOARD_FILL)
+FBP_BOARD_EDGE     = FBP_ReadColorDual(FBP_BoardEdge_New,  FBP_BoardEdge_Leg,  FBP_BOARD_EDGE)
+FBP_CLOCK_FACE     = FBP_ReadColorDual(FBP_ClockFace_New,  FBP_ClockFace_Leg,  FBP_CLOCK_FACE)
+FBP_CLOCK_HAND     = FBP_ReadColorDual(FBP_ClockHand_New,  FBP_ClockHand_Leg,  FBP_CLOCK_HAND)
+FBP_LABEL_BOX_FILL = FBP_ReadColorDual(FBP_LabelFill_New,  FBP_LabelFill_Leg,  FBP_LABEL_BOX_FILL)
+FBP_LABEL_BOX_EDGE = FBP_ReadColorDual(FBP_LabelEdge_New,  FBP_LabelEdge_Leg,  FBP_LABEL_BOX_EDGE)
+FBP_BG_COLOR       = FBP_ReadColorDual(FBP_Background_New, FBP_Background_Leg, FBP_BG_COLOR)
+
+# Booleans
+FBP_UPPERCASE_ALL  = FBP_ReadBoolDual(FBP_Uppercase_New, FBP_Uppercase_Leg, FBP_UPPERCASE_ALL)
+
+# Numbers / clamps
+try:
+    FBP_CLOCK_D = max(100, FBP_ReadIntDual(FBP_ClockDiam_New,  FBP_ClockDiam_Leg,  FBP_CLOCK_D))   # min raised to avoid starburst
+except: pass
+try:
+    FBP_LABEL_BOX_MAX_W = max(60, FBP_ReadIntDual(FBP_LabelMaxW_New, FBP_LabelMaxW_Leg, FBP_LABEL_BOX_MAX_W))
+except: pass
+try:
+    fmax = max(12, FBP_ReadIntDual(FBP_LineFontMax_New, FBP_LineFontMax_Leg, FBP_LINE_FONT_MAX))
+    fmin = max(22, FBP_ReadIntDual(FBP_LineFontMin_New, FBP_LineFontMin_Leg, FBP_LINE_FONT_MIN))  # legibility baseline
+    if fmin > fmax:
+        fmin, fmax = fmax, fmin
+    FBP_LINE_FONT_MAX = fmax
+    FBP_LINE_FONT_MIN = fmin
+except: pass
+
+# Behaviour memories used elsewhere:
+# Due window minutes / hide clocks when empty / extra ECS / departure TP - use dual readers
+FBP_WithinMinutes_Value   = FBP_ReadIntDual(FBP_Within_New,     FBP_Within_Leg,   FBP_DefaultWithinMinutes)
+FBP_HideClocksWhenEmpty_Value = FBP_ReadBoolDual(FBP_HideClocks_New, FBP_HideClocks_Leg, False)
+FBP_ExtraEcs_Value        = FBP_ReadStrDual(FBP_ExtraEcs_New,   FBP_ExtraEcs_Leg, "")
+FBP_DepartTp_Value        = FBP_ReadStrDual(FBP_DepartTp_New,   FBP_DepartTp_Leg, "")
+
+# -------------------- END APPLY USER SETTINGS --------------------
+
+def FBP_ReadUserColor(memBean, defaultColor):
+    """
+    Read a user-setting colour. If the memory is blank or equals one of the
+    global beige placeholders that TASSetup seeds by default, ignore it and
+    keep the script's own defaultColor. This restores sensible first-run defaults.
+    """
+    try:
+        v = memBean.getValue() if memBean is not None else None
+        s = ("" if v is None else str(v)).strip()
+        if s == "":
+            return defaultColor
+        c = FBP_ParseColor(s, defaultColor)
+        # Treat common seeded placeholders as "unset"
+        placeholder1 = Color(240, 238, 220)  # Cover colour used by TASSetup
+        placeholder2 = Color(249, 246, 238)  # Paper colour used by WTTDisplay/TASSetup
+        if ((c.getRed()   == placeholder1.getRed() and c.getGreen() == placeholder1.getGreen() and c.getBlue() == placeholder1.getBlue()) or
+            (c.getRed()   == placeholder2.getRed() and c.getGreen() == placeholder2.getGreen() and c.getBlue() == placeholder2.getBlue())):
+            return defaultColor
+        return c
+    except:
+        return defaultColor
+
+
 # -------------------- TIME HELPERS --------------------
 FBP_TimeParser24 = SimpleDateFormat("H:mm")
 FBP_TimeParser12 = SimpleDateFormat("h:mm a")
@@ -134,8 +487,17 @@ def FBP_NormTime(s):
     return None
 
 def FBP_ReadWithinMinutes():
-    try:
-        v = FBP_WithInMinMem.getValue() if FBP_WithInMinMem is not None else None
+    try:       
+        v = None
+        try:
+            v = FBP_WithInMinMem.getValue() if FBP_WithInMinMem is not None else None
+        except: pass
+        # Prefer TASSetup value when present
+        try:
+            v2 = FBP_WithinMinMem2.getValue() if FBP_WithinMinMem2 is not None else None
+            s2 = ("" if v2 is None else str(v2)).strip()
+            if s2 != "": v = v2
+        except: pass
         if v is None: return FBP_DefaultWithinMinutes
         s = str(v).strip()
         if not s: return FBP_DefaultWithinMinutes
@@ -145,14 +507,21 @@ def FBP_ReadWithinMinutes():
     except:
         return FBP_DefaultWithinMinutes
 
-def FBP_ReadHideClocksWhenEmpty():
+def FBP_ReadHideClocksWhenEmpty():  
+    # Prefer TASSetup toggle when present
     try:
-        v = FBP_HideClocksEmptyMem.getValue() if FBP_HideClocksEmptyMem is not None else None
-        if v is None: return False
-        s = str(v).strip().lower()
-        return s in ("true","yes","1","on","y","t")
-    except:
-        return False
+        v2 = FBP_HideClocksMem2.getValue() if FBP_HideClocksMem2 is not None else None
+        s2 = ("" if v2 is None else str(v2)).strip().lower()
+        if s2 in ("true","yes","1","on","y","t"): return True
+        if s2 in ("false","no","0","off","n","f"): return False
+    except: 
+        try:
+            v = FBP_HideClocksEmptyMem.getValue() if FBP_HideClocksEmptyMem is not None else None
+            if v is None: return False
+            s = str(v).strip().lower()
+            return s in ("true","yes","1","on","y","t")
+        except:
+            return False
 
 # -------------------- CSV ACCESS --------------------
 def FBP_TimetablePath():
@@ -198,21 +567,38 @@ def FBP_ActiveProfileBaseTPName():
         return ""
 
 def FBP_DepartureTPList():
+    # Merge legacy PID_DEPARTURE_TP and TAS_USER_SETTING_DEPARTURE_TP.
+    # If nothing configured, default to the active profile name (one TP).
     names = []
+
+    # Legacy memory (semicolon or comma separated)
     try:
         raw = FBP_DepartTPMem.getValue() if FBP_DepartTPMem is not None else None
         if raw:
-            parts = str(raw).replace(",", ";").split(";")
-            for p in parts:
-                t = p.strip()
-                if t:
+            for p in str(raw).replace(",", ";").split(";"):
+                t = (p or "").strip()
+                if t and t not in names:
                     names.append(t)
     except:
-        names = []
+        pass
+
+    # If still empty, fall back to active profile name
     if not names:
         base = FBP_ActiveProfileBaseTPName()
         if base:
             names = [base]
+
+    # TASSetup user setting (semicolon or comma separated) - overrides/augments
+    try:
+        raw2 = FBP_DepartTpMem2.getValue() if FBP_DepartTpMem2 is not None else None
+        if raw2:
+            for p in str(raw2).replace(",", ";").split(";"):
+                t = (p or "").strip()
+                if t and t not in names:
+                    names.append(t)
+    except:
+        pass
+
     return names
 
 def FBP_HasDepartedAtConfiguredTP(reportingNumber, dayName, nowMinutes):
@@ -245,18 +631,31 @@ FBP_DefaultEcsTerms = [
 ]
 
 def FBP_ReadExtraEcsTerms():
+    # Merge legacy PID_ECS_FILTER_TERMS and TAS_USER_SETTING_EXTRA_ECS_TERMS
+    out = []
+    # Legacy terms
     try:
         raw = FBP_EcsFilterMem.getValue() if FBP_EcsFilterMem is not None else None
-        if not raw: return []
-        parts = str(raw).replace(",", ";").split(";")
-        out = []
-        for p in parts:
-            t = p.strip()
-            if t:
-                out.append(t.upper())
-        return out
+        if raw:
+            parts = str(raw).replace(",", ";").split(";")
+            for p in parts:
+                t = p.strip()
+                if t:
+                    out.append(t.upper())
     except:
-        return []
+        pass
+    # TASSetup terms
+    try:
+        raw2 = FBP_ExtraEcsMem2.getValue() if FBP_ExtraEcsMem2 is not None else None
+        if raw2:
+            parts2 = str(raw2).replace(",", ";").split(";")
+            for p in parts2:
+                t = p.strip()
+                if t:
+                    out.append(t.upper())
+    except:
+        pass
+    return out
 
 def FBP_IsEcsWorking(row):
     dest = ((row.get("Destination","") or "")).strip().upper()
@@ -651,6 +1050,20 @@ class FBP_FingerBoardWindow(object):
         if FBP_EcsFilterMem is not None: FBP_EcsFilterMem.addPropertyChangeListener(self.refresh)
         if FBP_WithInMinMem is not None: FBP_WithInMinMem.addPropertyChangeListener(self.refresh)
         if FBP_HideClocksEmptyMem is not None: FBP_HideClocksEmptyMem.addPropertyChangeListener(self.refresh)
+           
+        # --- Listen to TASSetup user-setting memories as well ---       
+        for m in [
+            FBP_TextModeMem, FBP_CallSepMem, FBP_DestJoinMem, FBP_UppercaseMem,
+            FBP_WithinMinMem2, FBP_HideClocksMem2, FBP_ExtraEcsMem2, FBP_DepartTpMem2,
+            FBP_TextColorMem, FBP_BoardFillMem, FBP_BoardEdgeMem, FBP_ClockFaceMem,
+            FBP_ClockHandMem, FBP_LabelFillMem, FBP_LabelEdgeMem, FBP_BackgroundMem,
+            FBP_ClockDiamMem, FBP_LabelMaxWMem, FBP_LineFontMaxMem, FBP_LineFontMinMem,
+        ]:
+            try:
+                if m is not None:
+                    m.addPropertyChangeListener(self.refresh)
+            except:
+                pass
 
         # Also refresh immediately on platform allocation register events
         try:
@@ -696,7 +1109,20 @@ class FBP_FingerBoardWindow(object):
         except: pass
         try:
             if FBP_HideClocksEmptyMem is not None: FBP_HideClocksEmptyMem.removePropertyChangeListener(self.refresh)
-        except: pass
+        except: pass       
+        # --- remove TASSetup user-setting listeners ---
+        for m in [
+            FBP_TextModeMem, FBP_CallSepMem, FBP_DestJoinMem, FBP_UppercaseMem,
+            FBP_WithinMinMem2, FBP_HideClocksMem2, FBP_ExtraEcsMem2, FBP_DepartTpMem2,
+            FBP_TextColorMem, FBP_BoardFillMem, FBP_BoardEdgeMem, FBP_ClockFaceMem,
+            FBP_ClockHandMem, FBP_LabelFillMem, FBP_LabelEdgeMem, FBP_BackgroundMem,
+            FBP_ClockDiamMem, FBP_LabelMaxWMem, FBP_LineFontMaxMem, FBP_LineFontMinMem
+        ]:
+            try:
+                if m is not None:
+                    m.removePropertyChangeListener(self.refresh)
+            except:
+                pass
         # Remove platform allocation listener
         try:
             PAR.removePlatformListener(self.refresh)
@@ -737,6 +1163,21 @@ class FBP_PlatformFingerBoards(object):
         if FBP_EcsFilterMem is not None: FBP_EcsFilterMem.addPropertyChangeListener(self.refresh_all)
         if FBP_WithInMinMem is not None: FBP_WithInMinMem.addPropertyChangeListener(self.refresh_all)
         if FBP_HideClocksEmptyMem is not None: FBP_HideClocksEmptyMem.addPropertyChangeListener(self.refresh_all)
+        
+        # Also refresh all boards on any TASSetup option update
+        for m in [
+            FBP_TextModeMem, FBP_CallSepMem, FBP_DestJoinMem, FBP_UppercaseMem,
+            FBP_WithinMinMem2, FBP_HideClocksMem2, FBP_ExtraEcsMem2, FBP_DepartTpMem2,
+            FBP_TextColorMem, FBP_BoardFillMem, FBP_BoardEdgeMem, FBP_ClockFaceMem,
+            FBP_ClockHandMem, FBP_LabelFillMem, FBP_LabelEdgeMem, FBP_BackgroundMem,
+            FBP_ClockDiamMem, FBP_LabelMaxWMem, FBP_LineFontMaxMem, FBP_LineFontMinMem
+        ]:
+            try:
+                if m is not None:
+                    m.addPropertyChangeListener(self.refresh_all)
+            except:
+                pass
+
         self.build()
 
     def build(self):
