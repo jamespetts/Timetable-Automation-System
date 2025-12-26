@@ -409,6 +409,14 @@ def _ApplyGapsToStops(stops, destKey):
         return stops
     return out
 
+def ActiveProfileNameUpper():
+    try:
+        nm = jmri.profile.ProfileManager.getDefault().getActiveProfile().getName()
+        s = ("" if nm is None else str(nm)).strip()
+        return s.upper()
+    except:
+        return ""
+
 # ------------------------------ Fast clock ---------------------------------
 Timebase = InstanceManager.getDefault(jmri.Timebase)
 DayMem   = TBL.ProvideMemoryBySuffix("DAYOFWEEK", "")
@@ -538,7 +546,12 @@ def NextServices(count):
     for r in rowsToday:
         d = CaseInsensitive(r, "Destination")
         v = CaseInsensitive(r, "Via")
-        if d: destPool.append(d)
+        if d:
+            try:
+                if (d or "").strip().upper() != ActiveProfileNameUpper():
+                    destPool.append(d)
+            except:
+                destPool.append(d)
         if v: viaPool.append(v)
         pf = PlatformField(r)
         try:
@@ -571,6 +584,11 @@ class SolariFlap(swing.JComponent):
 
     def paintComponent(self, g):
         g2 = g.create()
+        try:
+            if (self.phase == "topFlip") or (self.phase == "bottomFlip"):
+                self.EnsureTimer()
+        except:
+            pass
         try:
             g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
             hingeY = int(self.h * HingeRatio)
@@ -722,6 +740,10 @@ class SolariFlap(swing.JComponent):
             except:
                 pass
             self.phase = "idle"; self.repaint(); return
+        try:
+            self.prevTopForBottom = self.curTop
+        except:
+            pass
         self.nextTop = nextPair[0]; self.nextBot = nextPair[1]
         self.phase = "topFlip"; self.t = 0.0; self.EnsureTimer()
 
@@ -729,7 +751,12 @@ class SolariFlap(swing.JComponent):
         self.phase = "bottomFlip"; self.t = 0.0; self.EnsureTimer()
 
     def EnsureTimer(self):
-        if self.animTimer is not None: return
+        running = False
+        try:
+            running = (self.animTimer is not None) and bool(self.animTimer.isRunning())
+        except:
+            running = (self.animTimer is not None)
+        if running: return
         interval = max(1000 // int(ReadInt("TAS_USER_SETTING_SOLARI_DIGIT_FPS", 60, 30, 75)), 15)
         self.animTimer = Timer(interval, self.OnTick)
         self.animTimer.setRepeats(True)
@@ -854,6 +881,7 @@ class ColonFlapFixed(swing.JComponent):
             g2.fillOval(cx, botCy, dotD, dotD)
             
         finally:
+            DrawHingeOver(g2, self.w, self.h, PURE_BLK)
             g2.dispose()
 
 class DigitFlap(SolariFlap):
@@ -925,6 +953,11 @@ class DigitFlap(SolariFlap):
     def paintComponent(self, g):
         g2 = g.create()
         try:
+            if (self.phase == "topFlip") or (self.phase == "bottomFlip"):
+                self.EnsureTimer()
+        except:
+            pass
+        try:
             g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
 
             # Match SolariFlap styling
@@ -967,6 +1000,7 @@ class DigitFlap(SolariFlap):
                 g2.setClip(None)
             except:
                 pass
+            DrawHingeOver(g2, self.w, self.h, PURE_BLK)
             g2.dispose()
 
 class WordFlap(SolariFlap):
@@ -1013,6 +1047,11 @@ class WordFlap(SolariFlap):
 
     def paintComponent(self, g):
         g2 = g.create()
+        try:
+            if (self.phase == "topFlip") or (self.phase == "bottomFlip"):
+                self.EnsureTimer()
+        except:
+            pass
         try:
             g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
 
@@ -1773,6 +1812,15 @@ class SolariBoard(swing.JPanel):
         targetBot = ""  # SolariFlap.AnimateTo will duplicate for single-line flaps
 
         if (flap.curTop == targetTop) and (flap.curBot == targetBot or not flap.twoLine):
+            # If an earlier stage left a pending/active animation on this flap (e.g. blank-stage),
+            # we must still assert the target so that the pending animation cannot overwrite it later.
+            try:
+                pending = getattr(flap, "pendingTimer", None)
+                phase = getattr(flap, "phase", "idle")
+                if pending is not None or phase != "idle":
+                    flap.AnimateTo(targetTop, targetBot, [], startDelayMs=startDelayMs)
+            except:
+                pass
             return
 
         # Build a stable cycle list (unique, preserves pool order)
