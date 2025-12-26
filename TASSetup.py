@@ -26,10 +26,11 @@ from java.awt.event import FocusAdapter, MouseAdapter, MouseEvent
 from javax.swing import (Box, JButton, JCheckBox, JFileChooser, JLabel, JDialog,
     JList, JOptionPane, JPanel, JScrollPane, JTabbedPane, JTextField,
     ListSelectionModel, SwingUtilities, UIManager, DefaultListModel,
-    DefaultListCellRenderer, BorderFactory, JComboBox, JRadioButton, ButtonGroup)
+    DefaultListCellRenderer, BorderFactory, JComboBox, JRadioButton, ButtonGroup,
+    JSpinner, SpinnerNumberModel)
 from javax.swing.filechooser import FileNameExtensionFilter
 from javax.swing import JTextPane
-from javax.swing.event import DocumentListener, ListSelectionListener
+from javax.swing.event import DocumentListener, ListSelectionListener, ChangeListener
 from javax.swing.text import StyleContext, StyledDocument, SimpleAttributeSet, StyleConstants
 from java.awt.event import KeyAdapter, KeyEvent
 from java.awt import GridLayout
@@ -1532,32 +1533,80 @@ class TASSetupFrame(jmri.util.JmriJFrame):
             g.gridx=0; g.gridy=int(rowIdx)
             g.fill=GridBagConstraints.HORIZONTAL; g.weightx=1.0
             optsInner.add(row, g)
-
+        
         def _AddNumberRow(labelText, memName, rowIdx):
             # Ensure bean exists with numeric default "0"
             try:
                 TBL.SafeGetOrCreateMemoryValue(memName, "0")
             except:
                 pass
+
+            # Read current value as int; fall back to 0 if invalid
+            curVal = 0
+            try:
+                raw = TBL.SafeGetOrCreateMemoryValue(memName, "0")
+                s = ("" if raw is None else str(raw)).strip()
+                if s != "":
+                    curVal = int(float(s))
+            except:
+                curVal = 0
+
+            if curVal < 0:
+                curVal = 0
+
+            # Integer spinner model: min 0, max int32 max, step 1
+            model = SpinnerNumberModel(int(curVal), 0, 2147483647, 1)
+            spn = JSpinner(model)
+
+            # Force integer display (no decimals) using a NumberEditor with integer pattern
+            try:
+                spn.setEditor(JSpinner.NumberEditor(spn, "#"))
+            except:
+                pass
+
+            def _commit():
+                try:
+                    v = spn.getValue()
+                    n = int(v)  # ensure integer
+                    TBL.SafeSetMemoryValue(memName, str(n))
+                except:
+                    pass
+
+            class _CL(ChangeListener):
+                def stateChanged(self, e):
+                    _commit()
+
+            try:
+                spn.addChangeListener(_CL())
+            except:
+                pass
+
             row = Box.createHorizontalBox()
             lbl = JLabel(labelText + ":")
-            txt = JTextField(8)
-            txt.setText(TBL.SafeGetOrCreateMemoryValue(memName, "0"))
-            def _commit():
-                s = txt.getText().strip()
-                try:
-                    _ = float(s)  # validate
-                    TBL.SafeSetMemoryValue(memName, s)
-                except:
-                    txt.setText(TBL.SafeGetOrCreateMemoryValue(memName, "0"))
-            txt.addActionListener(lambda e: _commit())
-            class _Lost(FocusAdapter):
-                def focusLost(self, e): _commit()
-            txt.addFocusListener(_Lost())
-            row.add(lbl); row.add(Box.createHorizontalStrut(6)); row.add(txt)
-            g = GridBagConstraints(); g.insets = Insets(2,2,2,2)
-            g.gridx=0; g.gridy=int(rowIdx)
-            g.fill=GridBagConstraints.HORIZONTAL; g.weightx=1.0
+            
+            row.add(lbl)
+            row.add(Box.createHorizontalStrut(6))
+
+            # Make the spinner compact so it does not stretch across the row.
+            try:
+                ph = spn.getPreferredSize().height
+                spn.setPreferredSize(Dimension(80, ph))
+                spn.setMinimumSize(Dimension(80, ph))
+                spn.setMaximumSize(Dimension(100, ph))
+            except:
+                pass
+
+            row.add(spn)
+
+            # Consume remaining horizontal space on the right so the spinner stays compact.
+            row.add(Box.createHorizontalGlue())
+
+            g = GridBagConstraints()
+            g.insets = Insets(2,2,2,2)
+            g.gridx = 0
+            g.gridy = int(rowIdx)
+            g.fill = GridBagConstraints.HORIZONTAL
+            g.weightx = 1.0
             optsInner.add(row, g)
 
         def _AddColorRow(labelText, memName, rowIdx):
