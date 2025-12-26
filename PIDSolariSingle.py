@@ -21,7 +21,7 @@
 # <<SETTING DESCRIPTION NUMBER: Heading font size>>
 # <<SETTING DESCRIPTION NUMBER: Fixed text font size>>
 # <<SETTING DESCRIPTION NUMBER: Calling pattern font size>>
-# <<SETTING DESCRIPTION NUMBER: Header vertical padding>>
+# <<SETTING DESCRIPTION NUMBER: Header horizontal padding>>
 # <<SETTING DESCRIPTION NUMBER: Destination extra padding>>
 import javax.swing as swing
 import javax.swing.SwingUtilities as SwingUtilities
@@ -60,6 +60,19 @@ def ReadInt(memName, defaultVal, minVal=None, maxVal=None):
     except:
         return int(defaultVal)
 
+def _SettingMemoryName(label):
+    # Must match TASSetup.py memory naming:
+    # key = re.sub(r"[^A-Za-z0-9]+", "_", label).upper()
+    try:
+        s = str(label).strip()
+    except:
+        s = ""
+    import re as _re
+    key = _re.sub(r"[^A-Za-z0-9]+", "_", s).upper()
+    return "TAS_USER_SETTING_" + key
+
+def ReadIntSetting(label, defaultVal, minVal=None, maxVal=None):
+    return ReadInt(_SettingMemoryName(label), defaultVal, minVal, maxVal)
 
 def RunOnEDT(func):
     try:
@@ -112,11 +125,11 @@ DOUBLE_H = Sc(90)
 BAR_H = Sc(34)
 OUTER_PAD = Sc(14)
 LINE_GAP = Sc(10)
-BASE_DEST_EXTRA_GAP = ReadInt("TAS_USER_SETTING_SOLARI_SINGLE_DESTINATION_EXTRA_GAP", 5, 0, 50)
+BASE_DEST_EXTRA_GAP = ReadIntSetting("Destination extra padding", 5, 0, 50)
 DEST_EXTRA_GAP = Sc(BASE_DEST_EXTRA_GAP)
 
 # About one tab of padding for header text.
-BASE_HEADER_PAD_X = ReadInt("TAS_USER_SETTING_SOLARI_SINGLE_HEADER_PAD_X", 60, 0, 240)
+BASE_HEADER_PAD_X = ReadIntSetting("Header horizontal padding", 60, 0, 240)
 HEADER_PAD_X = Sc(BASE_HEADER_PAD_X)
 
 # Larger fonts than the original.
@@ -138,9 +151,9 @@ def PickFamily():
     return "SansSerif"
 
 FONT_FAM = PickFamily()
-BASE_FONT_BIG = ReadInt("TAS_USER_SETTING_SOLARI_SINGLE_FONT_BIG", 40, 10, 80)
-BASE_FONT_MID = ReadInt("TAS_USER_SETTING_SOLARI_SINGLE_FONT_MID", 28, 10, 80)
-BASE_FONT_CALL = ReadInt("TAS_USER_SETTING_SOLARI_SINGLE_FONT_CALL", 28, 10, 80)
+BASE_FONT_BIG = ReadIntSetting("Heading font size", 40, 10, 80)
+BASE_FONT_MID = ReadIntSetting("Fixed text font size", 28, 10, 80)
+BASE_FONT_CALL = ReadIntSetting("Calling pattern font size", 28, 10, 80)
 FONT_BIG = Sc(BASE_FONT_BIG)
 FONT_MID = Sc(BASE_FONT_MID)
 FONT_CALL = Sc(BASE_FONT_CALL)
