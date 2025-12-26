@@ -565,46 +565,232 @@ def NextServices(count):
     CALL_GAP_MAPS_BY_DEST = _BuildGapMaps(rowsToday)
     return models[:count], destPool, viaPool, platCharsSet, maxPlatNum
 
-# ------------------------------ Flap base ----------------------------------
+
+# ------------------ Flap base ------------------
+from java.lang import System
+
+class SolariAnimClock(object):
+    # Single shared Swing Timer for all active flaps.
+    TimerObj = None
+    Active = {}
+    LastMs = None
+    Interval = None
+
+    @classmethod
+    def _GetInterval(cls):
+        try:
+            fps = int(ReadInt("TAS_USER_SETTING_SOLARI_DIGIT_FPS", 60, 30, 75))
+        except:
+            fps = 60
+        if fps <= 0:
+            fps = 60
+        iv = int(max(1000 // fps, 15))
+        return iv
+
+    @classmethod
+    def Register(cls, flap):
+        if flap is None:
+            return
+        try:
+            cls.Active[id(flap)] = flap
+        except:
+            return
+        cls._EnsureRunning()
+
+    @classmethod
+    def Unregister(cls, flap):
+        if flap is None:
+            return
+        try:
+            cls.Active.pop(id(flap), None)
+        except:
+            pass
+        if not cls.Active:
+            cls._Stop()
+
+    @classmethod
+    def StopAll(cls):
+        try:
+            cls.Active = {}
+        except:
+            pass
+        cls._Stop()
+
+    @classmethod
+    def _EnsureRunning(cls):
+        iv = cls._GetInterval()
+        if cls.TimerObj is None:
+            cls.Interval = iv
+            cls.LastMs = System.currentTimeMillis()
+            cls.TimerObj = Timer(iv, cls._OnTick)
+            cls.TimerObj.setRepeats(True)
+            cls.TimerObj.start()
+        else:
+            try:
+                if int(cls.Interval) != int(iv):
+                    cls.Interval = iv
+                    cls.TimerObj.setDelay(iv)
+            except:
+                pass
+            try:
+                if not cls.TimerObj.isRunning():
+                    cls.LastMs = System.currentTimeMillis()
+                    cls.TimerObj.start()
+            except:
+                pass
+
+    @classmethod
+    def _Stop(cls):
+        try:
+            if cls.TimerObj is not None:
+                cls.TimerObj.stop()
+        except:
+            pass
+        cls.TimerObj = None
+        cls.LastMs = None
+        cls.Interval = None
+
+    @classmethod
+    def _OnTick(cls, e):
+        now = System.currentTimeMillis()
+        try:
+            last = cls.LastMs
+            if last is None:
+                dt = cls.Interval if cls.Interval is not None else 16
+            else:
+                dt = int(now - last)
+                if dt < 1:
+                    dt = 1
+        except:
+            dt = 16
+        cls.LastMs = now
+
+        try:
+            activeList = list(cls.Active.values())
+        except:
+            try:
+                activeList = cls.Active.values()
+            except:
+                activeList = []
+
+        toRemove = []
+        for f in activeList:
+            try:
+                keep = f.OnClockTick(dt)
+                if not keep:
+                    toRemove.append(f)
+            except:
+                toRemove.append(f)
+
+        for f in toRemove:
+            try:
+                cls.Active.pop(id(f), None)
+            except:
+                pass
+
+        if not cls.Active:
+            cls._Stop()
+
+
 class SolariFlap(swing.JComponent):
     def __init__(self, w, h, twoLine=False):
         super(SolariFlap, self).__init__()
         self.setOpaque(False)
-        self.w = int(w); self.h = int(h)
+        self.w = int(w)
+        self.h = int(h)
         self.twoLine = bool(twoLine)
-        self.curTop = ""; self.curBot = ""
-        self.targetTop = ""; self.targetBot = ""
-        self.animTimer = None
+        self.curTop = ""
+        self.curBot = ""
+        self.targetTop = ""
+        self.targetBot = ""
         self.phase = "idle"
         self.t = 0.0
         self.queue = []
         self.pendingTimer = None
+
+        # Base timing (per half). Kept compatible with your existing setting.
         self.msPerHalf = int(ReadInt("TAS_USER_SETTING_SOLARI_ANIM_MS_PER_HALF", 50, 25, 400))
+
         self.setSize(self.w, self.h)
+
+    def TextColor(self):
+        return TEXT_WHT
+
+    def EaseInOut(self, x):
+        # Smoothstep: 3x^2 - 2x^3 (slow start/end, fast in middle).
+        try:
+            t = float(x)
+        except:
+            t = 0.0
+        if t < 0.0:
+            t = 0.0
+        if t > 1.0:
+            t = 1.0
+        t2 = t * t
+        t3 = t2 * t
+        return (3.0 * t2) - (2.0 * t3)
 
     def paintComponent(self, g):
         g2 = g.create()
         try:
-            if (self.phase == "topFlip") or (self.phase == "bottomFlip"):
-                self.EnsureTimer()
-        except:
-            pass
-        try:
             g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
             hingeY = int(self.h * HingeRatio)
             PaintFlapFrame(g2, self.w, self.h, FLAP_BG, PURE_BLK, hingeY=hingeY)
-            if self.phase == "idle":
-                self.DrawTopText(g2, self.curTop); self.DrawBottomText(g2, self.curBot)
-            elif self.phase == "topFlip":
-                self.DrawFlipHalf(g2, half="top"); self.DrawBottomText(g2, self.curBot)
-            elif self.phase == "bottomFlip":
-                self.DrawTopText(g2, self.curTop); self.DrawFlipHalf(g2, half="bottom")
-            else:
-                self.DrawTopText(g2, self.curTop); self.DrawBottomText(g2, self.curBot)
-        finally:
-            g2.dispose()
 
-    def TextColor(self): return TEXT_WHT
+            if self.phase == "idle":
+                self.DrawTopText(g2, self.curTop)
+                self.DrawBottomText(g2, self.curBot)
+
+            elif self.phase == "fullFlip":
+                # One physical flap: reveal new content from top->bottom across the entire flap.
+                oldTop = getattr(self, "prevFullTop", self.curTop)
+                oldBot = getattr(self, "prevFullBot", self.curBot)
+                newTop = getattr(self, "nextTop", self.curTop)
+                newBot = getattr(self, "nextBot", self.curBot)
+
+                frac = self.EaseInOut(self.t)
+                reveal = int(round(frac * float(self.h)))
+                if reveal < 0:
+                    reveal = 0
+                if reveal > self.h:
+                    reveal = self.h
+
+                # New region (top of flap)
+                if reveal > 0:
+                    g2.setClip(awt.Rectangle(0, 0, self.w, reveal))
+                    self.DrawTopText(g2, newTop)
+                    self.DrawBottomText(g2, newBot)
+
+                # Old region (bottom of flap)
+                if reveal < self.h:
+                    g2.setClip(awt.Rectangle(0, reveal, self.w, self.h - reveal))
+                    self.DrawTopText(g2, oldTop)
+                    self.DrawBottomText(g2, oldBot)
+
+                try:
+                    g2.setClip(None)
+                except:
+                    pass
+
+            elif self.phase == "topFlip":
+                # Legacy half-flip behaviour (used by single-line flaps where top/bottom are the same text).
+                self.DrawFlipHalf(g2, half="top")
+                self.DrawBottomText(g2, self.curBot)
+
+            elif self.phase == "bottomFlip":
+                self.DrawTopText(g2, self.curTop)
+                self.DrawFlipHalf(g2, half="bottom")
+
+            else:
+                self.DrawTopText(g2, self.curTop)
+                self.DrawBottomText(g2, self.curBot)
+
+        finally:
+            try:
+                g2.setClip(None)
+            except:
+                pass
+            g2.dispose()
 
     def DrawTopText(self, g2, text):
         self.DrawTextLine(g2, text, top=True, colorOverride=None)
@@ -615,16 +801,20 @@ class SolariFlap(swing.JComponent):
     def DrawTextLine(self, g2, text, top, colorOverride=None):
         g2.setColor(colorOverride if colorOverride is not None else self.TextColor())
         margin = Sc(12)
+
         halfH = int(self.h * HingeRatio) if top else (self.h - int(self.h * HingeRatio))
         y0 = 0 if top else int(self.h * HingeRatio)
+
         f = MakeFont(FONT_BIG if not self.twoLine else FONT_CALL, bold=False)
         s = str(text or "")
         fm = g2.getFontMetrics(f)
-        maxWidth = self.w - 2*margin
+        maxWidth = self.w - 2 * margin
+
         if fm.stringWidth(s) > maxWidth:
             try:
                 attrs = {TextAttribute.TRACKING: -0.04}
-                f2 = f.deriveFont(attrs); fm2 = g2.getFontMetrics(f2)
+                f2 = f.deriveFont(attrs)
+                fm2 = g2.getFontMetrics(f2)
                 if fm2.stringWidth(s) > maxWidth:
                     while len(s) > 1 and fm2.stringWidth(s + "...") > maxWidth:
                         s = s[:-1]
@@ -639,25 +829,76 @@ class SolariFlap(swing.JComponent):
                 g2.setFont(f)
         else:
             g2.setFont(f)
+
         fm = g2.getFontMetrics()
-        baseline = y0 + (halfH + fm.getAscent())//2 - 2
+        baseline = y0 + (halfH + fm.getAscent()) // 2 - 2
         g2.drawString(s, margin, baseline)
 
+    def _DrawReveal(self, g2, y0, hh, oldTxt, newTxt, drawFuncOld, drawFuncNew, revealPx):
+        # Reveal new from top->bottom within this half; old remains below reveal line.
+        if hh <= 0:
+            return
+
+        r = int(revealPx)
+        if r < 0:
+            r = 0
+        if r > hh:
+            r = hh
+
+        # New region (top of half)
+        if r > 0:
+            g2.setClip(awt.Rectangle(0, y0, self.w, r))
+            drawFuncNew(g2, newTxt)
+
+        # Old region (bottom of half)
+        if r < hh:
+            g2.setClip(awt.Rectangle(0, y0 + r, self.w, hh - r))
+            drawFuncOld(g2, oldTxt)
+
+        try:
+            g2.setClip(None)
+        except:
+            pass
+
     def DrawFlipHalf(self, g2, half):
-        # Simple flip effect via half clipping and text swap mid-way
-        hingeY = int(self.h * HingeRatio); frac = self.t
+        # Head-on split-flap: progressively reveal what is behind from top->bottom,
+        # with ease-in-out speed profile.
+        hingeY = int(self.h * HingeRatio)
+        frac = self.EaseInOut(self.t)
+
         if half == "top":
-            clip = awt.Rectangle(0, 0, self.w, hingeY)
-            g2.setClip(clip)
-            txt = self.nextTop if frac > 0.5 else self.curTop
-            self.DrawTopText(g2, txt)
+            y0 = 0
+            hh = hingeY
+
+            oldTxt = self.curTop
+            newTxt = getattr(self, "nextTop", self.curTop)
+
+            reveal = int(round(frac * hh))
+
+            self._DrawReveal(
+                g2, y0, hh,
+                oldTxt, newTxt,
+                lambda gg, s: self.DrawTopText(gg, s),
+                lambda gg, s: self.DrawTopText(gg, s),
+                reveal
+            )
         else:
-            botH = self.h - hingeY
-            clip = awt.Rectangle(0, hingeY, self.w, botH)
-            g2.setClip(clip)
-            txt = self.nextBot if frac > 0.5 else self.curBot
-            self.DrawBottomText(g2, txt)
-     
+            y0 = hingeY
+            hh = self.h - hingeY
+
+            oldTxt = self.curBot
+            newTxt = getattr(self, "nextBot", self.curBot)
+
+            reveal = int(round(frac * hh))
+
+            self._DrawReveal(
+                g2, y0, hh,
+                oldTxt, newTxt,
+                lambda gg, s: self.DrawBottomText(gg, s),
+                lambda gg, s: self.DrawBottomText(gg, s),
+                reveal
+            )
+
     def AnimateTo(self, targetTop, targetBot, chatterPairs, startDelayMs=0):
         # Cancel any pending start
         try:
@@ -667,13 +908,12 @@ class SolariFlap(swing.JComponent):
             pass
         self.pendingTimer = None
 
-        # If currently animating, stop cleanly before restarting
+        # Stop any active clock participation
         try:
-            if self.animTimer is not None:
-                self.animTimer.stop()
+            SolariAnimClock.Unregister(self)
         except:
             pass
-        self.animTimer = None
+
         self.phase = "idle"
         self.t = 0.0
 
@@ -694,7 +934,6 @@ class SolariFlap(swing.JComponent):
             except:
                 b = ""
             seq.append((a, b))
-
         seq.append((self.targetTop, self.targetBot))
         self.queue = seq
 
@@ -734,56 +973,131 @@ class SolariFlap(swing.JComponent):
             self.StartTopHalf(first)
 
     def StartTopHalf(self, nextPair):
-        if nextPair is None:        
+        if nextPair is None:
             try:
                 self.prevTopForBottom = self.curTop
             except:
                 pass
-            self.phase = "idle"; self.repaint(); return
+            self.phase = "idle"
+            self.repaint()
+            try:
+                SolariAnimClock.Unregister(self)
+            except:
+                pass
+            return
+
         try:
             self.prevTopForBottom = self.curTop
         except:
             pass
-        self.nextTop = nextPair[0]; self.nextBot = nextPair[1]
-        self.phase = "topFlip"; self.t = 0.0; self.EnsureTimer()
+
+        self.nextTop = nextPair[0]
+        self.nextBot = nextPair[1]
+
+        # Snapshot the current full flap content for a full-height reveal.
+        try:
+            self.prevFullTop = self.curTop
+            self.prevFullBot = self.curBot
+        except:
+            pass
+
+        # If this represents one physical flap with two printed lines, use fullFlip.
+        useFull = False
+        try:
+            if self.twoLine:
+                useFull = True
+        except:
+            pass
+        try:
+            if str(self.curBot or "").strip() != "":
+                useFull = True
+        except:
+            pass
+        try:
+            if str(self.nextBot or "").strip() != "":
+                useFull = True
+        except:
+            pass
+
+        self.phase = "fullFlip" if useFull else "topFlip"
+        self.t = 0.0
+
+        try:
+            SolariAnimClock.Register(self)
+        except:
+            pass
+        self.repaint()
 
     def StartBottomHalf(self):
-        self.phase = "bottomFlip"; self.t = 0.0; self.EnsureTimer()
-
-    def EnsureTimer(self):
-        running = False
+        self.phase = "bottomFlip"
+        self.t = 0.0
         try:
-            running = (self.animTimer is not None) and bool(self.animTimer.isRunning())
+            SolariAnimClock.Register(self)
         except:
-            running = (self.animTimer is not None)
-        if running: return
-        interval = max(1000 // int(ReadInt("TAS_USER_SETTING_SOLARI_DIGIT_FPS", 60, 30, 75)), 15)
-        self.animTimer = Timer(interval, self.OnTick)
-        self.animTimer.setRepeats(True)
-        self.animTimer.start()
+            pass
+        self.repaint()
 
-    def OnTick(self, e):
+    def OnClockTick(self, dtMs):
+        # Return True while active; False when idle so the clock can unregister us.
         try:
-            step = float(self.animTimer.getDelay()) / float(self.msPerHalf)
-            self.t += step
-            if self.t >= 1.0:
-                if self.phase == "topFlip":
-                    self.curTop = self.nextTop
-                    self.phase = "bottomFlip"; self.t = 0.0
-                elif self.phase == "bottomFlip":
-                    self.curBot = self.nextBot
-                    if self.queue:
-                        nxt = self.queue.pop(0); self.StartTopHalf(nxt); return
-                    else:
-                        self.phase = "idle"; self.animTimer.stop(); self.animTimer = None; self.repaint(); return
-            self.repaint()
-        except:
+            if self.phase not in ["topFlip", "bottomFlip", "fullFlip"]:
+                return False
+
             try:
-                if self.animTimer is not None: self.animTimer.stop()
-            except: pass
-            self.animTimer = None; self.phase = "idle"; self.repaint()
+                if self.phase == "fullFlip":
+                    # fullFlip replaces top+bottom halves, so keep overall duration comparable
+                    step = float(dtMs) / float(self.msPerHalf * 2.0)
+                else:
+                    step = float(dtMs) / float(self.msPerHalf)
+            except:
+                step = 0.25
 
-# ---------------------- Specialized flaps and helpers ----------------------
+            self.t += step
+
+            if self.t >= 1.0:
+                if self.phase == "fullFlip":
+                    self.curTop = getattr(self, "nextTop", self.curTop)
+                    self.curBot = getattr(self, "nextBot", self.curBot)
+                    if self.queue:
+                        nxt = self.queue.pop(0)
+                        self.StartTopHalf(nxt)
+                        return True
+                    else:
+                        self.phase = "idle"
+                        self.t = 0.0
+                        self.repaint()
+                        return False
+
+                elif self.phase == "topFlip":
+                    self.curTop = getattr(self, "nextTop", self.curTop)
+                    self.phase = "bottomFlip"
+                    self.t = 0.0
+
+                elif self.phase == "bottomFlip":
+                    self.curBot = getattr(self, "nextBot", self.curBot)
+                    if self.queue:
+                        nxt = self.queue.pop(0)
+                        self.StartTopHalf(nxt)
+                        return True
+                    else:
+                        self.phase = "idle"
+                        self.t = 0.0
+                        self.repaint()
+                        return False
+
+            self.repaint()
+            return True
+
+        except:
+            self.phase = "idle"
+            self.t = 0.0
+            try:
+                self.repaint()
+            except:
+                pass
+            return False
+
+# ---------------------- Specialised flaps and helpers ----------------------
 class LabelFixed(swing.JComponent):
     def __init__(self, text, size, bold=False, color=TEXT_WHT):
         super(LabelFixed, self).__init__()
@@ -953,43 +1267,54 @@ class DigitFlap(SolariFlap):
     def paintComponent(self, g):
         g2 = g.create()
         try:
-            if (self.phase == "topFlip") or (self.phase == "bottomFlip"):
-                self.EnsureTimer()
-        except:
-            pass
-        try:
             g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
 
-            # Match SolariFlap styling
             hingeY = int(self.h * HingeRatio)
             PaintFlapFrame(g2, self.w, self.h, FLAP_BG, PURE_BLK, hingeY=hingeY)
 
             g2.setColor(self.TextColor())
 
-            # Old digit for bottom-half lag (captured at start of each step)
             oldText = getattr(self, "prevTopForBottom", self.curTop)
+            frac = self.EaseInOut(self.t)
 
             if self.phase == "idle":
                 g2.setClip(None)
                 self.DrawUnifiedDigit(g2, self.curTop)
 
             elif self.phase == "topFlip":
-                # Top half flips first; bottom half stays old
-                g2.setClip(awt.Rectangle(0, 0, self.w, hingeY))
-                topTxt = self.nextTop if self.t > 0.5 else oldText
-                self.DrawUnifiedDigit(g2, topTxt)
+                # Reveal new digit from top->hinge, bottom stays old
+                newText = getattr(self, "nextTop", self.curTop)
+                reveal = int(round(frac * hingeY))
+
+                if reveal > 0:
+                    g2.setClip(awt.Rectangle(0, 0, self.w, reveal))
+                    self.DrawUnifiedDigit(g2, newText)
+
+                if reveal < hingeY:
+                    g2.setClip(awt.Rectangle(0, reveal, self.w, hingeY - reveal))
+                    self.DrawUnifiedDigit(g2, oldText)
 
                 g2.setClip(awt.Rectangle(0, hingeY, self.w, self.h - hingeY))
                 self.DrawUnifiedDigit(g2, oldText)
 
             elif self.phase == "bottomFlip":
-                # Top already new; bottom flips from old to new
-                g2.setClip(awt.Rectangle(0, 0, self.w, hingeY))
-                self.DrawUnifiedDigit(g2, self.curTop)
+                # Top already new; reveal new on bottom half from hinge->bottom
+                newText = self.curTop
+                botH = self.h - hingeY
+                reveal = int(round(frac * botH))
 
-                g2.setClip(awt.Rectangle(0, hingeY, self.w, self.h - hingeY))
-                botTxt = self.curTop if self.t > 0.5 else oldText
-                self.DrawUnifiedDigit(g2, botTxt)
+                # Top half: new, fixed
+                g2.setClip(awt.Rectangle(0, 0, self.w, hingeY))
+                self.DrawUnifiedDigit(g2, newText)
+
+                # Bottom half: reveal new from hinge down, old below reveal
+                if reveal > 0:
+                    g2.setClip(awt.Rectangle(0, hingeY, self.w, reveal))
+                    self.DrawUnifiedDigit(g2, newText)
+
+                if reveal < botH:
+                    g2.setClip(awt.Rectangle(0, hingeY + reveal, self.w, botH - reveal))
+                    self.DrawUnifiedDigit(g2, oldText)
 
             else:
                 g2.setClip(None)
@@ -1048,43 +1373,52 @@ class WordFlap(SolariFlap):
     def paintComponent(self, g):
         g2 = g.create()
         try:
-            if (self.phase == "topFlip") or (self.phase == "bottomFlip"):
-                self.EnsureTimer()
-        except:
-            pass
-        try:
             g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
 
-            # Flap background and border (same as SolariFlap)
             hingeY = int(self.h * HingeRatio)
             PaintFlapFrame(g2, self.w, self.h, FLAP_BG, PURE_BLK, hingeY=hingeY)
 
             g2.setColor(TEXT_WHT)
 
-            # Default old text used for bottom-half flip before it catches up
             oldText = getattr(self, "prevTopForBottom", self.curTop)
+            frac = self.EaseInOut(self.t)
 
             if self.phase == "idle":
                 g2.setClip(None)
                 self.DrawUnifiedText(g2, self.curTop)
 
             elif self.phase == "topFlip":
-                # Top half flips first; bottom half stays old
-                g2.setClip(awt.Rectangle(0, 0, self.w, hingeY))
-                topTxt = self.nextTop if self.t > 0.5 else oldText
-                self.DrawUnifiedText(g2, topTxt)
+                newText = getattr(self, "nextTop", self.curTop)
+                reveal = int(round(frac * hingeY))
+
+                if reveal > 0:
+                    g2.setClip(awt.Rectangle(0, 0, self.w, reveal))
+                    self.DrawUnifiedText(g2, newText)
+
+                if reveal < hingeY:
+                    g2.setClip(awt.Rectangle(0, reveal, self.w, hingeY - reveal))
+                    self.DrawUnifiedText(g2, oldText)
 
                 g2.setClip(awt.Rectangle(0, hingeY, self.w, self.h - hingeY))
                 self.DrawUnifiedText(g2, oldText)
 
             elif self.phase == "bottomFlip":
-                # Top already new; bottom flips from old to new
-                g2.setClip(awt.Rectangle(0, 0, self.w, hingeY))
-                self.DrawUnifiedText(g2, self.curTop)
+                newText = self.curTop
+                botH = self.h - hingeY
+                reveal = int(round(frac * botH))
 
-                g2.setClip(awt.Rectangle(0, hingeY, self.w, self.h - hingeY))
-                botTxt = self.curTop if self.t > 0.5 else oldText
-                self.DrawUnifiedText(g2, botTxt)
+                # Top half: new, fixed
+                g2.setClip(awt.Rectangle(0, 0, self.w, hingeY))
+                self.DrawUnifiedText(g2, newText)
+
+                # Bottom half: reveal new from hinge down, old below reveal
+                if reveal > 0:
+                    g2.setClip(awt.Rectangle(0, hingeY, self.w, reveal))
+                    self.DrawUnifiedText(g2, newText)
+
+                if reveal < botH:
+                    g2.setClip(awt.Rectangle(0, hingeY + reveal, self.w, botH - reveal))
+                    self.DrawUnifiedText(g2, oldText)
 
             else:
                 g2.setClip(None)
@@ -1097,6 +1431,7 @@ class WordFlap(SolariFlap):
                 pass
             DrawHingeOver(g2, self.w, self.h, PURE_BLK)
             g2.dispose()
+    
 class DoubleLineFlap(SolariFlap):
     def __init__(self, w, h):
         SolariFlap.__init__(self, w, h, twoLine=True)
@@ -1547,20 +1882,57 @@ class SolariBoard(swing.JPanel):
                         baseline = y0 + ((hh + fm.getAscent()) // 2) - 2
                         g2.drawString(s, margin, baseline)
                     oldTop = getattr(flap, "prevTopForBottom", flap.curTop)
+
+                    oldTop = getattr(flap, "prevFullTop", getattr(flap, "prevTopForBottom", flap.curTop))
+                    oldBot = getattr(flap, "prevFullBot", flap.curBot)
+
                     if flap.phase == "idle":
                         _DrawHalf(flap.curTop, True)
                         _DrawHalf(flap.curBot, False)
+
+                    elif flap.phase == "fullFlip":
+                        newTop = getattr(flap, "nextTop", flap.curTop)
+                        newBot = getattr(flap, "nextBot", flap.curBot)
+
+                        try:
+                            frac = flap.EaseInOut(flap.t)
+                        except:
+                            frac = 0.0
+                        reveal = int(round(frac * float(flap.h)))
+                        if reveal < 0:
+                            reveal = 0
+                        if reveal > flap.h:
+                            reveal = flap.h
+
+                        if reveal > 0:
+                            g2.setClip(awt.Rectangle(0, 0, flap.w, reveal))
+                            _DrawHalf(newTop, True)
+                            _DrawHalf(newBot, False)
+
+                        if reveal < flap.h:
+                            g2.setClip(awt.Rectangle(0, reveal, flap.w, flap.h - reveal))
+                            _DrawHalf(oldTop, True)
+                            _DrawHalf(oldBot, False)
+
+                        try:
+                            g2.setClip(None)
+                        except:
+                            pass
+
                     elif flap.phase == "topFlip":
                         topTxt = flap.nextTop if flap.t > 0.5 else oldTop
                         _DrawHalf(topTxt, True)
                         _DrawHalf(flap.curBot, False)
+
                     elif flap.phase == "bottomFlip":
                         _DrawHalf(flap.curTop, True)
                         botTxt = flap.nextBot if flap.t > 0.5 else flap.curBot
                         _DrawHalf(botTxt, False)
+
                     else:
                         _DrawHalf(flap.curTop, True)
                         _DrawHalf(flap.curBot, False)
+
                     DrawHingeOver(g2, flap.w, flap.h, PURE_BLK)
                 finally:
                     g2.dispose()
