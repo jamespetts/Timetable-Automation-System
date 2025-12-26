@@ -53,7 +53,7 @@ def ReadBool(memName, defaultVal=False):
         return bool(defaultVal)
 
 # Global scale: default 60% 
-SCALE_PCT = ReadInt("TAS_USER_SETTING_SOLARI_SCALE_PERCENT", 60, 30, 120)
+SCALE_PCT = ReadInt("TAS_USER_SETTING_SOLARI_SCALE_PERCENT", 70, 35, 120)
 S = float(SCALE_PCT) / 100.0
 def Sc(x): return int(round(float(x) * S))
 
@@ -308,7 +308,7 @@ def PlatformField(row):
 
 DELAY_THRESHOLD_MIN = ReadInt("TAS_USER_SETTING_DELAY_THRESHOLD_MINUTES", 2, 0, 60)
 CHATTER_STEPS       = ReadInt("TAS_USER_SETTING_SOLARI_CHATTER_STEPS", 2, 0, 4)
-ANIM_MS_PER_HALF    = ReadInt("TAS_USER_SETTING_SOLARI_ANIM_MS_PER_HALF", 50, 25, 400)
+ANIM_MS_PER_HALF    = ReadInt("TAS_USER_SETTING_SOLARI_ANIM_MS_PER_HALF", 70, 35, 400)
 DIGIT_FPS           = ReadInt("TAS_USER_SETTING_SOLARI_DIGIT_FPS", 60, 30, 75)
 
 # Transition timing: blank stage hold and board cascade
@@ -709,7 +709,7 @@ class SolariFlap(swing.JComponent):
         self.pendingTimer = None
 
         # Base timing (per half). Kept compatible with your existing setting.
-        self.msPerHalf = int(ReadInt("TAS_USER_SETTING_SOLARI_ANIM_MS_PER_HALF", 50, 25, 400))
+        self.msPerHalf = int(ReadInt("TAS_USER_SETTING_SOLARI_ANIM_MS_PER_HALF", 70, 33, 400))
 
         self.setSize(self.w, self.h)
 
@@ -2139,9 +2139,22 @@ class SolariBoard(swing.JPanel):
         if len(stops) > 20:
             pairs = pairs[:9]
             pairs.append(("and stations to:", destTarget))
-        while len(pairs) < 10: pairs.append(("", ""))
 
+        while len(pairs) < 10: pairs.append(("", ""))
         wordPool = set([t for t in (self.destPool or [])] + [t for t in (self.viaPool or [])])
+
+        # Calling-flap chatter should use actual station names from the calling pattern.
+        # Build an ordered unique list from stops (which may include blanks from mechanical gaps).
+        callStationsPool = []
+        seenStations = set()
+        for s in (stops or []):
+            ss = (s or "").strip()
+            if ss == "":
+                continue
+            if ss in seenStations:
+                continue
+            seenStations.add(ss)
+            callStationsPool.append(ss)
 
         # Cascade calling flaps from top to bottom (always), with optional jitter
         try:
@@ -2172,10 +2185,21 @@ class SolariBoard(swing.JPanel):
                 fp.DrawTopText = lambda g2, s: SolariFlap.DrawTextLine(fp, g2, (s or ""), top=True, colorOverride=None)
 
             chatter = []
-            if CHATTER_STEPS > 0 and wordPool and ((fp.curTop != topT) or (fp.curBot != botT)):
+
+            # Prefer real station names for calling-flap chatter; fall back to wordPool if needed.
+            pool = callStationsPool if (callStationsPool and len(callStationsPool) > 0) else list(wordPool)
+
+            if CHATTER_STEPS > 0 and pool and ((fp.curTop != topT) or (fp.curBot != botT)):
                 for k in range(CHATTER_STEPS):
-                    aTop = random.choice(list(wordPool))
-                    chatter.append((aTop, botT))
+                    try:
+                        aTop = random.choice(pool)
+                    except:
+                        aTop = ""
+                    try:
+                        aBot = random.choice(pool)
+                    except:
+                        aBot = ""
+                    chatter.append((aTop, aBot))
 
             fp.AnimateTo(topT, botT, chatter, startDelayMs=callDelay)
 
