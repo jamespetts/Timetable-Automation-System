@@ -14,6 +14,27 @@
 # Solari-style indicator: multiple boards side-by-side; compact width; unified text size; change-only animation.
 # JMRI 5.14 / Jython 2.7 / ASCII only / CamelCase / Thread-safe EDT.
 
+# <<PID-DISP-NAME: Departure board (solari/split flap)>>
+# <<DESCRIPTION: A board showing the next departure and calling pattern on multiple platforms using a mechanical solari/split flap pattern in British Rail style, suitable for larger stations from the 1960s to the early 2000s>>
+
+# User-configurable settings discovered by TASSetup:
+# <<SETTING DESCRIPTION NUMBER: Strip columns>>
+# <<SETTING DESCRIPTION NUMBER: Solari scale percent>>
+# <<SETTING DESCRIPTION NUMBER: Solari width expand percent>>
+# <<SETTING DESCRIPTION NUMBER: Solari anim ms per half>>
+# <<SETTING DESCRIPTION NUMBER: Solari digit fps>>
+# <<SETTING DESCRIPTION NUMBER: Solari chatter steps>>
+# <<SETTING DESCRIPTION NUMBER: Solari blank hold ms>>
+# <<SETTING DESCRIPTION NUMBER: Solari blank chatter steps>>
+# <<SETTING DESCRIPTION NUMBER: Solari board cascade ms>>
+# <<SETTING DESCRIPTION NUMBER: Solari stagger row ms>>
+# <<SETTING DESCRIPTION NUMBER: Solari stagger jitter ms>>
+# <<SETTING DESCRIPTION NUMBER: Solari extra word steps max>>
+# <<SETTING DESCRIPTION NUMBER: Solari extra digit cycles max>>
+# <<SETTING DESCRIPTION BOOLEAN: Hide platform until allocated>>
+# <<SETTING DESCRIPTION NUMBER: Delay threshold minutes>>
+# <<SETTING DESCRIPTION STRING: ECS message>>
+
 import javax.swing as swing
 import java.awt as awt
 from java.awt import Color, Font, BasicStroke, RenderingHints
