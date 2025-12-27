@@ -321,6 +321,27 @@ def HasDepartedAtConfiguredTP(reportingNumber, dayName, nowMinutes):
                 return True
     return False
 
+def HasAnyTimingToday(reportingNumber, dayName):
+    # Return True iff ANY timing point has a timing tuple for (reportingNumber, dayName),
+    # regardless of the logged minute. Treats the train as 'seen on the layout' today.
+    try:
+        tps = TR.listTimingPoints() or []
+    except:
+        tps = []
+    for tp in tps:
+        try:
+            entries = TR.getTiming(tp) or []
+        except:
+            entries = []
+        for rec in entries:
+            try:
+                rn = rec[0]; d = rec[3]
+            except:
+                continue
+            if str(rn) == str(reportingNumber) and str(d) == str(dayName):
+                return True
+    return False
+
 # ---------------------------
 # Platform override helper
 # ---------------------------
@@ -799,20 +820,21 @@ class PIDWindow(object):
             return "THIS STATION"
         return destRawUpper
 
+
     def GetNextTrains(self):
         rows = CsvRows()
         dayName = str(DayMem.getValue() or "").strip()
         nowMin = CurrentMinutes()
         if nowMin is None:
             return []
-
         rowsToday = self._RowsToday(rows, dayName)
-        profUpper = ActiveProfileNameUpper()
 
+        profUpper = ActiveProfileNameUpper()
         lookAhead = int(self.LookAheadMin)
         requireAlloc = bool(self.RequireAlloc)
 
         candidates = []
+
         for r in rowsToday:
             dep = (r.get("Dep", "") or "").strip()
             if dep == "":
@@ -825,13 +847,51 @@ class PIDWindow(object):
             if rn == "":
                 continue
 
+            # Platform precedence: allocation > overrides > timetable column
+            alloc = PAR.getPlatform(rn)
+            hasAlloc = (alloc is not None and str(alloc).strip() != "")
+            if hasAlloc:
+                plat = str(alloc).strip()
+            else:
+                plat = GetPlatformOverride(rn) or PlatformField(r)
+            if str(plat) != self.Platform:
+                continue
+
+            # If user requires allocation, skip non-allocated workings
+            if requireAlloc and not hasAlloc:
+                continue
+
+            # Resolve delay with inheritance (PIDSmall rule)
             try:
                 kind, val = ResolveDelayWithInheritance(rowsToday, rn, depMin, visited=set())
             except:
                 kind, val = ("ontime", 0)
+
+            # Skip cancellations in Lightbox (PIDSmall shows them with "CANCELLED" time;
+            # Lightbox has no time field, so we keep cancellations hidden).
             if kind == "cancel":
                 continue
 
+            # Remove ONLY when logged as departed at configured timing points
+            try:
+                if HasDepartedAtConfiguredTP(rn, dayName, nowMin):
+                    continue
+            except:
+                pass
+
+            # Resilience filter copied from PIDSmall:
+            # If no disruption AND no timing anywhere today for this RN,
+            # do not show if booked departure is already in the past.
+            if kind == "ontime":
+                try:
+                    direct = getDisruption(rn)
+                except:
+                    direct = None
+                if (direct is None) and (not HasAnyTimingToday(rn, dayName)):
+                    if depMin < nowMin:
+                        continue
+
+            # Effective minutes for ordering (disruption-aware)
             effMin = depMin
             if kind == "delay" and val and val > 0:
                 try:
@@ -839,30 +899,7 @@ class PIDWindow(object):
                 except:
                     effMin = depMin
 
-            try:
-                if HasDepartedAtConfiguredTP(rn, dayName, nowMin):
-                    continue
-            except:
-                pass
-
-            alloc = PAR.getPlatform(rn)
-            hasAlloc = (alloc is not None and str(alloc).strip() != "")
-            if hasAlloc:
-                plat = str(alloc).strip()
-            else:
-                plat = GetPlatformOverride(rn) or PlatformField(r)
-
-            if str(plat) != self.Platform:
-                continue
-
-            if requireAlloc:
-                if not hasAlloc:
-                    continue
-            else:
-                if lookAhead > 0:
-                    if effMin > (nowMin + lookAhead):
-                        continue
-
+            # Destination / Via keys (Lightbox display)
             dest = (r.get("Destination", "") or "").strip()
             destKey = (dest.upper() if dest else "")
             if destKey != "":
@@ -875,14 +912,20 @@ class PIDWindow(object):
 
             candidates.append({"effMin": effMin, "destKey": destKey, "viaKey": viaKey})
 
-        candidates.sort(key=lambda t: t.get("effMin", 999999))
+        # Apply lookahead ONLY as an upper bound when allocation is not required,
+        # matching the Lightbox header semantics ("0 => show next N trains regardless of distance").
+        if (not requireAlloc) and (lookAhead > 0):
+            candidates = [c for c in candidates if c.get("effMin", 999999) <= (nowMin + lookAhead)]
 
+        # Sort by effective minutes and emit the top N for the Lightbox columns
+        candidates.sort(key=lambda t: t.get("effMin", 999999))
         out = []
         for c in candidates:
             out.append({"destKey": c.get("destKey", ""), "viaKey": c.get("viaKey", "")})
             if len(out) >= int(self.NumTrains):
                 break
         return out
+
 
     def UpdateDisplay(self, event=None):
         oldNum = self.NumTrains
