@@ -14,7 +14,7 @@
 #
 # <<PID-DISP-NAME: Orange LED multi-platform display>>
 # <<DESCRIPTION: A board showing the next departure and calling pattern on multiple platforms using an orange LED matrix as commonly installed by Network Rail in the 2000s at larger stations>>
-# <<SETTING DESCRIPTION NUMBER: Strip columns>>
+# <<SETTING DESCRIPTION NUMBER: Number of departures to show>>
 # <<SETTING DESCRIPTION NUMBER: Page interval (seconds)>>
 # <<SETTING DESCRIPTION NUMBER: Platform/status flip interval (seconds)>>
 # <<SETTING DESCRIPTION BOOLEAN: Hide platform until allocated>>
@@ -73,11 +73,22 @@ TimetableMem = TBL.ProvideMemoryBySuffix("CURRENTTIMETABLE", "")
 DepartTPMem  = TBL.ProvideMemoryBySuffix("PID_DEPARTURE_TP", "")
 OverridesMem = TBL.ProvideMemoryBySuffix("PID_PLATFORM_OVERRIDES", "")
 
-# TASSetup “Options” -> memory names
-MEM_Cols     = "TAS_USER_SETTING_STRIP_COLUMNS"
-MEM_PageSecs = "TAS_USER_SETTING_PAGE_INTERVAL_(SECONDS)"
-MEM_FlipSecs = "TAS_USER_SETTING_PLATFORM/STATUS_FLIP_INTERVAL_(SECONDS)"
-MEM_HidePlat = "TAS_USER_SETTING_HIDE_PLATFORM_UNTIL_ALLOCATED"
+# TASSetup "Options" -> memory names
+# Derive memory names from the <<SETTING DESCRIPTION ...>> label text using the
+# same normalisation rule as TASSetup.py.
+def _SettingMemoryName(label):
+    try:
+        s = str(label).strip()
+    except:
+        s = ""
+    import re as _re
+    key = _re.sub(r"[^A-Za-z0-9]+", "_", s).upper()
+    return "TAS_USER_SETTING_" + key
+
+MEM_Cols = _SettingMemoryName("Number of departures to show")
+MEM_PageSecs = _SettingMemoryName("Page interval (seconds)")
+MEM_FlipSecs = _SettingMemoryName("Platform/status flip interval (seconds)")
+MEM_HidePlat = _SettingMemoryName("Hide platform until allocated")
 
 # ---------------- Fast clock ----------------
 Timebase = InstanceManager.getDefault(jmri.Timebase)
