@@ -1489,20 +1489,107 @@ class TASSetupFrame(jmri.util.JmriJFrame):
                 optsInner.repaint()
             except:
                 pass
-      
-        def _AddBooleanRow(labelText, memName, rowIdx):
-            # Ensure bean exists with a concrete default
+
+        # Display options must NOT seed values. TASSetup does not know defaults.
+        # If the memory does not exist yet, disable the control and explain why.
+        _NEED_RUN_HINT = "Run the selected display once to create this option, then reopen TASSetup to change it."
+
+        def _FindExistingMemoryBeanBySuffix(memSuffix):
+            # memSuffix is the suffix used by TASBeanLookup (e.g. "TAS_USER_SETTING_STRIP_COLUMNS").
+            # We must NOT create anything here.
             try:
-                TBL.SafeGetOrCreateMemoryValue(memName, "false")
+                mm = jmri.InstanceManager.getDefault(jmri.MemoryManager)
+            except:
+                mm = None
+            if mm is None:
+                return None
+
+            # Try as-given (in case caller passed a full system name).
+            try:
+                if hasattr(mm, "getBySystemName"):
+                    m = mm.getBySystemName(str(memSuffix))
+                else:
+                    m = mm.getMemory(str(memSuffix))
+                if m is not None:
+                    return m
             except:
                 pass
+
+            # Try common Internal Memory prefixes used by TASBeanLookup (IM/I2M/I3M...).
+            prefixes = ["IM","I2M","I3M","I4M","I5M","I6M","I7M","I8M","I9M"]
+            for p in prefixes:
+                sysName = p + str(memSuffix)
+                try:
+                    if hasattr(mm, "getBySystemName"):
+                        m = mm.getBySystemName(sysName)
+                    else:
+                        m = mm.getMemory(sysName)
+                except:
+                    m = None
+                if m is not None:
+                    return m
+
+            return None
+
+        def _DisableWithRunHint(*components):
+            for c in components:
+                try:
+                    if c is not None:
+                        c.setEnabled(False)
+                except:
+                    pass
+                try:
+                    if c is not None:
+                        c.setToolTipText(_NEED_RUN_HINT)
+                except:
+                    pass
+
+        def _ToolTip(*components):
+            for c in components:
+                try:
+                    if c is not None:
+                        c.setToolTipText(_NEED_RUN_HINT)
+                except:
+                    pass
+
+        def _ParseBoolValue(raw, defaultVal=False):
+            try:
+                t = ("" if raw is None else str(raw)).strip().lower()
+                if t in ["1", "true", "yes", "y", "on", "enabled"]:
+                    return True
+                if t in ["0", "false", "no", "n", "off", "disabled"]:
+                    return False
+            except:
+                pass
+            return bool(defaultVal)
+
+        def _AddBooleanRow(labelText, memName, rowIdx):
+            bean = _FindExistingMemoryBeanBySuffix(memName)
+
             row = Box.createHorizontalBox()
             chk = JCheckBox(labelText)
             chk.setOpaque(False)
-            chk.setSelected(GetMemoryBool(memName, False))
-            def _apply(e=None):
-                SetMemoryBool(memName, chk.isSelected())
-            chk.addActionListener(lambda e: _apply())
+
+            if bean is None:
+                chk.setSelected(False)
+                _DisableWithRunHint(chk)
+            else:
+                try:
+                    chk.setSelected(_ParseBoolValue(bean.getValue(), False))
+                except:
+                    chk.setSelected(False)
+
+                def _apply(e=None):
+                    try:
+                        bean.setValue("true" if chk.isSelected() else "false")
+                    except:
+                        try:
+                            TBL.SafeSetMemoryValue(memName, "true" if chk.isSelected() else "false")
+                        except:
+                            pass
+
+                chk.addActionListener(lambda e: _apply())
+
             row.add(chk)
             g = GridBagConstraints()
             g.insets = Insets(2,2,2,2)
@@ -1513,81 +1600,94 @@ class TASSetupFrame(jmri.util.JmriJFrame):
             optsInner.add(row, g)
 
         def _AddStringRow(labelText, memName, rowIdx):
-            # Ensure bean exists (empty string default is acceptable for text)
-            try:
-                TBL.SafeGetOrCreateMemoryValue(memName, "")
-            except:
-                pass
+            bean = _FindExistingMemoryBeanBySuffix(memName)
+
             row = Box.createHorizontalBox()
             lbl = JLabel(labelText + ":")
             txt = JTextField(20)
-            txt.setText(TBL.SafeGetOrCreateMemoryValue(memName, ""))
-            def _commit():
-                TBL.SafeSetMemoryValue(memName, txt.getText().strip())
-            txt.addActionListener(lambda e: _commit())
-            class _Lost(FocusAdapter):
-                def focusLost(self, e): _commit()
-            txt.addFocusListener(_Lost())
+
+            if bean is None:
+                txt.setText("")
+                _DisableWithRunHint(lbl, txt)
+            else:
+                try:
+                    v = bean.getValue()
+                    txt.setText("" if v is None else str(v))
+                except:
+                    txt.setText("")
+
+                def _commit():
+                    try:
+                        bean.setValue(txt.getText().strip())
+                    except:
+                        try:
+                            TBL.SafeSetMemoryValue(memName, txt.getText().strip())
+                        except:
+                            pass
+
+                txt.addActionListener(lambda e: _commit())
+                class _Lost(FocusAdapter):
+                    def focusLost(self, e): _commit()
+                txt.addFocusListener(_Lost())
+
+            _ToolTip(lbl, txt)
             row.add(lbl); row.add(Box.createHorizontalStrut(6)); row.add(txt)
             g = GridBagConstraints(); g.insets = Insets(2,2,2,2)
             g.gridx=0; g.gridy=int(rowIdx)
             g.fill=GridBagConstraints.HORIZONTAL; g.weightx=1.0
             optsInner.add(row, g)
-        
+
         def _AddNumberRow(labelText, memName, rowIdx):
-            # Ensure bean exists with numeric default "0"
-            try:
-                TBL.SafeGetOrCreateMemoryValue(memName, "0")
-            except:
-                pass
+            bean = _FindExistingMemoryBeanBySuffix(memName)
 
-            # Read current value as int; fall back to 0 if invalid
             curVal = 0
-            try:
-                raw = TBL.SafeGetOrCreateMemoryValue(memName, "0")
-                s = ("" if raw is None else str(raw)).strip()
-                if s != "":
-                    curVal = int(float(s))
-            except:
-                curVal = 0
+            if bean is not None:
+                try:
+                    raw = bean.getValue()
+                    s = ("" if raw is None else str(raw)).strip()
+                    if s != "":
+                        curVal = int(float(s))
+                except:
+                    curVal = 0
 
-            if curVal < 0:
-                curVal = 0
-
-            # Integer spinner model: min 0, max int32 max, step 1
             model = SpinnerNumberModel(int(curVal), 0, 2147483647, 1)
             spn = JSpinner(model)
 
-            # Force integer display (no decimals) using a NumberEditor with integer pattern
             try:
                 spn.setEditor(JSpinner.NumberEditor(spn, "#"))
             except:
                 pass
 
-            def _commit():
+            row = Box.createHorizontalBox()
+            lbl = JLabel(labelText + ":")
+
+            if bean is None:
+                _DisableWithRunHint(lbl, spn)
+            else:
+                def _commit():
+                    try:
+                        v = spn.getValue()
+                        n = int(v)
+                        try:
+                            bean.setValue(str(n))
+                        except:
+                            TBL.SafeSetMemoryValue(memName, str(n))
+                    except:
+                        pass
+
+                class _CL(ChangeListener):
+                    def stateChanged(self, e):
+                        _commit()
+
                 try:
-                    v = spn.getValue()
-                    n = int(v)  # ensure integer
-                    TBL.SafeSetMemoryValue(memName, str(n))
+                    spn.addChangeListener(_CL())
                 except:
                     pass
 
-            class _CL(ChangeListener):
-                def stateChanged(self, e):
-                    _commit()
-
-            try:
-                spn.addChangeListener(_CL())
-            except:
-                pass
-
-            row = Box.createHorizontalBox()
-            lbl = JLabel(labelText + ":")
-            
+            _ToolTip(lbl, spn)
             row.add(lbl)
             row.add(Box.createHorizontalStrut(6))
 
-            # Make the spinner compact so it does not stretch across the row.
             try:
                 ph = spn.getPreferredSize().height
                 spn.setPreferredSize(Dimension(80, ph))
@@ -1597,8 +1697,6 @@ class TASSetupFrame(jmri.util.JmriJFrame):
                 pass
 
             row.add(spn)
-
-            # Consume remaining horizontal space on the right so the spinner stays compact.
             row.add(Box.createHorizontalGlue())
 
             g = GridBagConstraints()
@@ -1610,11 +1708,8 @@ class TASSetupFrame(jmri.util.JmriJFrame):
             optsInner.add(row, g)
 
         def _AddColorRow(labelText, memName, rowIdx):
-            # Ensure bean exists with a safe default colour
-            try:
-                TBL.SafeGetOrCreateMemoryValue(memName, GetDefaultBackgroundRGB())
-            except:
-                pass
+            bean = _FindExistingMemoryBeanBySuffix(memName)
+
             row = Box.createHorizontalBox()
             lbl = JLabel(labelText + ":")
             swatch = JPanel()
@@ -1622,29 +1717,54 @@ class TASSetupFrame(jmri.util.JmriJFrame):
             swatch.setBorder(BorderFactory.createLineBorder(Color(80,80,80), 1))
             sw, sh = 80, 22
             swatch.setPreferredSize(Dimension(sw, sh))
-            memRgb = TBL.SafeGetOrCreateMemoryValue(memName, GetDefaultBackgroundRGB())
-            current = _RgbStrToColorOrDefault(memRgb, Color(240,238,220))
-            swatch.setBackground(current)
-            class _Click(MouseAdapter):
-                def mouseClicked(self, e):
-                    try:
-                        initial = swatch.getBackground()
-                        chosen = JColorChooser.showDialog(None, "Choose colour", initial)
-                        if chosen is not None:
-                            swatch.setBackground(chosen)
-                            TBL.SafeSetMemoryValue(memName, _ColorToRgbStr(chosen))
-                    except Exception as ex:
-                        LogWarn("Colour chooser failed: " + str(ex), alsoDialog=True)
-            swatch.addMouseListener(_Click())
-            btnReset = JButton("Reset")
-            def _doReset(e=None):
+
+            # Show existing value if present; otherwise show a neutral preview only (do not seed).
+            if bean is not None:
                 try:
-                    defaultColor = _RgbStrToColorOrDefault(GetDefaultBackgroundRGB(), Color(240,238,220))
-                    swatch.setBackground(defaultColor)
-                    TBL.SafeSetMemoryValue(memName, _ColorToRgbStr(defaultColor))
-                except Exception as ex:
-                    LogWarn("Reset failed: " + str(ex), alsoDialog=True)
-            btnReset.addActionListener(lambda e: _doReset())
+                    memRgb = bean.getValue()
+                except:
+                    memRgb = None
+                current = _RgbStrToColorOrDefault(memRgb, Color(240,238,220))
+                swatch.setBackground(current)
+            else:
+                swatch.setBackground(Color(240,238,220))
+                _DisableWithRunHint(lbl, swatch)
+
+            btnReset = JButton("Reset")
+
+            if bean is None:
+                _DisableWithRunHint(btnReset)
+            else:
+                class _Click(MouseAdapter):
+                    def mouseClicked(self, e):
+                        try:
+                            initial = swatch.getBackground()
+                            chosen = JColorChooser.showDialog(None, "Choose colour", initial)
+                            if chosen is not None:
+                                swatch.setBackground(chosen)
+                                try:
+                                    bean.setValue(_ColorToRgbStr(chosen))
+                                except:
+                                    TBL.SafeSetMemoryValue(memName, _ColorToRgbStr(chosen))
+                        except Exception as ex:
+                            LogWarn("Colour chooser failed: " + str(ex), alsoDialog=True)
+
+                swatch.addMouseListener(_Click())
+
+                def _doReset(e=None):
+                    try:
+                        defaultColor = _RgbStrToColorOrDefault(GetDefaultBackgroundRGB(), Color(240,238,220))
+                        swatch.setBackground(defaultColor)
+                        try:
+                            bean.setValue(_ColorToRgbStr(defaultColor))
+                        except:
+                            TBL.SafeSetMemoryValue(memName, _ColorToRgbStr(defaultColor))
+                    except Exception as ex:
+                        LogWarn("Reset failed: " + str(ex), alsoDialog=True)
+
+                btnReset.addActionListener(lambda e: _doReset())
+
+            _ToolTip(lbl, swatch, btnReset)
             row.add(lbl); row.add(Box.createHorizontalStrut(6)); row.add(swatch); row.add(Box.createHorizontalStrut(6)); row.add(btnReset)
             g = GridBagConstraints(); g.insets = Insets(2,2,2,2)
             g.gridx=0; g.gridy=int(rowIdx)
@@ -1652,25 +1772,46 @@ class TASSetupFrame(jmri.util.JmriJFrame):
             optsInner.add(row, g)
 
         def _AddEnumRow(labelText, memName, values, rowIdx):
-            # Ensure bean exists; leave value unchanged if already set
-            try:
-                TBL.SafeGetOrCreateMemoryValue(memName, "" if not values else values[0])
-            except:
-                pass
+            bean = _FindExistingMemoryBeanBySuffix(memName)
+
             if isinstance(values, list) and len(values) > 0:
                 row = Box.createHorizontalBox()
                 lbl = JLabel(labelText + ":")
                 cmb = JComboBox(values)
-                current = TBL.SafeGetOrCreateMemoryValue(memName, values[0])
-                try:
-                    if current in values:
-                        cmb.setSelectedItem(current)
-                except:
-                    pass
-                def _apply(e=None):
-                    val = str(cmb.getSelectedItem())
-                    TBL.SafeSetMemoryValue(memName, val)
-                cmb.addActionListener(lambda e: _apply())
+
+                if bean is None:
+                    try:
+                        cmb.setSelectedItem(values[0])
+                    except:
+                        pass
+                    _DisableWithRunHint(lbl, cmb)
+                else:
+                    current = None
+                    try:
+                        current = bean.getValue()
+                    except:
+                        current = None
+                    try:
+                        if current in values:
+                            cmb.setSelectedItem(current)
+                        else:
+                            cmb.setSelectedItem(values[0])
+                    except:
+                        pass
+
+                    def _apply(e=None):
+                        try:
+                            val = str(cmb.getSelectedItem())
+                            try:
+                                bean.setValue(val)
+                            except:
+                                TBL.SafeSetMemoryValue(memName, val)
+                        except:
+                            pass
+
+                    cmb.addActionListener(lambda e: _apply())
+
+                _ToolTip(lbl, cmb)
                 row.add(lbl); row.add(Box.createHorizontalStrut(6)); row.add(cmb)
                 g = GridBagConstraints(); g.insets = Insets(2,2,2,2)
                 g.gridx=0; g.gridy=int(rowIdx)
@@ -1678,6 +1819,7 @@ class TASSetupFrame(jmri.util.JmriJFrame):
                 optsInner.add(row, g)
             else:
                 _AddStringRow(labelText, memName, rowIdx)
+
 
         def ShowOptionsForFile(fname):
             """
