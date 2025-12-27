@@ -446,13 +446,13 @@ class CRTARR_SummaryTablePanel(swing.JPanel):
                                           availW, availH, rows_to_draw, total_cols)
         g2.setFont(f)
         g2.setColor(self.color)
-        # --- center: compute extra margins so L=R and T=B ---
+        # --- Centre: compute extra margins so L=R (keep headings fixed at top) ---
         gridW = total_cols * cw
         gridH = rows_to_draw * lineH
         extraX = max(0, (availW - gridW) // 2)
-        extraY = max(0, (availH - gridH) // 2)
+        extraY = 0
         padL = CRTARR_TablePadX + extraX
-        padT = CRTARR_TablePadY + extraY
+        padT = CRTARR_TablePadY + 28
         # Character grid -> x positions
         x_fr = padL
         x_pl = x_fr + cw * (self.W_FR + 2)

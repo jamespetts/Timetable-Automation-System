@@ -460,13 +460,13 @@ class CRTSUM_SummaryTablePanel(swing.JPanel):
                                           availW, availH, rows_to_draw, total_cols)
         g2.setFont(f)
         g2.setColor(self.color)
-        # ----- center: compute extra margins so L=R and T=B -----
+        # ----- Centre: compute extra margins so L=R (keep headings fixed at top) -----
         gridW = total_cols * cw
         gridH = rows_to_draw * lineH
         extraX = max(0, (availW - gridW) // 2)
-        extraY = max(0, (availH - gridH) // 2)
+        extraY = 0
         padL = CRTSUM_TablePadX + extraX
-        padT = CRTSUM_TablePadY + extraY
+        padT = CRTSUM_TablePadY + 28
         # Character grid -> x positions
         x_to = padL
         x_pl = x_to + cw * (self.W_TO + 2)
