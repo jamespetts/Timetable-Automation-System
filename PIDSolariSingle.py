@@ -23,6 +23,11 @@
 # <<SETTING DESCRIPTION NUMBER: Calling pattern font size>>
 # <<SETTING DESCRIPTION NUMBER: Header horizontal padding>>
 # <<SETTING DESCRIPTION NUMBER: Destination extra padding>>
+# <<SETTING DESCRIPTION COLOR: Solari special default fg>>
+# <<SETTING DESCRIPTION COLOR: Solari special default bg>>
+# <<SETTING DESCRIPTION COLOR: Solari special alt fg>>
+# <<SETTING DESCRIPTION COLOR: Solari special alt bg>>
+# <<SETTING DESCRIPTION STRING: Solari special keywords>>
 import javax.swing as swing
 import javax.swing.SwingUtilities as SwingUtilities
 import java.awt as awt
@@ -114,6 +119,128 @@ TEXT_WHT = Color(242, 242, 242)
 YELLOW = Color(255, 211, 0)
 RED = Color(200, 16, 46)
 WHITE = Color(255, 255, 255)
+
+# ---- Solari special message style (as per PIDSolari.py) ----
+
+def ColorToRgbText(c):
+    try:
+        return "%d,%d,%d" % (int(c.getRed()), int(c.getGreen()), int(c.getBlue()))
+    except:
+        return "255,255,255"
+
+def ParseColorSpec(raw, defaultColor):
+    # Accept: "r,g,b", "r g b", "r;g;b", "#RRGGBB", "RRGGBB", and a few names.
+    try:
+        s = str(raw if raw is not None else "").strip()
+    except:
+        s = ""
+    if s == "":
+        return defaultColor
+    sl = s.lower()
+    if sl == "black":
+        return Color(0, 0, 0)
+    if sl == "white":
+        return Color(255, 255, 255)
+    if sl == "red":
+        return RED
+    if sl == "yellow":
+        return YELLOW
+    hx = sl
+    if hx.startswith("#"):
+        hx = hx[1:]
+    if len(hx) == 6:
+        try:
+            r = int(hx[0:2], 16)
+            g = int(hx[2:4], 16)
+            b = int(hx[4:6], 16)
+            return Color(r, g, b)
+        except:
+            pass
+    t = s.replace(";", ",").replace(" ", ",")
+    parts = [p for p in t.split(",") if p.strip() != ""]
+    if len(parts) >= 3:
+        try:
+            r = int(float(parts[0].strip()))
+            g = int(float(parts[1].strip()))
+            b = int(float(parts[2].strip()))
+            r = max(0, min(255, r))
+            g = max(0, min(255, g))
+            b = max(0, min(255, b))
+            return Color(r, g, b)
+        except:
+            pass
+    return defaultColor
+
+def ReadColor(memName, defaultColor):
+    # Store as "r,g,b" or "#RRGGBB". Default written in "r,g,b" form.
+    try:
+        defaultText = ColorToRgbText(defaultColor)
+    except:
+        defaultText = "255,255,255"
+    raw = TBL.SafeGetOrCreateMemoryValue(memName, defaultText)
+    return ParseColorSpec(raw, defaultColor)
+
+def SplitKeywords(raw):
+    out = []
+    try:
+        s = str(raw if raw is not None else "")
+        s = s.replace(";", ",")
+        for k in s.split(","):
+            kk = (k or "").strip().lower()
+            if kk != "":
+                out.append(kk)
+    except:
+        pass
+    return out
+
+def GetSpecialStyleForMessage(msg):
+    # Defaults: red on white; alternate: yellow on red when keywords match.
+    defaultFg = ReadColor("TAS_USER_SETTING_SOLARI_SPECIAL_DEFAULT_FG", RED)
+    defaultBg = ReadColor("TAS_USER_SETTING_SOLARI_SPECIAL_DEFAULT_BG", Color(255, 255, 255))
+    altFg = ReadColor("TAS_USER_SETTING_SOLARI_SPECIAL_ALT_FG", YELLOW)
+    altBg = ReadColor("TAS_USER_SETTING_SOLARI_SPECIAL_ALT_BG", RED)
+    keysRaw = TBL.SafeGetOrCreateMemoryValue(
+        "TAS_USER_SETTING_SOLARI_SPECIAL_KEYWORDS",
+        "buffet,restaurant,trolley,dining"
+    )
+    keys = SplitKeywords(keysRaw)
+    try:
+        ml = str(msg if msg is not None else "").lower()
+    except:
+        ml = ""
+    useAlt = False
+    for k in keys:
+        try:
+            if k in ml:
+                useAlt = True
+                break
+        except:
+            pass
+    if useAlt:
+        return (altBg, altFg)
+    return (defaultBg, defaultFg)
+
+def SeedSpecialSettings():
+    # Create default values so TASSetup can discover these memories.
+    try:
+        _ = ReadColor("TAS_USER_SETTING_SOLARI_SPECIAL_DEFAULT_FG", RED)
+        _ = ReadColor("TAS_USER_SETTING_SOLARI_SPECIAL_DEFAULT_BG", Color(255, 255, 255))
+        _ = ReadColor("TAS_USER_SETTING_SOLARI_SPECIAL_ALT_FG", YELLOW)
+        _ = ReadColor("TAS_USER_SETTING_SOLARI_SPECIAL_ALT_BG", RED)
+    except:
+        pass
+    try:
+        TBL.SafeGetOrCreateMemoryValue(
+            "TAS_USER_SETTING_SOLARI_SPECIAL_KEYWORDS",
+            "buffet,restaurant,trolley,dining"
+        )
+    except:
+        pass
+
+try:
+    SeedSpecialSettings()
+except:
+    pass
 HingeRatio = 0.50
 
 BASE_FLAP_W = ReadInt("TAS_USER_SETTING_SOLARI_SINGLE_BASE_WIDTH", 780, 400, 1400)
@@ -303,6 +430,7 @@ def CurrentMinutes():
 # -----------------------------------------------------------------------------
 
 DayMem = TBL.ProvideMemoryBySuffix("DAYOFWEEK", "")
+TimeMem = TBL.ProvideMemoryBySuffix("CURRENTTIME", "")
 TTMem = TBL.ProvideMemoryBySuffix("CURRENTTIMETABLE", "")
 OverridesMem = TBL.ProvideMemoryBySuffix("PID_PLATFORM_OVERRIDES", "")
 DepartTPMem = TBL.ProvideMemoryBySuffix("PID_DEPARTURE_TP", "")
@@ -340,6 +468,18 @@ def PlatformField(row):
     if val == "":
         val = (row.get("Platform", "") or "").strip()
     return val
+
+def CaseInsensitive(row, key):
+    # Case-insensitive lookup for CSV column names.
+    target = (key or "").strip().lower()
+    try:
+        for k in (row.keys() or []):
+            if (k or "").strip().lower() == target:
+                v = row.get(k, "")
+                return (v or "").strip()
+    except:
+        pass
+    return ""
 
 
 def ParseOverrides(s):
@@ -627,6 +767,8 @@ class SolariFlap(swing.JComponent):
         self.t = 0.0
         self.queue = []
         self.pendingTimer = None
+        self.AnimSerial = 0
+        self.ActiveSerial = 0
         self.msPerHalf = int(ANIM_MS_PER_HALF)
         self.setSize(self.w, self.h)
 
@@ -707,9 +849,26 @@ class SolariFlap(swing.JComponent):
             pass
         self.pendingTimer = None
 
+        try:
+            self.AnimSerial = int(self.AnimSerial) + 1
+        except:
+            self.AnimSerial = 1
+        localSerial = self.AnimSerial
+
         tgtTop = str(targetTop or "")
         tgtBot = str(targetBot or "")
         if self.curTop == tgtTop and self.curBot == tgtBot:
+            # cancel in-flight animation for this flap
+            try:
+                self.queue = []
+            except:
+                pass
+            self.phase = "idle"
+            self.t = 0.0
+            try:
+                self.repaint()
+            except:
+                pass
             return
 
         seq = []
@@ -723,11 +882,17 @@ class SolariFlap(swing.JComponent):
 
         first = self.queue.pop(0) if self.queue else None
 
-        def _Start(pair):
+        def _Start(pair, serial):
+            try:
+                if int(serial) != int(self.AnimSerial):
+                    return
+            except:
+                return
             if pair is None:
                 self.phase = "idle"
                 self.repaint()
                 return
+            self.ActiveSerial = serial
             self.prevTop = self.curTop
             self.prevBot = self.curBot
             self.nextTop = pair[0]
@@ -744,14 +909,21 @@ class SolariFlap(swing.JComponent):
 
         if dly > 0:
             def _Later(e):
-                _Start(first)
+                _Start(first, localSerial)
             self.pendingTimer = Timer(dly, _Later)
             self.pendingTimer.setRepeats(False)
             self.pendingTimer.start()
         else:
-            _Start(first)
+            _Start(first, localSerial)
 
     def OnClockTick(self, dtMs):
+        try:
+            if int(getattr(self, "ActiveSerial", 0)) != int(getattr(self, "AnimSerial", 0)):
+                self.phase = "idle"
+                self.t = 0.0
+                return False
+        except:
+            pass
         if self.phase != "flip":
             return False
         try:
@@ -849,6 +1021,15 @@ class ColoredDoubleLineFlap(SolariFlap):
         if self.SpecialBg is None or self.SpecialFg is None:
             SolariFlap.paintComponent(self, g)
             return
+        # If there is no text to show yet, always render as a normal (black) flap.
+        # A real Solari flap would not show a special background with no text.
+        try:
+            if self.phase == "idle":
+                if (str(self.curTop or "").strip() == "") and (str(self.curBot or "").strip() == ""):
+                    SolariFlap.paintComponent(self, g)
+                    return
+        except:
+            pass          
         g2 = g.create()
         try:
             g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
@@ -946,6 +1127,19 @@ def PackCallingLines(stops, flapWidth, maxLines):
 
 
 def WrapMessageTwoLines(text, flapWidth):
+    # Split message text into two lines for the bottom flap.
+    # Honour explicit newlines; otherwise, greedy word wrap across two lines.
+    try:
+        raw = str(text or "").replace("\r", "\n")
+        if "\n" in raw:
+            parts = [p.strip() for p in raw.split("\n") if p.strip() != ""]
+            if parts:
+                if len(parts) == 1:
+                    return (parts[0], "")
+                return (parts[0], " ".join(parts[1:]))
+    except:
+        pass
+
     words = [w for w in str(text or "").split() if w]
     if not words:
         return ("", "")
@@ -978,6 +1172,166 @@ def WrapMessageTwoLines(text, flapWidth):
         return (line1, line2)
     finally:
         g2.dispose()
+
+
+# -----------------------------------------------------------------------------
+# Calling pattern chatter pools (only values that can appear at each flap position)
+# -----------------------------------------------------------------------------
+
+try:
+    from java.util.concurrent.locks import ReentrantLock
+    _CallPoolsLock = ReentrantLock()
+except:
+    _CallPoolsLock = None
+
+_CallLinePoolsCache = {}
+
+def _CallingLinePoolsCacheKey(maxLines):
+    try:
+        path = TimetablePath()
+    except:
+        path = None
+    try:
+        tt = (TTMem.getValue() or "").strip()
+    except:
+        tt = ""
+    try:
+        mt = os.path.getmtime(path) if (path and os.path.exists(path)) else 0
+    except:
+        mt = 0
+    return (tt, int(FLAP_W), int(maxLines), int(mt))
+
+def CallingLinePoolsAll(flapWidth, maxLines):
+    pools = []
+    for _i in range(int(maxLines)):
+        pools.append([])
+    seenByPos = []
+    for _i in range(int(maxLines)):
+        seenByPos.append(set())
+    rowsAll = CsvRows()
+    for r in (rowsAll or []):
+        try:
+            callText = CaseInsensitive(r, "Calling pattern")
+        except:
+            callText = ""
+        callText = (callText or "").strip()
+        stops = []
+        if callText:
+            try:
+                stops = [t.strip() for t in str(callText).split(",") if t.strip()]
+            except:
+                stops = []
+        if not stops:
+            stops = ["NON-STOP"]
+
+        try:
+            packed = PackCallingLines(stops, flapWidth, int(maxLines))
+        except:
+            packed = []
+        while len(packed) < int(maxLines):
+            packed.append("")
+        for pos in range(int(maxLines)):
+            txt = (packed[pos] or "").strip()
+            if txt == "":
+                continue
+            key = txt.lower()
+            if key in seenByPos[pos]:
+                continue
+            seenByPos[pos].add(key)
+            pools[pos].append(txt)
+    return pools
+
+def GetCallingLinePoolsCached(maxLines):
+    key = _CallingLinePoolsCacheKey(maxLines)
+    locked = False
+    if _CallPoolsLock is not None:
+        try:
+            _CallPoolsLock.lock()
+            locked = True
+        except:
+            locked = False
+    try:
+        if key in _CallLinePoolsCache:
+            pools = _CallLinePoolsCache.get(key)
+            if pools is not None:
+                return pools
+        pools = CallingLinePoolsAll(FLAP_W, int(maxLines))
+        try:
+            _CallLinePoolsCache.clear()
+            _CallLinePoolsCache[key] = pools
+        except:
+            pass
+        return pools
+    finally:
+        if locked and _CallPoolsLock is not None:
+            try:
+                _CallPoolsLock.unlock()
+            except:
+                pass
+
+def BuildCallingChatterPairs(flapIndex, curTop, curBot, targetTop, targetBot, pools, steps):
+    pairs = []
+    try:
+        n = int(steps)
+    except:
+        n = 0
+    if n <= 0 or pools is None:
+        return pairs
+    if (str(curTop or "") == str(targetTop or "")) and (str(curBot or "") == str(targetBot or "")):
+        return pairs
+    try:
+        fi = int(flapIndex)
+    except:
+        fi = 0
+    topPos = fi * 2
+    botPos = topPos + 1
+    topPool = []
+    botPool = []
+    try:
+        if topPos < len(pools):
+            topPool = list(pools[topPos] or [])
+    except:
+        topPool = []
+    try:
+        if botPos < len(pools):
+            botPool = list(pools[botPos] or [])
+    except:
+        botPool = []
+    if not topPool and not botPool:
+        return pairs
+    lastPick = None
+    for _k in range(n):
+        a = ""
+        b = ""
+        if topPool:
+            try:
+                a = random.choice(topPool)
+            except:
+                a = ""
+        if botPool:
+            try:
+                b = random.choice(botPool)
+            except:
+                b = ""
+        pick = (a, b)
+        if lastPick is not None and pick == lastPick and (len(topPool) > 1 or len(botPool) > 1):
+            tries = 0
+            while pick == lastPick and tries < 4:
+                if topPool:
+                    try:
+                        a = random.choice(topPool)
+                    except:
+                        a = ""
+                if botPool:
+                    try:
+                        b = random.choice(botPool)
+                    except:
+                        b = ""
+                pick = (a, b)
+                tries += 1
+        lastPick = pick
+        pairs.append(pick)
+    return pairs
 
 # -----------------------------------------------------------------------------
 # Selection: next service per platform
@@ -1066,6 +1420,7 @@ def PickNextTrainForPlatform(platformText):
 
         destText = (row.get("Destination", "") or "").strip()
         callText = (row.get("Calling pattern", "") or "").strip()
+        specialText = (CaseInsensitive(row, "Special") or "").strip()
 
         ecs = IsEcsWorking(row)
         delayed = (delayMin >= int(DELAY_THRESHOLD_MIN)) if expectedMin is not None else False
@@ -1075,6 +1430,7 @@ def PickNextTrainForPlatform(platformText):
             "adjMin": adjusted,
             "dest": destText,
             "call": callText,
+            "special": specialText,
             "ecs": ecs,
             "cancelled": cancelled,
             "delayed": delayed
@@ -1180,6 +1536,10 @@ class SolariSinglePIDWindow(object):
         except:
             pass
         try:
+            TimeMem.addPropertyChangeListener(self.RefreshListener)
+        except:
+            pass
+        try:
             OverridesMem.addPropertyChangeListener(self.RefreshListener)
         except:
             pass
@@ -1196,6 +1556,34 @@ class SolariSinglePIDWindow(object):
         except:
             pass
 
+
+        # Refresh on fast clock changes even if no Memory event is fired.
+        self.LastNowMinutes = None
+        self.TimeTickTimer = None
+        try:
+            self.LastNowMinutes = CurrentMinutes()
+        except:
+            self.LastNowMinutes = None
+        try:
+            def _OnTimeTick(ev):
+                try:
+                    nowM = CurrentMinutes()
+                except:
+                    nowM = None
+                if nowM is None:
+                    return
+                try:
+                    if self.LastNowMinutes is None or int(nowM) != int(self.LastNowMinutes):
+                        self.LastNowMinutes = int(nowM)
+                        self.RequestRefresh(None)
+                except:
+                    self.LastNowMinutes = nowM
+                    self.RequestRefresh(None)
+            self.TimeTickTimer = Timer(1000, _OnTimeTick)
+            self.TimeTickTimer.setRepeats(True)
+            self.TimeTickTimer.start()
+        except:
+            self.TimeTickTimer = None
         self.RequestRefresh(None)
         self.frame.setVisible(True)
 
@@ -1256,19 +1644,26 @@ class SolariSinglePIDWindow(object):
         self._AnimateDestination(svc.get("dest", ""))
 
         msg = None
+        specialText = (svc.get("special", "") or "").strip()
         if svc.get("ecs", False):
             msg = "ecs"
         elif svc.get("cancelled", False):
             msg = "cancel"
         elif svc.get("delayed", False):
             msg = "delay"
+        elif specialText != "":
+            msg = "special"
 
         stops = [t.strip() for t in str(svc.get("call", "") or "").split(",") if t.strip()]
         if not stops:
-            stops = ["NON-STOP"]
+            if msg == "ecs":
+                stops = []
+            else:
+                stops = ["NON-STOP"]
 
         maxLines = 8 if msg is None else 6
         packed = PackCallingLines(stops, FLAP_W, maxLines)
+        callPools = GetCallingLinePoolsCached(8)
         while len(packed) < maxLines:
             packed.append("")
 
@@ -1279,11 +1674,11 @@ class SolariSinglePIDWindow(object):
             bot = packed[li + 1] if (li + 1) < len(packed) else ""
             li += 2
             self.callFlaps[i].ClearSpecialColors()
-            self.callFlaps[i].AnimateTo(top, bot, [], self._CallDelay(i))
+            chatterPairs = BuildCallingChatterPairs(i, self.callFlaps[i].curTop, self.callFlaps[i].curBot, top, bot, callPools, CHATTER_STEPS)
+            self.callFlaps[i].AnimateTo(top, bot, chatterPairs, self._CallDelay(i))
 
         if msg is None:
             return
-
         bottom = self.callFlaps[3]
         if msg == "ecs":
             bottom.SetSpecialColors(WHITE, RED)
@@ -1292,9 +1687,15 @@ class SolariSinglePIDWindow(object):
         elif msg == "cancel":
             bottom.SetSpecialColors(RED, WHITE)
             bottom.AnimateTo("Cancelled", "Cancelled", [], self._CallDelay(3))
-        else:
+        elif msg == "delay":
             bottom.SetSpecialColors(YELLOW, PURE_BLK)
             t1, t2 = WrapMessageTwoLines("Train delayed. Listen for announcements", FLAP_W)
+            bottom.AnimateTo(t1, t2, [], self._CallDelay(3))
+        else:
+            # Special text from timetable (PIDSolari special style/keywords)
+            sbg, sfg = GetSpecialStyleForMessage(specialText)
+            bottom.SetSpecialColors(sbg, sfg)
+            t1, t2 = WrapMessageTwoLines(specialText, FLAP_W)
             bottom.AnimateTo(t1, t2, [], self._CallDelay(3))
 
     def HandleUserClose(self):
@@ -1318,6 +1719,13 @@ class SolariSinglePIDWindow(object):
         self.CleanedUp = True
 
         try:
+            if self.TimeTickTimer is not None:
+                self.TimeTickTimer.stop()
+        except:
+            pass
+        self.TimeTickTimer = None
+
+        try:
             if self.CloseAdapter is not None:
                 self.frame.removeWindowListener(self.CloseAdapter)
         except:
@@ -1332,6 +1740,11 @@ class SolariSinglePIDWindow(object):
         try:
             if L is not None:
                 DayMem.removePropertyChangeListener(L)
+        except:
+            pass
+        try:
+            if L is not None:
+                TimeMem.removePropertyChangeListener(L)
         except:
             pass
         try:
