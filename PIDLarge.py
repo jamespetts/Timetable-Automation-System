@@ -47,24 +47,41 @@ DEFAULT_MID_FONT = Font("SansSerif", Font.BOLD, MID_FONT_SIZE)
 # Column geometry: sized to the content so there's no big blank tail
 COL_WIDTH    = 252     # per column
 OUTER_MARGIN = 8
+COL_GAP = int(round(OUTER_MARGIN * 2.3))  # gap between columns only (~2.3x)
 INNER_PAD    = 8
-ROW_GAP      = 2
+ROW_GAP      = 0
 
 # Row heights (match font sizes closely)
-TIME_H     = 28
-DEST_H     = 26
-VIA_H      = 20
-HEADER_H   = 18
+# NOTE: These heights must account for thick rules + padding inside each JLabel.
+TIME_H = 44
+DEST_H = 34
+VIA_H = 24
+VIA_TO_CALLING_GAP_H = 16
+HEADER_H = 22
 CALLING_LINES = 16
-CALL_LINE_H   = 18
-COMPANY_H  = 20
+CALL_LINE_H = 18
+COMPANY_H = 36
 
-# Borders (as before)
-CALL_BORDER_T = 1
-CALL_BORDER_B = 1
-LINE_BORDER   = BorderFactory.createMatteBorder(CALL_BORDER_T, 0, CALL_BORDER_B, 0, Color.BLACK)
-BOX_BORDER    = BorderFactory.createLineBorder(Color.BLACK, 1)
-COL_BORDER    = BorderFactory.createMatteBorder(0, 2, 0, 2, Color.BLACK)  # left/right rules
+# Borders (horizontal rules only; no internal vertical boxes)
+RULE_THICK = 6           # main separators between major rows
+CALL_RULE_THICK = 3      # separators between calling pattern rows
+TOP_RULE_THICK = 6       # top rule above the time/status row
+
+ROW_RULE_BORDER = BorderFactory.createMatteBorder(0, 0, RULE_THICK, 0, Color.BLACK)
+TOP_ROW_RULE_BORDER = BorderFactory.createMatteBorder(TOP_RULE_THICK, 0, RULE_THICK, 0, Color.BLACK)
+CALL_LINE_BORDER = BorderFactory.createMatteBorder(0, 0, CALL_RULE_THICK, 0, Color.BLACK)
+
+# Text padding (rules run full width; text has breathing room)
+V_PAD = 2
+PAD_LR = BorderFactory.createEmptyBorder(V_PAD, INNER_PAD, V_PAD, INNER_PAD)
+PAD_L = BorderFactory.createEmptyBorder(V_PAD, INNER_PAD, V_PAD, 0)
+PAD_R = BorderFactory.createEmptyBorder(V_PAD, 0, V_PAD, INNER_PAD)
+
+# Keep column edge rules (module separators)
+COL_BORDER = BorderFactory.createMatteBorder(0, 2, 0, 2, Color.BLACK)
+
+# Keep column edge rules (module separators)
+COL_BORDER = BorderFactory.createMatteBorder(0, 2, 0, 2, Color.BLACK)
 
 # ---------------- Memories (prefix-agnostic via TASBeanLookup) ----------------
 TimeMem      = TBL.ProvideMemoryBySuffix("CURRENTTIME", "")
@@ -292,93 +309,124 @@ class ServiceModel(object):
 class ColumnPanel(swing.JPanel):
     def __init__(self):
         super(ColumnPanel, self).__init__()
-        self.setBackground(PANEL_COLOR)
+        self.setBackground(Color.BLACK)
         self.setLayout(None)
         self.setBorder(COL_BORDER)  # column edge rules
+        
+        y = 0
 
-        y = INNER_PAD
+        # Top row: time (left) and platform/status (right), horizontal rules only
+        leftW = int(COL_WIDTH * 0.46)
+        rightW = COL_WIDTH - leftW
 
-        # Top row: time (left) and platform/status (right), boxed
         self.lblTime = swing.JLabel("")
         self.lblTime.setForeground(TEXT_COLOR)
         self.lblTime.setFont(DEFAULT_TOP_FONT)
-        self.lblTime.setBounds(INNER_PAD, y, int(COL_WIDTH*0.46), TIME_H)
-        self.lblTime.setBorder(BOX_BORDER)
+        self.lblTime.setOpaque(True)
+        self.lblTime.setBackground(PANEL_COLOR)
+        self.lblTime.setBounds(0, y, leftW, TIME_H)
+        self.lblTime.setBorder(BorderFactory.createCompoundBorder(TOP_ROW_RULE_BORDER, PAD_L))
         self.add(self.lblTime)
 
         self.lblPlatOrStatus = swing.JLabel("")
         self.lblPlatOrStatus.setForeground(TEXT_COLOR)
         self.lblPlatOrStatus.setFont(DEFAULT_TOP_FONT)
         self.lblPlatOrStatus.setHorizontalAlignment(swing.SwingConstants.RIGHT)
-        self.lblPlatOrStatus.setBounds(COL_WIDTH - INNER_PAD - int(COL_WIDTH*0.46), y, int(COL_WIDTH*0.46), TIME_H)
-        self.lblPlatOrStatus.setBorder(BOX_BORDER)
+        self.lblPlatOrStatus.setOpaque(True)
+        self.lblPlatOrStatus.setBackground(PANEL_COLOR)
+        self.lblPlatOrStatus.setBounds(leftW, y, rightW, TIME_H)
+        self.lblPlatOrStatus.setBorder(BorderFactory.createCompoundBorder(TOP_ROW_RULE_BORDER, PAD_R))
         self.add(self.lblPlatOrStatus)
 
         y += TIME_H + ROW_GAP
 
-        # Destination (boxed)
+        # Destination (full width; bottom rule only; no box)
         self.lblDest = swing.JLabel("")
         self.lblDest.setForeground(TEXT_COLOR)
         self.lblDest.setFont(DEFAULT_TOP_FONT)
-        self.lblDest.setBounds(INNER_PAD, y, COL_WIDTH - 2*INNER_PAD, DEST_H)
-        self.lblDest.setBorder(BOX_BORDER)
+        self.lblDest.setOpaque(True)
+        self.lblDest.setBackground(PANEL_COLOR)
+        self.lblDest.setBounds(0, y, COL_WIDTH, DEST_H)
+        self.lblDest.setBorder(BorderFactory.createCompoundBorder(ROW_RULE_BORDER, PAD_LR))
         self.add(self.lblDest)
 
         y += DEST_H + ROW_GAP
 
-        # Via (boxed)
+        # Via (must remain orange; can show text)
         self.lblVia = swing.JLabel("")
         self.lblVia.setForeground(TEXT_COLOR)
         self.lblVia.setFont(DEFAULT_MID_FONT)
-        self.lblVia.setBounds(INNER_PAD, y, COL_WIDTH - 2*INNER_PAD, VIA_H)
-        self.lblVia.setBorder(BOX_BORDER)
+        self.lblVia.setOpaque(True)
+        self.lblVia.setBackground(PANEL_COLOR)
+        self.lblVia.setBounds(0, y, COL_WIDTH, VIA_H)
+        self.lblVia.setBorder(BorderFactory.createCompoundBorder(ROW_RULE_BORDER, PAD_LR))
         self.add(self.lblVia)
 
         y += VIA_H + ROW_GAP
 
-        # "Calling at:" + page indicator (boxed)
-        halfW = int((COL_WIDTH - 2*INNER_PAD) * 0.50)
+        # Thick black gap between via and "Calling at:" (this is the missing band)
+        self.lblViaCallingGap = swing.JLabel("")
+        self.lblViaCallingGap.setOpaque(True)
+        self.lblViaCallingGap.setBackground(Color.BLACK)
+        self.lblViaCallingGap.setBounds(0, y, COL_WIDTH, VIA_TO_CALLING_GAP_H)
+        self.lblViaCallingGap.setBorder(BorderFactory.createEmptyBorder(0, 0, 0, 0))
+        self.add(self.lblViaCallingGap)
+
+        y += VIA_TO_CALLING_GAP_H + ROW_GAP
+
+        # "Calling at:" + page indicator (bottom rule only)
+        halfW = int(COL_WIDTH * 0.50)
+
         self.lblCallingTitle = swing.JLabel("Calling at:")
         self.lblCallingTitle.setForeground(TEXT_COLOR)
         self.lblCallingTitle.setFont(DEFAULT_MID_FONT)
-        self.lblCallingTitle.setBounds(INNER_PAD, y, halfW, HEADER_H)
-        self.lblCallingTitle.setBorder(BOX_BORDER)
+        self.lblCallingTitle.setOpaque(True)
+        self.lblCallingTitle.setBackground(PANEL_COLOR)
+        self.lblCallingTitle.setBounds(0, y, halfW, HEADER_H)
+        self.lblCallingTitle.setBorder(BorderFactory.createCompoundBorder(ROW_RULE_BORDER, PAD_L))
         self.add(self.lblCallingTitle)
 
         self.lblPage = swing.JLabel("")
         self.lblPage.setForeground(TEXT_COLOR)
         self.lblPage.setFont(DEFAULT_MID_FONT)
         self.lblPage.setHorizontalAlignment(swing.SwingConstants.RIGHT)
-        self.lblPage.setBounds(INNER_PAD + halfW, y, (COL_WIDTH - 2*INNER_PAD) - halfW, HEADER_H)
-        self.lblPage.setBorder(BOX_BORDER)
+        self.lblPage.setOpaque(True)
+        self.lblPage.setBackground(PANEL_COLOR)
+        self.lblPage.setBounds(halfW, y, COL_WIDTH - halfW, HEADER_H)
+        self.lblPage.setBorder(BorderFactory.createCompoundBorder(ROW_RULE_BORDER, PAD_R))
         self.add(self.lblPage)
 
         y += HEADER_H + ROW_GAP
 
-        # 16 fixed calling lines; each has top/bottom black rules
+        # 16 fixed calling lines; horizontal separators go full width
         self.callLabels = []
         for i in range(CALLING_LINES):
             lbl = swing.JLabel("")
             lbl.setForeground(TEXT_COLOR)
             lbl.setFont(DEFAULT_MID_FONT)
-            lbl.setBounds(INNER_PAD, y + i*CALL_LINE_H, COL_WIDTH - 2*INNER_PAD, CALL_LINE_H)
-            lbl.setBorder(LINE_BORDER)
+            lbl.setOpaque(True)
+            lbl.setBackground(PANEL_COLOR)
+            lbl.setBounds(0, y + i * CALL_LINE_H, COL_WIDTH, CALL_LINE_H)
+            lbl.setBorder(BorderFactory.createCompoundBorder(CALL_LINE_BORDER, PAD_LR))
             self.callLabels.append(lbl)
             self.add(lbl)
 
         y += CALL_LINE_H * CALLING_LINES + ROW_GAP
 
-        # Company (boxed) just below the grid
+        # Company (full width; bottom rule only)
         self.lblCompany = swing.JLabel("")
         self.lblCompany.setForeground(TEXT_COLOR)
         self.lblCompany.setFont(DEFAULT_TOP_FONT)
-        self.lblCompany.setBounds(INNER_PAD, y, COL_WIDTH - 2*INNER_PAD, COMPANY_H)
-        self.lblCompany.setBorder(BOX_BORDER)
+        self.lblCompany.setOpaque(True)
+        self.lblCompany.setBackground(PANEL_COLOR)
+        self.lblCompany.setBounds(0, y, COL_WIDTH, COMPANY_H)
+        self.lblCompany.setBorder(BorderFactory.createCompoundBorder(ROW_RULE_BORDER, PAD_LR))
         self.add(self.lblCompany)
+
 
         # Advance y to the true bottom of the company box, then add a small bottom pad
         y += COMPANY_H
-        bottomPad = INNER_PAD  # keep a thin margin under the last box
+        bottomPad = 2
 
         # Save computed height (exact content height including company and pad)
         self.computedHeight = y + bottomPad
@@ -446,10 +494,10 @@ class StripBoardWindow(object):
             p.setBounds(x, y, COL_WIDTH, colH)
             cp.add(p)
             self.columns.append(p)
-            x += COL_WIDTH + OUTER_MARGIN
+            x += COL_WIDTH + COL_GAP
 
         # Trim window to the tallest column, accounting for title-bar/border insets
-        contentW = OUTER_MARGIN*2 + self.numCols*COL_WIDTH + (self.numCols-1)*OUTER_MARGIN
+        contentW = OUTER_MARGIN*2 + self.numCols*COL_WIDTH + (self.numCols-1)*COL_GAP
         contentH = OUTER_MARGIN*2 + int(maxH)
 
         # Ensure peer exists so insets are valid
