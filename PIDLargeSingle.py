@@ -1205,8 +1205,9 @@ class PlatformStripWindow(object):
                 m.AdjMin = m.DepMin
 
             # Due-within window
+            # TASSetup semantics: 0 means no limit.
             within = int(self.withinMins)
-            if within >= 0:
+            if within > 0:
                 delta = DeltaMinutes(curMin, m.AdjMin)
                 if delta is None:
                     continue
