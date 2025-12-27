@@ -565,7 +565,7 @@ class RestrictedCsvChooser(JFileChooser):
             return
         JFileChooser.approveSelection(self)
 
-def MakeDualListPanel(TitleText, AvailableNames, NameMap, DescMap, InitialSelectedNames, OnChangeCallback, OnSelectCallback=None):
+def MakeDualListPanel(TitleText, AvailableNames, NameMap, DescMap, InitialSelectedNames, OnChangeCallback, OnSelectCallback=None, OnPreviewCallback=None):
     panel = MakePaperPanel()
     panel.setLayout(GridBagLayout())
     gbc = GridBagConstraints()
@@ -575,6 +575,7 @@ def MakeDualListPanel(TitleText, AvailableNames, NameMap, DescMap, InitialSelect
     gbc.weighty = 0.0
     gbc.gridx = 0
     gbc.gridy = 0
+
     title = MakeHeading(TitleText)
     panel.add(title, gbc)
 
@@ -629,9 +630,9 @@ def MakeDualListPanel(TitleText, AvailableNames, NameMap, DescMap, InitialSelect
             if hasattr(value, "IsExtra") and getattr(value, "IsExtra", False):
                 comp.setForeground(Color(128, 128, 128))  # Grey for extra scripts
             elif hasattr(value, "HasScript") and not value.HasScript:
-                comp.setForeground(Color(255, 0, 0))      # Red for missing
+                comp.setForeground(Color(255, 0, 0))  # Red for missing
             elif hasattr(value, "ValidScript") and not value.ValidScript:
-                comp.setForeground(Color(255, 140, 0))    # Orange for invalid
+                comp.setForeground(Color(255, 140, 0))  # Orange for invalid
             else:
                 comp.setForeground(THEME_TEXT_COLOR)
 
@@ -650,6 +651,9 @@ def MakeDualListPanel(TitleText, AvailableNames, NameMap, DescMap, InitialSelect
     selectedList.setCellRenderer(FriendlyRenderer())
     selectedList.setSelectionBackground(LIST_SEL_BG)
     selectedList.setSelectionForeground(LIST_SEL_FG)
+
+    # Track which list was last interacted with, so Preview runs the highlighted entry the user expects.
+    lastSelectedList = {"lst": None}
 
     def FireChange():
         sel = [selectedModel.getElementAt(i) for i in range(selectedModel.getSize())]
@@ -676,6 +680,8 @@ def MakeDualListPanel(TitleText, AvailableNames, NameMap, DescMap, InitialSelect
         def valueChanged(self, e):
             if e.getValueIsAdjusting():
                 return
+            # Remember which list the user last clicked.
+            lastSelectedList["lst"] = self.lst
             _NotifySelected(self.lst)
 
     # Drive description box from either list
@@ -724,7 +730,6 @@ def MakeDualListPanel(TitleText, AvailableNames, NameMap, DescMap, InitialSelect
                     return str(k).lower()
                 except:
                     return ""
-
         merged.sort(key=_SortKey)
 
         availModel.removeAllElements()
@@ -735,8 +740,35 @@ def MakeDualListPanel(TitleText, AvailableNames, NameMap, DescMap, InitialSelect
     btnAdd.addActionListener(lambda e: AddAction(e))
     btnRemove.addActionListener(lambda e: RemoveAction(e))
 
+    # Optional Preview button
+    btnPreview = None
+    if OnPreviewCallback is not None:
+        btnPreview = JButton("Preview...")
+
+        def PreviewAction(e=None):
+            try:
+                lst = lastSelectedList.get("lst", None)
+                v = None
+                if lst is not None:
+                    v = lst.getSelectedValue()
+
+                # Fallback: if we don't know which list was last used, pick any selection.
+                if v is None:
+                    v = availList.getSelectedValue()
+                if v is None:
+                    v = selectedList.getSelectedValue()
+                if v is None:
+                    return
+
+                OnPreviewCallback(str(v).strip())
+            except Exception as ex:
+                LogError("Preview failed: " + str(ex), ex=ex, alsoDialog=True)
+
+        btnPreview.addActionListener(lambda e: PreviewAction(e))
+
     gbc.gridy = 1
     gbc.weighty = 1.0
+
     leftScroll = JScrollPane(availList)
     # Wider but not huge; allow vertical growth too
     leftScroll.setPreferredSize(Dimension(360, 200))
@@ -749,6 +781,20 @@ def MakeDualListPanel(TitleText, AvailableNames, NameMap, DescMap, InitialSelect
     btnPanel.add(Box.createVerticalStrut(6))
     btnPanel.add(btnRemove)
 
+    # Add Preview button below, with extra spacing so it sits as if there were an additional button between Remove and Preview.
+    if btnPreview is not None:
+        # Simulate: Remove, (normal gap), [imaginary button], (normal gap), Preview
+        btnPanel.add(Box.createVerticalStrut(6))
+        try:
+            ph = btnRemove.getPreferredSize().height
+            if ph is None or int(ph) <= 0:
+                ph = 26
+            btnPanel.add(Box.createVerticalStrut(int(ph)))
+        except:
+            btnPanel.add(Box.createVerticalStrut(26))
+        btnPanel.add(Box.createVerticalStrut(6))
+        btnPanel.add(btnPreview)
+
     gbc.gridx = 1
     gbc.weightx = 0.0
     gbc.fill = GridBagConstraints.NONE
@@ -757,6 +803,7 @@ def MakeDualListPanel(TitleText, AvailableNames, NameMap, DescMap, InitialSelect
     gbc.gridx = 2
     gbc.weightx = 1.0
     gbc.fill = GridBagConstraints.BOTH
+
     rightScroll = JScrollPane(selectedList)
     rightScroll.setPreferredSize(Dimension(360, 200))
     rightScroll.setMinimumSize(Dimension(280, 160))
@@ -1912,18 +1959,36 @@ class TASSetupFrame(jmri.util.JmriJFrame):
             except:
                 pass
 
+        def PreviewDisplayScript(fname):
+            try:
+                fn = ("" if fname is None else str(fname)).strip()
+                if fn == "":
+                    return
+                path = ProfileJythonFilePath(fn)
+                if not os.path.isfile(path):
+                    LogWarn("Script not found: " + str(path), alsoDialog=True)
+                    return
+
+                # Run in a clean global namespace, but set __file__/__name__ for scripts that rely on them.
+                g = {"__file__": path, "__name__": "__main__"}
+                execfile(path, g)
+
+            except Exception as ex:
+                LogError("Failed to run preview for: " + str(fname) + " :: " + str(ex), ex=ex, alsoDialog=True)
+        
         # Row 0: Public (PID) displays
         gbc.gridx = 0
         gbc.gridy = 0
         gbc.weighty = 0.45
         pubPanel = MakeDualListPanel(
-            "Public information displays",
-            pidFiles, pidNames, descMap,
-            pubSel, SavePublic,
-            OnSelectCallback=ShowDescriptionForFile
+         "Public information displays",
+         pidFiles, pidNames, descMap,
+         pubSel, SavePublic,
+         OnSelectCallback=ShowDescriptionForFile,
+         OnPreviewCallback=PreviewDisplayScript
         )
         root.add(pubPanel, gbc)
-              
+
         # Keep the public list pane readable even when options grow
         try:
             pubPanel.setMinimumSize(Dimension(520, 260))
@@ -1935,11 +2000,12 @@ class TASSetupFrame(jmri.util.JmriJFrame):
         gbc.gridy = 1
         gbc.weighty = 0.45
         sigPanel = MakeDualListPanel(
-            "Signallers' displays",
-            sigFiles, sigNames, descMap,
-            sigSel, SaveSignaller,
-            OnSelectCallback=ShowDescriptionForFile
-        )
+         "Signallers' displays",
+         sigFiles, sigNames, descMap,
+         sigSel, SaveSignaller,
+         OnSelectCallback=ShowDescriptionForFile,
+         OnPreviewCallback=PreviewDisplayScript
+)
         root.add(sigPanel, gbc)
              
         # Keep the signallers' list pane readable even when options grow
