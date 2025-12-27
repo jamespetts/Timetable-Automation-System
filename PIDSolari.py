@@ -141,7 +141,6 @@ def PaintFlapFrame(g2, w, h, bgColor, frameColor, hingeY=None):
         g2.setColor(frameColor)
         g2.fillRect(0, y, ww, t)
 
-
 def DrawHingeOver(g2, w, h, frameColor):
     # Draw the hinge line over any text so it remains visible through unified text flaps.
     try:
@@ -171,6 +170,22 @@ def DrawHingeOver(g2, w, h, frameColor):
 
     g2.setColor(frameColor)
     g2.fillRect(0, y, ww, t)
+    
+def SetTextHints(g2):
+    # Ensure smooth text in custom painters (ECS/cancel/banner).
+    # Some Java2D pipelines do not apply text AA unless explicitly requested.
+    try:
+        g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
+    except:
+        pass
+    try:
+        g2.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON)
+    except:
+        pass
+    try:
+        g2.setRenderingHint(RenderingHints.KEY_FRACTIONALMETRICS, RenderingHints.VALUE_FRACTIONALMETRICS_ON)
+    except:
+        pass
 
 def AvailableFamilies():
     try:
@@ -1969,6 +1984,7 @@ class SolariBoard(swing.JPanel):
             def _PaintBanner(g):
                 g2 = g.create()
                 try:
+                    SetTextHints(g2)
                     hingeY = int(flap.h * HingeRatio)
                     PaintFlapFrame(g2, flap.w, flap.h, RED, PURE_BLK, hingeY=hingeY)
                     f = MakeFont(FONT_CALL, bold=False)
@@ -2185,6 +2201,7 @@ class SolariBoard(swing.JPanel):
             def PaintSpecial(g):
                 g2 = g.create()
                 try:
+                    SetTextHints(g2)
                     hingeY = int(self.flapSpecial.h * HingeRatio)
                     PaintFlapFrame(g2, self.flapSpecial.w, self.flapSpecial.h, RED, PURE_BLK, hingeY=hingeY)
                     SolariFlap.DrawTopText(self.flapSpecial, g2, "CANCELLED")
@@ -2192,12 +2209,15 @@ class SolariBoard(swing.JPanel):
                 finally: g2.dispose()
             self.flapSpecial.paintComponent = PaintSpecial
             self.flapSpecial.AnimateTo("CANCELLED", "", [])      
+        
         elif isEcsDisplay:
             ecsMsg = str(ECS_MESSAGE or "Not for public use")
 
             def PaintSpecialEcs(g):
                 g2 = g.create()
                 try:
+                    SetTextHints(g2)
+
                     # White background, black border, black hinge
                     hingeY = int(self.flapSpecial.h * HingeRatio)
                     PaintFlapFrame(g2, self.flapSpecial.w, self.flapSpecial.h, Color.WHITE, PURE_BLK, hingeY=hingeY)
@@ -2226,6 +2246,7 @@ class SolariBoard(swing.JPanel):
                         g2.setClip(awt.Rectangle(0, hingeY, self.flapSpecial.w, self.flapSpecial.h - hingeY))
                         botTxt = self.flapSpecial.curTop if self.flapSpecial.t > 0.5 else oldText
                         self.flapSpecial.DrawUnifiedText(g2, botTxt)
+
                     else:
                         g2.setClip(None)
                         self.flapSpecial.DrawUnifiedText(g2, self.flapSpecial.curTop)
@@ -2240,6 +2261,7 @@ class SolariBoard(swing.JPanel):
 
             self.flapSpecial.paintComponent = PaintSpecialEcs
             self.flapSpecial.AnimateTo(ecsMsg, "", [])
+       
         else:
             self.flapSpecial.paintComponent = lambda g: SolariFlap.paintComponent(self.flapSpecial, g)
             self.flapSpecial.TextColor = lambda: TEXT_WHT
