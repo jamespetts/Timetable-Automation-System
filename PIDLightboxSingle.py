@@ -639,7 +639,7 @@ class PIDWindow(object):
         self.ModeSingleTrain = (int(self.NumTrains) == 1)
         if self.ModeSingleTrain:
             self.ColCount = 2
-            self.ColumnHeaders = ["FIRST TRAIN"]
+            self.ColumnHeaders = ["NEXT TRAIN"]
         else:
             self.ColCount = int(self.NumTrains)
             self.ColumnHeaders = [OrdinalWord(i).upper() for i in range(self.ColCount, 0, -1)]
@@ -660,6 +660,7 @@ class PIDWindow(object):
         baseColW = 320
         if self.ModeSingleTrain:
             baseColW = 340
+
         contentW = self.ColCount * baseColW
 
         img = BufferedImage(1, 1, BufferedImage.TYPE_INT_ARGB)
@@ -673,21 +674,71 @@ class PIDWindow(object):
             fmC = g2.getFontMetrics(CELL_FONT)
             lineAdvance = self._LineAdvance(fmC)
 
+            # IMPORTANT:
+            # The single-train display paints in two columns (left/right) with paired rows.
+            # Height must be computed the same way, otherwise the window will be too tall.
             self.RowLayouts = []
-            def addRowsForKeys(kind, keys):
-                for k in keys:
-                    maxTextW = baseColW - (2 * CELL_PAD_X)
-                    lines = WrapTextLines(k, fmC, maxTextW)
-                    height = (2 * CELL_PAD_Y) + (len(lines) * lineAdvance)
-                    self.RowLayouts.append({"type": kind, "key": k, "lines": lines, "height": height})
 
-            addRowsForKeys("dest", self.Destinations)
-            if self.HasViaSection:
-                self.RowLayouts.append({"type": "spacer", "key": "", "lines": [""], "height": int(lineAdvance * 0.8)})
-                addRowsForKeys("via", self.Vias)
+            if self.ModeSingleTrain:
+                colW = int(baseColW)
+                maxTextW = colW - (2 * CELL_PAD_X)
 
-            bodyH = sum([int(r["height"]) for r in self.RowLayouts])
+                def RowHeightForPair(leftKey, rightKey):
+                    maxLines = 1
+                    if leftKey:
+                        try:
+                            leftLines = WrapTextLines(leftKey, fmC, maxTextW)
+                            maxLines = max(maxLines, len(leftLines))
+                        except:
+                            pass
+                    if rightKey:
+                        try:
+                            rightLines = WrapTextLines(rightKey, fmC, maxTextW)
+                            maxLines = max(maxLines, len(rightLines))
+                        except:
+                            pass
+                    return (2 * CELL_PAD_Y) + (maxLines * lineAdvance)
+
+                bodyH = 0
+
+                # Destinations: two columns, paired per row
+                destLeft = self.Destinations[0::2]
+                destRight = self.Destinations[1::2]
+                rowsN = max(len(destLeft), len(destRight))
+                for i in range(rowsN):
+                    leftKey = destLeft[i] if i < len(destLeft) else ""
+                    rightKey = destRight[i] if i < len(destRight) else ""
+                    bodyH += RowHeightForPair(leftKey, rightKey)
+
+                # Via section (optional): same pairing logic, plus spacer
+                if self.HasViaSection and self.Vias:
+                    bodyH += int(lineAdvance * 0.8)
+                    viaLeft = self.Vias[0::2]
+                    viaRight = self.Vias[1::2]
+                    rowsN = max(len(viaLeft), len(viaRight))
+                    for i in range(rowsN):
+                        leftKey = viaLeft[i] if i < len(viaLeft) else ""
+                        rightKey = viaRight[i] if i < len(viaRight) else ""
+                        bodyH += RowHeightForPair(leftKey, rightKey)
+
+            else:
+                # Multi-train mode: one row per key, used directly by PaintContent()
+                def addRowsForKeys(kind, keys):
+                    for k in keys:
+                        maxTextW = baseColW - (2 * CELL_PAD_X)
+                        lines = WrapTextLines(k, fmC, maxTextW)
+                        height = (2 * CELL_PAD_Y) + (len(lines) * lineAdvance)
+                        self.RowLayouts.append({"type": kind, "key": k, "lines": lines, "height": height})
+
+                addRowsForKeys("dest", self.Destinations)
+                if self.HasViaSection:
+                    self.RowLayouts.append({"type": "spacer", "key": "", "lines": [""], "height": int(lineAdvance * 0.8)})
+                    addRowsForKeys("via", self.Vias)
+
+                bodyH = sum([int(r["height"]) for r in self.RowLayouts])
+
             contentH = headerH + bodyH
+
         finally:
             try:
                 g2.dispose()
@@ -943,7 +994,7 @@ class PIDWindow(object):
             g2.fillRect(x, y, w, headerH)
             g2.setColor(HEADER_TEXT)
             g2.setFont(HEADER_FONT)
-            txt = "FIRST TRAIN"
+            txt = "NEXT TRAIN"
             tw = fmH.stringWidth(txt)
             tx = x + (w - tw) // 2
             ty = self._HeaderBaselineY(y, headerH, fmH) - 2
