@@ -18,6 +18,9 @@
 # <<SETTING DESCRIPTION NUMBER: Page interval (seconds)>>
 # <<SETTING DESCRIPTION NUMBER: Platform/status flip interval (seconds)>>
 # <<SETTING DESCRIPTION BOOLEAN: Require platform allocation>>
+# <<SETTING DESCRIPTION BOOLEAN: Hide platform until allocated>>
+# <<SETTING DESCRIPTION NUMBER: Special text scroll speed \(px per second\)>>
+# <<SETTING DESCRIPTION NUMBER: Special text scroll pause \(ms\)>>
 #
 # Notes:
 # - One window per platform (platforms discovered from the current timetable file), mirroring PIDCRTSingle.py.
@@ -34,6 +37,7 @@ from java.awt import Color, Font
 from javax.swing import Timer, BorderFactory
 import jmri
 from jmri import InstanceManager
+from java.lang import System
 import os, csv
 import java.text.SimpleDateFormat as SimpleDateFormat
 import java.util.Calendar as Calendar
@@ -109,6 +113,9 @@ MEM_WithinMins = _SettingMemoryName("Only show trains due within (minutes)")
 MEM_PageSecs = _SettingMemoryName("Page interval (seconds)")
 MEM_FlipSecs = _SettingMemoryName("Platform/status flip interval (seconds)")
 MEM_RequireAlloc = _SettingMemoryName("Require platform allocation")
+MEM_HidePlat = _SettingMemoryName("Hide platform until allocated")
+MEM_MarqueeSpeed = _SettingMemoryName("Special text scroll speed (px per second)")
+MEM_MarqueePause = _SettingMemoryName("Special text scroll pause (ms)")
 
 # ---------------- Fast clock ----------------
 Timebase = InstanceManager.getDefault(jmri.Timebase)
@@ -358,6 +365,7 @@ class ServiceModel(object):
         self.Via = CaseInsensitive(row, "Via")
         self.CoName = CaseInsensitive(row, "Company")
         self.Call = CaseInsensitive(row, "Calling pattern")
+        self.Special = CaseInsensitive(row, "Special")
         self.DepMin = ParseMinutes(self.DepStr)
 
         alloc = PAR.getPlatform(self.RN)
@@ -374,6 +382,176 @@ class ServiceModel(object):
         self.AdjMin = self.DepMin if self.DepMin is not None else 9999
 
 # ---------------- Column panel ----------------
+# ---------------- Special text marquee label (single-pass scroll, blank pause) ----------------
+class MarqueeLabel(swing.JLabel):
+    def __init__(self):
+        swing.JLabel.__init__(self, "")
+        self.setOpaque(True)
+        self.setBackground(PANEL_COLOR)
+        self.setForeground(TEXT_COLOR)
+        self.setFont(DEFAULT_MID_FONT)
+        self.MarqueeText = ""
+        self.MarqueeActive = False
+        self.ScrollState = "scroll"
+        self.ScrollX = 0.0
+        self.LastTickMs = None
+        self.PauseUntilMs = None
+        self.PauseMs = 2000
+        self.SpeedPxPerSec = 60.0
+        self._TextWidthPx = None
+
+    def SetTuning(self, speedPxPerSec, pauseMs):
+        try:
+            self.SpeedPxPerSec = float(speedPxPerSec)
+        except:
+            pass
+        try:
+            self.PauseMs = int(pauseMs)
+        except:
+            pass
+
+    def SetMarqueeText(self, txt):
+        try:
+            self.MarqueeText = "" if txt is None else str(txt)
+        except:
+            self.MarqueeText = ""
+        self._TextWidthPx = None
+        self.LastTickMs = None
+        self.PauseUntilMs = None
+        if self.MarqueeActive:
+            self._ResetStartPosition()
+
+    def _ResetStartPosition(self):
+        try:
+            ins = self.getInsets()
+            avail = int(self.getWidth()) - int(ins.left) - int(ins.right)
+        except:
+            avail = int(self.getWidth())
+        if avail < 0:
+            avail = 0
+        self.ScrollState = "scroll"
+        self.ScrollX = float(avail)
+
+    def SetMarqueeActive(self, active):
+        try:
+            self.MarqueeActive = bool(active)
+        except:
+            self.MarqueeActive = False
+        self.LastTickMs = None
+        self.PauseUntilMs = None
+        self._TextWidthPx = None
+        if self.MarqueeActive:
+            try:
+                swing.JLabel.setText(self, "")
+            except:
+                pass
+            self._ResetStartPosition()
+        try:
+            self.repaint()
+        except:
+            pass
+
+    def _MeasureTextWidth(self):
+        if self._TextWidthPx is not None:
+            return int(self._TextWidthPx)
+        try:
+            fm = self.getFontMetrics(self.getFont())
+            w = fm.stringWidth(self.MarqueeText)
+            self._TextWidthPx = int(w)
+            return int(w)
+        except:
+            self._TextWidthPx = 0
+            return 0
+
+    def Tick(self, nowMs):
+        if not self.MarqueeActive:
+            return
+        if self.MarqueeText is None or str(self.MarqueeText).strip() == "":
+            return
+        try:
+            if self.LastTickMs is None:
+                self.LastTickMs = int(nowMs)
+                return
+            dt = float(int(nowMs) - int(self.LastTickMs)) / 1000.0
+            self.LastTickMs = int(nowMs)
+        except:
+            dt = 0.04
+        if dt < 0.0:
+            dt = 0.0
+        if dt > 0.25:
+            dt = 0.25
+        tw = self._MeasureTextWidth()
+        if self.ScrollState == "scroll":
+            try:
+                self.ScrollX = float(self.ScrollX) - (float(self.SpeedPxPerSec) * dt)
+            except:
+                self.ScrollX = float(self.ScrollX) - (60.0 * dt)
+            if float(self.ScrollX) < -float(tw):
+                self.ScrollState = "pause"
+                try:
+                    self.PauseUntilMs = int(nowMs) + int(self.PauseMs)
+                except:
+                    self.PauseUntilMs = None
+        else:
+            try:
+                if self.PauseUntilMs is not None and int(nowMs) >= int(self.PauseUntilMs):
+                    self.PauseUntilMs = None
+                    self._ResetStartPosition()
+            except:
+                pass
+        try:
+            self.repaint()
+        except:
+            pass
+
+    def paintComponent(self, g):
+        # In Jython/JMRI, javax.swing.JLabel.paintComponent is protected and not exposed.
+        # Paint background and either delegate normal paint or custom marquee.
+        w = self.getWidth()
+        h = self.getHeight()
+        try:
+            if self.isOpaque():
+                g.setColor(self.getBackground())
+                g.fillRect(0, 0, int(w), int(h))
+        except:
+            pass
+        if not getattr(self, 'MarqueeActive', False):
+            try:
+                ui = self.getUI()
+                if ui is not None:
+                    ui.paint(g, self)
+            except:
+                pass
+            return
+        if getattr(self, 'ScrollState', 'scroll') != 'scroll':
+            return
+        msg = ''
+        try:
+            msg = self.MarqueeText
+        except:
+            msg = ''
+        if msg is None or str(msg).strip() == '':
+            return
+        try:
+            g2 = g.create()
+        except:
+            g2 = g
+        try:
+            fnt = self.getFont()
+            g2.setFont(fnt)
+            g2.setColor(TEXT_COLOR)
+            fm = self.getFontMetrics(fnt)
+            ins = self.getInsets()
+            x = int(ins.left) + int(getattr(self, 'ScrollX', 0.0))
+            y = (int(h) + int(fm.getAscent()) - int(fm.getDescent())) // 2
+            g2.drawString(str(msg), x, y)
+        except:
+            pass
+        try:
+            g2.dispose()
+        except:
+            pass
+
 class ColumnPanel(swing.JPanel):
     def __init__(self):
         swing.JPanel.__init__(self)
@@ -467,7 +645,10 @@ class ColumnPanel(swing.JPanel):
         # 16 fixed calling lines
         self.callLabels = []
         for i in range(CALLING_LINES):
-            lbl = swing.JLabel("")
+            if i == (CALLING_LINES - 1):
+                lbl = MarqueeLabel()
+            else:
+                lbl = swing.JLabel("")
             lbl.setForeground(TEXT_COLOR)
             lbl.setFont(DEFAULT_MID_FONT)
             lbl.setOpaque(True)
@@ -553,8 +734,8 @@ class ColumnPanel(swing.JPanel):
     def SetDepartureTimeText(self, text):
         ScaleTextToFit(self.lblDepTime, (text or ""), TOP_FONT_SIZE, 16, self.lblDepTime.getWidth())
 
-    def SetPlatOrStatus(self, platText, statusText):
-        shown = platText if self.flipShowPlatform else statusText
+    def SetPlatOrStatus(self, platText, statusText, hidePlatformUntilAlloc=False, hasAlloc=False):
+        shown = platText if (self.flipShowPlatform and not (hidePlatformUntilAlloc and (not hasAlloc))) else statusText
         ScaleTextToFit(self.lblPlatOrStatus, (shown or ""), TOP_FONT_SIZE, 14, self.lblPlatOrStatus.getWidth())
 
     def SetDestination(self, dest):
@@ -586,6 +767,59 @@ class ColumnPanel(swing.JPanel):
             self.callLabels[i].setText(txt or "")
             self.callLabels[i].setHorizontalAlignment(swing.SwingConstants.CENTER if alignCenter else swing.SwingConstants.LEFT)
 
+
+    def SetSpecialText(self, text):
+        try:
+            lbl = self.callLabels[CALLING_LINES - 1]
+        except:
+            lbl = None
+        if lbl is None:
+            return
+        try:
+            if hasattr(lbl, "SetMarqueeText"):
+                lbl.SetMarqueeText(text)
+        except:
+            pass
+
+    def SetSpecialActive(self, active):
+        try:
+            lbl = self.callLabels[CALLING_LINES - 1]
+        except:
+            lbl = None
+        if lbl is None:
+            return
+        try:
+            if hasattr(lbl, "SetMarqueeActive"):
+                lbl.SetMarqueeActive(active)
+        except:
+            pass
+
+    def SetSpecialTuning(self, speedPxPerSec, pauseMs):
+        try:
+            lbl = self.callLabels[CALLING_LINES - 1]
+        except:
+            lbl = None
+        if lbl is None:
+            return
+        try:
+            if hasattr(lbl, "SetTuning"):
+                lbl.SetTuning(speedPxPerSec, pauseMs)
+        except:
+            pass
+
+    def AdvanceSpecialScroll(self, nowMs):
+        try:
+            lbl = self.callLabels[CALLING_LINES - 1]
+        except:
+            lbl = None
+        if lbl is None:
+            return
+        try:
+            if hasattr(lbl, "Tick"):
+                lbl.Tick(nowMs)
+        except:
+            pass
+
     def SetCompany(self, co):
         # Revision: company font matches calling-pattern font.
         ScaleTextToFit(self.lblCompany, (co or ""), MID_FONT_SIZE, 12, self.lblCompany.getWidth())
@@ -608,6 +842,9 @@ class PlatformStripWindow(object):
         self.pageSecs = self._ReadInt(MEM_PageSecs, 10, minVal=2, maxVal=120)
         self.flipSecs = self._ReadInt(MEM_FlipSecs, 5, minVal=2, maxVal=60)
         self.requireAlloc = self._ReadBool(MEM_RequireAlloc, False)
+        self.hidePlat = self._ReadBool(MEM_HidePlat, False)
+        self.marqueeSpeed = self._ReadInt(MEM_MarqueeSpeed, 60, minVal=10, maxVal=300)
+        self.marqueePause = self._ReadInt(MEM_MarqueePause, 2000, minVal=0, maxVal=20000)
 
         # Paging state
         self.pages = []
@@ -617,6 +854,7 @@ class PlatformStripWindow(object):
         self._FlipPlatLabel = ""
         self._FlipStatusLabel = ""
         self._FlipHasAlloc = False
+        self._SpecialTxt = ""
 
         # Window
         self.frame = swing.JFrame("Platform " + self.Platform)
@@ -627,6 +865,10 @@ class PlatformStripWindow(object):
         cp.setBackground(FRAME_COLOR)
 
         self.column = ColumnPanel()
+        try:
+            self.column.SetSpecialTuning(self.marqueeSpeed, self.marqueePause)
+        except:
+            pass
         colH = int(self.column.computedHeight)
         self.column.setBounds(OUTER_MARGIN, OUTER_MARGIN, COL_WIDTH, colH)
         cp.add(self.column)
@@ -650,9 +892,11 @@ class PlatformStripWindow(object):
         self.pageTimer = Timer(self.pageSecs * 1000, self._OnPageTick)
         self.flipTimer = Timer(self.flipSecs * 1000, self._OnFlipTick)
         self.clockTimer = Timer(1000, self._OnClockTick)
+        self.specialTimer = Timer(40, self._OnSpecialTick)
         self.pageTimer.setRepeats(True)
         self.flipTimer.setRepeats(True)
         self.clockTimer.setRepeats(True)
+        self.specialTimer.setRepeats(True)
 
         # Listener
         import java.beans as beans
@@ -706,11 +950,34 @@ class PlatformStripWindow(object):
         self.pageTimer.start()
         self.flipTimer.start()
         self.clockTimer.start()
+        self.specialTimer.start()
         self.frame.setVisible(True)
+
+    def _GetSettingRaw(self, memName, defaultStr):
+        # Read a TAS user-setting memory by suffix in a prefix-agnostic way (matches TASSetup.py).
+        # Ensure that a newly-created memory is initialised to defaultStr.
+        try:
+            m = TBL.ProvideMemoryBySuffix(memName, "")
+        except:
+            m = None
+        if m is None:
+            return defaultStr
+        try:
+            v = m.getValue()
+        except:
+            v = None
+        s = "" if v is None else str(v)
+        if s.strip() == "":
+            try:
+                m.setValue(str(defaultStr))
+            except:
+                pass
+            return str(defaultStr)
+        return s
 
     def _ReadInt(self, memName, defaultVal, minVal=None, maxVal=None):
         try:
-            raw = TBL.SafeGetOrCreateMemoryValue(memName, str(int(defaultVal)))
+            raw = self._GetSettingRaw(memName, str(int(defaultVal)))
             n = int(float(str(raw).strip()))
             if minVal is not None:
                 n = max(minVal, n)
@@ -722,7 +989,7 @@ class PlatformStripWindow(object):
 
     def _ReadBool(self, memName, defaultVal=False):
         try:
-            raw = TBL.SafeGetOrCreateMemoryValue(memName, "true" if defaultVal else "false")
+            raw = self._GetSettingRaw(memName, "true" if defaultVal else "false")
             t = (str(raw).strip().lower())
             if t in ["1", "true", "yes", "y", "on", "enabled"]:
                 return True
@@ -731,7 +998,6 @@ class PlatformStripWindow(object):
             return bool(defaultVal)
         except:
             return bool(defaultVal)
-
     def _CurrentMinutes(self):
         if Timebase is not None:
             ft = Timebase.getTime()
@@ -823,6 +1089,28 @@ class PlatformStripWindow(object):
                 chunk = chunk + ([""] * (CALLING_LINES - len(chunk)))
             pages.append(chunk)
             i += CALLING_LINES
+        return pages
+
+    def _PaginateWithSpecial(self, physicalLines):
+        # Page 1: 15 calling lines + special scroller in last line.
+        # Page 2+: calling lines pushed down by one (top blank), 15 lines per page.
+        pages = []
+        lines = physicalLines or []
+        if not lines:
+            pages.append([""] * CALLING_LINES)
+            return pages
+        i = 0
+        total = len(lines)
+        while i < total:
+            chunk = lines[i:i + 15]
+            if len(chunk) < 15:
+                chunk = chunk + ([""] * (15 - len(chunk)))
+            if len(pages) == 0:
+                page = chunk + [""]
+            else:
+                page = [""] + chunk
+            pages.append(page)
+            i += 15
         return pages
 
     def _NextServiceForPlatform(self):
@@ -942,7 +1230,7 @@ class PlatformStripWindow(object):
     def _ShowWelcomeMode(self):
         # Clear all dynamic service fields and show welcome message.
         self.column.SetDepartureTimeText("")
-        self.column.SetPlatOrStatus("", "")
+        self.column.SetPlatOrStatus("", "", self.hidePlat, False)
         self.column.SetDestination("")
         self.column.SetVia("")
         self.column.SetCallingTitleText("")
@@ -954,6 +1242,15 @@ class PlatformStripWindow(object):
         lines[mid] = self._ActiveProfileName()
         self.column.SetCallingPage(lines, alignCenter=True)
 
+        self._FlipPlatLabel = ""
+        self._FlipStatusLabel = ""
+        self._FlipHasAlloc = False
+        self._SpecialTxt = ""
+        try:
+            self.column.SetSpecialText("")
+            self.column.SetSpecialActive(False)
+        except:
+            pass
         self.column.SetCompany("...")
 
     def Refresh(self, e=None):
@@ -962,6 +1259,13 @@ class PlatformStripWindow(object):
             # Re-read live settings that affect selection/display.
             try:
                 self.withinMins = self._ReadInt(MEM_WithinMins, self.withinMins, minVal=0, maxVal=1440)
+                self.hidePlat = self._ReadBool(MEM_HidePlat, self.hidePlat)
+                self.marqueeSpeed = self._ReadInt(MEM_MarqueeSpeed, self.marqueeSpeed, minVal=10, maxVal=300)
+                self.marqueePause = self._ReadInt(MEM_MarqueePause, self.marqueePause, minVal=0, maxVal=20000)
+                try:
+                    self.column.SetSpecialTuning(self.marqueeSpeed, self.marqueePause)
+                except:
+                    pass
             except:
                 pass
             try:
@@ -987,7 +1291,7 @@ class PlatformStripWindow(object):
                 hasAlloc = (alloc is not None and str(alloc).strip() != "")
             except:
                 hasAlloc = False
-            self.column.SetPlatOrStatus(platLabel, statusLabel)
+            self.column.SetPlatOrStatus(platLabel, statusLabel, self.hidePlat, hasAlloc)
 
             self._FlipPlatLabel = platLabel
             self._FlipStatusLabel = statusLabel
@@ -995,9 +1299,20 @@ class PlatformStripWindow(object):
 
             self.column.SetDestination(svc.Dest)
             self.column.SetVia(svc.Via)
-
             physical = self._WrapStationsIntoLines(svc.Call, COL_WIDTH - 2 * INNER_PAD, DEFAULT_MID_FONT)
-            self.pages = self._Paginate16(physical)
+            specialTxt = (svc.Special or "").strip()
+            self._SpecialTxt = specialTxt
+            if specialTxt != "":
+                self.pages = self._PaginateWithSpecial(physical)
+            else:
+                self.pages = self._Paginate16(physical)
+            try:
+                self.column.SetSpecialText(svc.Special)
+            except:
+                try:
+                    self.column.SetSpecialText("")
+                except:
+                    pass
             if not self.pages:
                 self.pages = [[""] * CALLING_LINES]
             self.pageIndex = max(0, min(len(self.pages) - 1, self.pageIndex))
@@ -1005,6 +1320,10 @@ class PlatformStripWindow(object):
             self.column.SetCallingTitleText("Calling at:")
             self.column.SetPageIndicator(self.pageIndex + 1, len(self.pages))
             self.column.SetCallingPage(self.pages[self.pageIndex], alignCenter=False)
+            try:
+                self.column.SetSpecialActive((self.pageIndex == 0) and (self._SpecialTxt != ""))
+            except:
+                pass
 
             self.column.SetCompany(svc.CoName)
 
@@ -1026,11 +1345,15 @@ class PlatformStripWindow(object):
         self.pageIndex = (self.pageIndex + 1) % total
         self.column.SetPageIndicator(self.pageIndex + 1, total)
         self.column.SetCallingPage(self.pages[self.pageIndex], alignCenter=False)
+        try:
+            self.column.SetSpecialActive((self.pageIndex == 0) and (self._SpecialTxt != ""))
+        except:
+            pass
 
     def _OnFlipTick(self, e=None):
         try:
             self.column.flipShowPlatform = not bool(self.column.flipShowPlatform)
-            self.column.SetPlatOrStatus(self._FlipPlatLabel, self._FlipStatusLabel)
+            self.column.SetPlatOrStatus(self._FlipPlatLabel, self._FlipStatusLabel, self.hidePlat, self._FlipHasAlloc)
         except:
             pass
 
@@ -1038,6 +1361,24 @@ class PlatformStripWindow(object):
         hhmm, ss = self._ClockHHmmSs()
         try:
             self.column.SetClock(hhmm, ss)
+        except:
+            pass
+
+
+    def _OnSpecialTick(self, e=None):
+        nowMs = 0
+        try:
+            nowMs = System.currentTimeMillis()
+        except:
+            nowMs = 0
+        if nowMs == 0:
+            try:
+                import time as _pyTime
+                nowMs = int(_pyTime.time() * 1000)
+            except:
+                nowMs = 0
+        try:
+            self.column.AdvanceSpecialScroll(nowMs)
         except:
             pass
 
@@ -1073,6 +1414,11 @@ class PlatformStripWindow(object):
         try:
             if self.clockTimer:
                 self.clockTimer.stop()
+        except:
+            pass
+        try:
+            if self.specialTimer:
+                self.specialTimer.stop()
         except:
             pass
 
@@ -1114,6 +1460,7 @@ class PlatformStripWindow(object):
         self.pageTimer = None
         self.flipTimer = None
         self.clockTimer = None
+        self.specialTimer = None
         self._Pcl = None
         self._CloseHandler = None
 
