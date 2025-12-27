@@ -989,7 +989,112 @@ def SpecialMessagesPoolAll():
     except:
         pass
     return out
-    
+
+
+def CallingPatternPoolsAll():
+    # Build per-position pools (20 positions = 10 two-line flaps) of station names that can
+    # appear on the calling-pattern flaps for this board.
+    #
+    # This is deliberately independent of day/week/current service. It is derived from the
+    # timetable data as the best available description of what can appear on the fixed flaps.
+    #
+    # We also apply the mechanical "gap" logic so that the positions reflect the physical
+    # constraint that not all stations can appear in all positions.
+    rowsAll = CsvRows()
+    pools = []
+    for _i in range(20):
+        pools.append([])
+
+    # Build gap maps across ALL rows (not day-filtered) so the pools reflect the fixed flap set.
+    try:
+        gapMapsAll = _BuildGapMaps(rowsAll)
+    except:
+        gapMapsAll = {}
+
+    # Helper: add station to a pool with case-insensitive de-dup, and reject all-uppercase tokens.
+    def _AddStation(poolList, seenSet, name):
+        ss = (name or "").strip()
+        if ss == "":
+            return
+        # Never allow all-uppercase tokens in calling-pattern chatter.
+        # (Destinations are uppercase; calling points should not be shown as such.)
+        try:
+            if len(ss) > 1 and ss.upper() == ss:
+                return
+        except:
+            pass
+        key = ss.lower()
+        if key in seenSet:
+            return
+        seenSet.add(key)
+        poolList.append(ss)
+
+    # Build pools by scanning every row's calling pattern, applying gaps by destination.
+    seenByPos = []
+    for _i in range(20):
+        seenByPos.append(set())
+
+    for r in (rowsAll or []):
+        try:
+            callText = CaseInsensitive(r, "Calling pattern")
+        except:
+            callText = ""
+        if (callText or "").strip() == "":
+            continue
+
+        try:
+            destKey = (CaseInsensitive(r, "Destination") or "").strip().upper()
+        except:
+            destKey = ""
+
+        stops = []
+        try:
+            stops = [t.strip() for t in str(callText).split(",") if (t or "").strip() != ""]
+        except:
+            stops = []
+
+        # Apply gaps for this destination using the all-rows gap map.
+        gm = None
+        try:
+            gm = gapMapsAll.get(destKey) if destKey else None
+        except:
+            gm = None
+
+        if gm:
+            outStops = []
+            try:
+                for i in range(len(stops)):
+                    outStops.append(stops[i])
+                    if i < len(stops) - 1:
+                        gap = int(gm.get((stops[i], stops[i + 1]), 0))
+                        for _k in range(gap):
+                            outStops.append("")
+                stops = outStops
+            except:
+                pass
+
+        # Record stations by position (up to 20 displayed positions).
+        for pos in range(20):
+            if pos >= len(stops):
+                break
+            _AddStation(pools[pos], seenByPos[pos], stops[pos])
+
+    # Ensure no position is completely empty; if it is, use the union of all stations
+    # (still rejecting all-uppercase tokens). This preserves chatter even for positions
+    # that don't occur in the dataset.
+    union = []
+    unionSeen = set()
+    for pos in range(20):
+        for s in (pools[pos] or []):
+            _AddStation(union, unionSeen, s)
+
+    if union:
+        for pos in range(20):
+            if not pools[pos]:
+                pools[pos] = list(union)
+
+    return pools
+
 
 def BuildSpecialChatterPool(boardObj, flapWidth):
     # Build a pool of (top,bottom) display pairs for Special flap cycling, plus a style map.
@@ -2352,6 +2457,10 @@ class SolariBoard(swing.JPanel):
         self.destPool = []; self.viaPool = []; self.platCharSet = set()
         self.lastPlatCharsAllowed = ["0","1","2","3","4","5","6","7","8","9"]
         self.lastStateKey = None  # used to suppress unnecessary animations
+        # Fixed calling-pattern chatter pools: 20 positions (10 two-line flaps).
+        # Populated by SolariWindow.Refresh and used for all calling-pattern chatter.
+        self.CallStationsPools = None
+
         self._blankSerial = 0
         self._blankTimer = None
         self._skipBlankOnce = False
@@ -2405,6 +2514,41 @@ class SolariBoard(swing.JPanel):
                     wordPool.append(s.upper())
         except:
             pass
+                  
+        # Calling-pattern chatter pool: ONLY station names from the current service calling pattern.
+        # Never use destinations or other capitalised phrases for calling flaps.
+        callStationsPool = []
+        try:
+            rawCall = getattr(svc, "Call", "") or ""
+        except:
+            rawCall = ""
+        try:
+            rawDest = getattr(svc, "Dest", "") or ""
+        except:
+            rawDest = ""
+        stopsForPool = []
+        try:
+            stopsForPool = [t.strip() for t in str(rawCall).split(",") if (t or "").strip() != ""]
+        except:
+            stopsForPool = []
+        try:
+            destKeyForGaps = str(rawDest).strip().upper()
+        except:
+            destKeyForGaps = ""
+        try:
+            stopsForPool = _ApplyGapsToStops(stopsForPool, destKeyForGaps)
+        except:
+            pass
+        seenStations = set()
+        for s in (stopsForPool or []):
+            ss = (s or "").strip()
+            if ss == "":
+                continue
+            if ss in seenStations:
+                continue
+            seenStations.add(ss)
+            callStationsPool.append(ss)
+            
         try:
             for w in (viaPool or []):
                 s = str(w or "").strip()
@@ -2493,23 +2637,56 @@ class SolariBoard(swing.JPanel):
            pairs.append(("", ""))
          return pairs
 
-        def _RandPairsDouble():
+        def _RandPairsDoubleForFlapIndex(flapIndex):
             pairs = []
             if nSteps <= 0:
                 return pairs
-            p = list(wordPool or [])
-            if not p:
+
+            pools = getattr(self, "CallStationsPools", None)
+            if not pools:
                 return pairs
+
+            try:
+                fi = int(flapIndex)
+            except:
+                fi = 0
+
+            topPos = fi * 2
+            botPos = topPos + 1
+
+            topPool = []
+            botPool = []
+
+            try:
+                if topPos < len(pools):
+                    topPool = list(pools[topPos] or [])
+            except:
+                topPool = []
+
+            try:
+                if botPos < len(pools):
+                    botPool = list(pools[botPos] or [])
+            except:
+                botPool = []
+
+            if not topPool and not botPool:
+                return pairs
+
             for k in range(nSteps):
-                try:
-                    a = random.choice(p)
-                except:
-                    a = ""
-                try:
-                    b = random.choice(p)
-                except:
-                    b = ""
+                a = ""
+                b = ""
+                if topPool:
+                    try:
+                        a = random.choice(topPool)
+                    except:
+                        a = ""
+                if botPool:
+                    try:
+                        b = random.choice(botPool)
+                    except:
+                        b = ""
                 pairs.append((a, b))
+
             return pairs
 
         # Use the same within-board cascade delays for the blank stage.
@@ -2591,7 +2768,7 @@ class SolariBoard(swing.JPanel):
             callBase = 0
         for idx, fp in enumerate(self.callFlaps):
             callDelay = callBase + (idx * int(STAGGER_ROW_MS))
-            fp.AnimateTo("", "", _RandPairsDouble(), startDelayMs=callDelay)
+            fp.AnimateTo("", "", _RandPairsDoubleForFlapIndex(idx), startDelayMs=callDelay)
 
         # Estimate time for blank stage to complete, then hold, then run final stage.
         try:
@@ -2892,8 +3069,6 @@ class SolariBoard(swing.JPanel):
             _SetBannerPainter(self.flapSpecial)
             dlySpecial = self.CalcStartDelayMs(4, multiChange)
             self.flapSpecial.AnimateTo("Please listen", "for Announcements", [], startDelayMs=dlySpecial)
-        else:
-            _SetSpecialDefaultPainter()
 
         # SPECIAL
         if showDelayBanner:
@@ -3030,6 +3205,54 @@ class SolariBoard(swing.JPanel):
                 dlySpecial = self.CalcStartDelayMs(4, multiChange)
                 self.flapSpecial.AnimateTo(targetPair[0], targetPair[1], chatterPairs, startDelayMs=dlySpecial)
 
+            else:
+                # No Special message: clear via a short chatter cycle drawn from the Special pool,
+                # then end on blank. This avoids "instant blank" clears with no chatter.
+                poolPairs, styleByPair = BuildSpecialChatterPool(self, self.flapSpecial.w)
+
+                # Ensure blank uses the normal black flap look.
+                styleByPair[("", "")] = (FLAP_BG, TEXT_WHT)
+
+                def ResolveSpecialStyle(topTxt, botTxt):
+                    key = (str(topTxt or ""), str(botTxt or ""))
+                    if key in styleByPair:
+                        return styleByPair[key]
+                    # Fallback to default Solari flap colours for unknown pairs while clearing.
+                    return (FLAP_BG, TEXT_WHT)
+
+                SetSpecialTwoLinePainterDynamic(self.flapSpecial, ResolveSpecialStyle)
+
+                chatterPairs = []
+                try:
+                    steps = int(CHATTER_STEPS)
+                except:
+                    steps = 0
+                if steps < 0:
+                    steps = 0
+
+                # Build chatter from the pool, excluding the blank target.
+                candidates = [p for p in (poolPairs or []) if p != ("", "")]
+                if steps > 0 and candidates:
+                    lastPick = None
+                    for i in range(steps):
+                        try:
+                            pick = random.choice(candidates)
+                        except:
+                            pick = ("", "")
+                        if lastPick is not None and len(candidates) > 1:
+                            tries = 0
+                            while pick == lastPick and tries < 4:
+                                try:
+                                    pick = random.choice(candidates)
+                                except:
+                                    break
+                                tries += 1
+                        lastPick = pick
+                        chatterPairs.append((pick[0], pick[1]))
+
+                dlySpecial = self.CalcStartDelayMs(4, multiChange)
+                self.flapSpecial.AnimateTo("", "", chatterPairs, startDelayMs=dlySpecial)
+
         # CALLING AT: no paging; >20 stops -> last flap shows yellow "and stations to:" / DEST
         pairs = []
         i = 0
@@ -3085,24 +3308,50 @@ class SolariBoard(swing.JPanel):
             else:
                 fp.DrawTopText = lambda g2, s: SolariFlap.DrawTextLine(fp, g2, (s or ""), top=True, colorOverride=None)
 
-            chatter = []
+                chatter = []
 
-            # Prefer real station names for calling-flap chatter; fall back to wordPool if needed.
-            pool = callStationsPool if (callStationsPool and len(callStationsPool) > 0) else list(wordPool)
+                # Calling-pattern chatter is fixed to the board: use the per-position pools.
+                pools = getattr(self, "CallStationsPools", None)
 
-            if CHATTER_STEPS > 0 and pool and ((fp.curTop != topT) or (fp.curBot != botT)):
-                for k in range(CHATTER_STEPS):
+                topPool = []
+                botPool = []
+
+                if pools:
+                    topPos = idx * 2
+                    botPos = topPos + 1
+
                     try:
-                        aTop = random.choice(pool)
+                        if topPos < len(pools):
+                            topPool = list(pools[topPos] or [])
                     except:
+                        topPool = []
+
+                    try:
+                        if botPos < len(pools):
+                            botPool = list(pools[botPos] or [])
+                    except:
+                        botPool = []
+
+                if CHATTER_STEPS > 0 and (topPool or botPool) and ((fp.curTop != topT) or (fp.curBot != botT)):
+                    for k in range(CHATTER_STEPS):
                         aTop = ""
-                    try:
-                        aBot = random.choice(pool)
-                    except:
                         aBot = ""
-                    chatter.append((aTop, aBot))
 
-            fp.AnimateTo(topT, botT, chatter, startDelayMs=callDelay)
+                        if topPool:
+                            try:
+                                aTop = random.choice(topPool)
+                            except:
+                                aTop = ""
+
+                        if botPool:
+                            try:
+                                aBot = random.choice(botPool)
+                            except:
+                                aBot = ""
+
+                        chatter.append((aTop, aBot))
+
+                fp.AnimateTo(topT, botT, chatter, startDelayMs=callDelay)
 
     def AnimateWordFlap(self, flap, target, pool, startDelayMs=0, multiChange=False):
         targetTop = (target or "")
@@ -3413,6 +3662,7 @@ class SolariWindow(object):
             # Get ALL upcoming services (unbounded) so we can validate existing board assignments.
             servicesAll, destPool, viaPool, platCharSet, maxPlatNum = NextServices(0)
             specialMsgsPool = SpecialMessagesPoolAll()
+            callPoolsAll = CallingPatternPoolsAll()
 
             # Build lookup by reporting number.
             svcByRn = {}
@@ -3556,6 +3806,10 @@ class SolariWindow(object):
                 board = self.boards[idx]              
                 try:
                     board.SpecialMsgsPool = list(specialMsgsPool or [])
+                    try:
+                        board.CallStationsPools = list(callPoolsAll or [])
+                    except:
+                        board.CallStationsPools = None
                 except:
                     board.SpecialMsgsPool = []
                 try:
