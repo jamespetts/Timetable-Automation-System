@@ -1055,7 +1055,7 @@ class PIDWindow(object):
                 rowsN = max(len(keysLeft), len(keysRight))
                 for i in range(rowsN):
                     leftKey = keysLeft[i] if i < len(keysLeft) else ""
-                    rightKey = keysRight[i] if i < len(keysRight) else ""
+                    rightKey = keysRight[i] if i < len(keysRight) else ""   
 
                     maxLines = 1
                     leftLines = [""]

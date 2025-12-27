@@ -275,6 +275,25 @@ def CRTS_HasDepartedAtConfiguredTP(reportingNumber, dayName, nowMinutes):
 # ---- "Due within X minutes" window ----
 CRTS_DefaultWithinMinutes = 5  # default when memory not set/invalid
 
+def HasAnyTimingToday(reportingNumber, dayName):
+    try:
+        tps = TR.listTimingPoints() or []
+    except:
+        tps = []
+    for tp in tps:
+        try:
+            entries = TR.getTiming(tp) or []
+        except:
+            entries = []
+        for rec in entries:
+            try:
+                rn = rec[0]; d = rec[3]
+            except:
+                continue
+            if str(rn) == str(reportingNumber) and str(d) == str(dayName):
+                return True
+    return False
+
 def CRTS_ReadWithinMinutes():
     """Read X from IMPID_CRT_WITHIN_MINUTES; default to 5; clamp to sensible range."""
     try:
@@ -744,9 +763,16 @@ class CRTS_CRTPIDWindow(object):
                 if expMin < curMin:
                     continue
             else:
-                if depMin < curMin:
-                    continue
-
+                # On-time resilience:
+                # If there is NO disruption AND no timing anywhere today for this RN,
+                # hide only if booked Dep < now; otherwise keep it until actually logged departed.
+                try:
+                    direct = getDisruption(rn)
+                except:
+                    direct = None
+                if (direct is None) and (not HasAnyTimingToday(rn, curDay)):
+                    if depMin < curMin:
+                        continue
             adjusted = expMin if expMin is not None else depMin
         
             # --- Ensure required fields are defined in this scope (avoid NameError) ---

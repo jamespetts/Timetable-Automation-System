@@ -84,6 +84,7 @@ from java.awt.geom import Area, RoundRectangle2D, Ellipse2D
 import TimingRegister as TR  # read-only tuples (reportingNumber, direction, time, day)
 import TASBeanLookup as TBL
 import PlatformAllocationRegister as PAR  # allocation takes precedence over timetable/overrides
+from DisruptionRegister import getDisruption
 
 # -------------------- TYPEFACE & COLOURS --------------------
 def FBP_PickFamily(cands):
@@ -655,6 +656,27 @@ def FBP_HasDepartedAtConfiguredTP(reportingNumber, dayName, nowMinutes):
                 return True
     return False
 
+def FBP_HasAnyTimingToday(reportingNumber, dayName):
+    # Return True iff ANY timing point has a timing tuple for (reportingNumber, dayName)
+    # regardless of the logged minute.
+    try:
+        tps = TR.listTimingPoints() or []
+    except:
+        tps = []
+    for tp in tps:
+        try:
+            entries = TR.getTiming(tp) or []
+        except:
+            entries = []
+        for rec in entries:
+            try:
+                rn = rec[0]; d = rec[3]
+            except:
+                continue
+            if str(rn) == str(reportingNumber) and str(d) == str(dayName):
+                return True
+    return False
+
 # -------------------- ECS FILTER (KEYWORDS ONLY) --------------------
 FBP_DefaultEcsTerms = [
     "ECS", "DEPOT", "CARRIAGE SIDINGS", "CARRIAGE SDGS",
@@ -701,6 +723,48 @@ def FBP_IsEcsWorking(row):
             return True
     return False
 
+
+def FBP_ResolveDelayWithInheritance(rowsToday, formersMap, rn, schedDepMin, visited=None):
+    # Returns ("cancel", None) / ("delay", minutes>0) / ("ontime", 0)
+    if visited is None:
+        visited = set()
+    if rn in visited:
+        return ("ontime", 0)
+    visited.add(rn)
+    # Direct disruption
+    try:
+        d = getDisruption(rn)
+    except:
+        d = None
+    if d is not None:
+        try:
+            delay = int(d)
+        except:
+            delay = 0
+        if delay >= 1440:
+            return ("cancel", None)
+        if delay > 0:
+            return ("delay", delay)
+    # Inherit from 'Forms' today
+    formers = formersMap.get(rn, [])
+    if not formers:
+        return ("ontime", 0)
+    chosen = None
+    if schedDepMin is not None:
+        before = []
+        for fr in formers:
+            arr = (fr.get("Arr","") or "").strip()
+            arrMin = FBP_ParseMinutes(arr) if arr else None
+            if arrMin is not None and arrMin <= schedDepMin:
+                before.append((arrMin, fr))
+        if before:
+            before.sort(key=lambda t: t[0])
+            chosen = before[-1][1]
+    if chosen is None:
+        chosen = formers[0]
+    formerRN = ((chosen.get("Reporting number","") or "")).strip()
+    return FBP_ResolveDelayWithInheritance(rowsToday, formersMap, formerRN, schedDepMin, visited)
+
 # -------------------- NEXT TRAIN FOR A PLATFORM --------------------
 def FBP_PickNextTrainForPlatform(platform):
     rows = FBP_CsvRows()
@@ -713,9 +777,27 @@ def FBP_PickNextTrainForPlatform(platform):
         curStr = FBP_TimeMem.getValue() or ""
         curMin = FBP_ParseMinutes(curStr)
     if curMin is None: return None
-
+    
     curDay = FBP_DayMem.getValue() or ""
     within = FBP_ReadWithinMinutes()
+
+    # Build today's rows and the formation map for delay inheritance
+    todays = []
+    for _r in rows:
+        try:
+            if (( _r.get(curDay,"") or "").strip().lower() == "true"):
+                todays.append(_r)
+        except:
+            pass
+    formers_map = {}
+    for _r in todays:
+        try:
+            ch = (_r.get("Forms","") or "").strip()
+            if ch:
+                formers_map.setdefault(ch, []).append(_r)
+        except:
+            pass
+
     cands = []
 
     for row in rows:
@@ -743,33 +825,74 @@ def FBP_PickNextTrainForPlatform(platform):
         if depMin is None:
             continue
 
-        # Skip past departures
-        if depMin < curMin:
-            continue
+        # Determine disruption (direct or inherited) and adjusted minutes
+        cancelled = False
+        expectedMin = None
+        try:
+            direct = getDisruption(rn)
+        except:
+            direct = None
+        kind = "ontime"; val = 0
+        if direct is not None:
+            try:
+                dd = int(direct)
+            except:
+                dd = 0
+            if dd >= 1440:
+                cancelled = True
+            elif dd > 0:
+                kind = "delay"; val = dd
+        else:
+            try:
+                kind, val = FBP_ResolveDelayWithInheritance(todays, formers_map, rn, depMin, visited=set())
+            except:
+                kind, val = ("ontime", 0)
+        if kind == "cancel":
+            cancelled = True
+        elif kind == "delay" and val and val > 0:
+            try:
+                expectedMin = depMin + int(val)
+            except:
+                expectedMin = depMin
 
-        # Clear-on-departure (skip if already logged as departed)
+        # Clear on departure (remove only when logged as departed)
         if FBP_HasDepartedAtConfiguredTP(rn, curDay, curMin):
             continue
 
-        # Due within X minutes (wrap-safe)
-        delta = (depMin - curMin) % (24*60)
+        # Past-hiding rules (resilient)
+        if cancelled:
+            if depMin < curMin:
+                continue
+        else:
+            if expectedMin is not None:
+                if expectedMin < curMin:
+                    continue
+            else:
+                # On-time resilience: only hide booked-past if no disruption AND no timing seen today.
+                if (direct is None) and (not FBP_HasAnyTimingToday(rn, curDay)):
+                    if depMin < curMin:
+                        continue
+
+        # Due-within window uses adjusted minutes when delayed, else booked
+        adjMin = expectedMin if expectedMin is not None else depMin
+        delta = (adjMin - curMin) % (24*60)
         if not (delta == 0 or (0 <= delta <= within)):
             continue
 
-        arr     = (row.get("Arr","") or "").strip()
+        arr = (row.get("Arr","") or "").strip()
         calling = (row.get("Calling pattern","") or "").strip()
-        dest    = (row.get("Destination","") or "").strip()
-
+        dest = (row.get("Destination","") or "").strip()
         cands.append({
             "rn": rn,
             "arr": FBP_NormTime(arr),
             "dep": FBP_NormTime(dep),
             "calling": calling,
-            "dest": dest
+            "dest": dest,
+            "adjMin": adjMin
         })
 
     if not cands: return None
-    cands.sort(key=lambda t: FBP_ParseMinutes(t["dep"]))
+    cands.sort(key=lambda t: t["adjMin"])
     return cands[0]
 
 # -------------------- DRAWING PANEL --------------------

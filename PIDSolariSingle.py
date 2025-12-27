@@ -388,7 +388,6 @@ def DepartureTPList():
             names = [base]
     return names
 
-
 def HasDepartedAtConfiguredTP(reportingNumber, dayName, nowMinutes):
     for tp in DepartureTPList():
         try:
@@ -410,6 +409,25 @@ def HasDepartedAtConfiguredTP(reportingNumber, dayName, nowMinutes):
             if mm is None:
                 continue
             if mm <= int(nowMinutes):
+                return True
+    return False
+
+def HasAnyTimingToday(reportingNumber, dayName):
+    try:
+        tps = TR.listTimingPoints() or []
+    except:
+        tps = []
+    for tp in tps:
+        try:
+            entries = TR.getTiming(tp) or []
+        except:
+            entries = []
+        for rec in entries:
+            try:
+                rn = rec[0]; d = rec[3]
+            except:
+                continue
+            if str(rn) == str(reportingNumber) and str(d) == str(dayName):
                 return True
     return False
 
@@ -1034,9 +1052,16 @@ def PickNextTrainForPlatform(platformText):
             if expectedMin < now:
                 continue
         else:
-            if depMin < now:
-                continue
-
+            # On-time resilience (PIDSmall behaviour):
+            # If there is NO disruption AND no timing anywhere today for this RN,
+            # hide only if booked Dep < now; otherwise keep it until actually logged departed.
+            try:
+                direct = getDisruption(rn)
+            except:
+                direct = None
+            if (direct is None) and (not HasAnyTimingToday(rn, day)):
+                if depMin < now:
+                    continue
         adjusted = expectedMin if expectedMin is not None else depMin
 
         destText = (row.get("Destination", "") or "").strip()

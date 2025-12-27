@@ -275,6 +275,26 @@ def HasDepartedAtConfiguredTP(reportingNumber, dayName, nowMinutes):
                 return True
     return False
 
+def HasAnyTimingToday(reportingNumber, dayName):
+    try:
+        tps = TR.listTimingPoints() or []
+    except:
+        tps = []
+    for tp in tps:
+        try:
+            entries = TR.getTiming(tp) or []
+        except:
+            entries = []
+        for rec in entries:
+            try:
+                rn = rec[0]; d = rec[3]
+            except:
+                continue
+            if str(rn) == str(reportingNumber) and str(d) == str(dayName):
+                return True
+    return False
+
+
 # ---------------- Disruption inheritance ----------------
 def ResolveDelayWithInheritance(rowsToday, rn, schedDepMin, visited=None):
     if visited is None:
@@ -838,11 +858,51 @@ class PlatformStripWindow(object):
                 if str(m.Plat) != self.Platform:
                     continue
 
-            # Skip past services (keep cancellations/delays logic consistent with PIDLarge.py)
-            if m.DepMin < curMin:
-                continue
+            kind, val = ResolveDelayWithInheritance(rowsToday, m.RN, m.DepMin, visited=set())           
+            # Past-hiding consistent with PIDSmall:
+            # - Cancelled: hide only if booked Dep < now.
+            # - Delayed: hide only if expected (Dep + delay) < now.
+            # - On-time: apply resilience (no disruption AND no timing seen today -> hide only if booked < now).
+            if kind == "cancel":
+                if m.DepMin < curMin:
+                    continue
+            elif (kind == "delay") and val and val > 0:
+                try:
+                    adj = m.DepMin + int(val)
+                except:
+                    adj = m.DepMin
+                if adj < curMin:
+                    continue
+            else:
+                # On-time resilience (inline 'seen today' check to avoid adding helpers here):
+                try:
+                    direct = getDisruption(m.RN)
+                except:
+                    direct = None
+                seenToday = False
+                try:
+                    tps = TR.listTimingPoints() or []
+                except:
+                    tps = []
+                for tp in tps:
+                    try:
+                        entries = TR.getTiming(tp) or []
+                    except:
+                        entries = []
+                    for rec in entries:
+                        try:
+                            rn0 = rec[0]; d0 = rec[3]
+                        except:
+                            continue
+                        if str(rn0) == str(m.RN) and str(d0) == str(curDay):
+                            seenToday = True
+                            break
+                    if seenToday:
+                        break
+                if (direct is None) and (not seenToday):
+                    if m.DepMin < curMin:
+                        continue
 
-            kind, val = ResolveDelayWithInheritance(rowsToday, m.RN, m.DepMin, visited=set())
             if kind == "cancel":
                 m.Status = "Cancelled"
                 m.ShowTime = "CANCELLED"
