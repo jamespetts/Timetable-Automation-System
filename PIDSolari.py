@@ -35,6 +35,12 @@
 # <<SETTING DESCRIPTION BOOLEAN: Hide platform until allocated>>
 # <<SETTING DESCRIPTION NUMBER: Delay threshold minutes>>
 # <<SETTING DESCRIPTION STRING: ECS message>>
+# <<SETTING DESCRIPTION COLOR: Solari special default fg>>
+# <<SETTING DESCRIPTION COLOR: Solari special default bg>>
+# <<SETTING DESCRIPTION COLOR: Solari special alt fg>>
+# <<SETTING DESCRIPTION COLOR: Solari special alt bg>>
+# <<SETTING DESCRIPTION STRING: Solari special keywords>>
+
 
 import javax.swing as swing
 import java.awt as awt
@@ -712,6 +718,37 @@ PURE_BLK = Color(0, 0, 0)
 TEXT_WHT = Color(242, 242, 242)
 YELLOW   = Color(255, 211, 0)
 RED      = Color(200, 16, 46)
+
+# --- Seed Solari special/alternate settings so TASSetup can show them ---
+def SeedSpecialSettings():
+    # Colours: write default values to memories if they do not already exist
+    try:
+        # Default (normal) special: red on white
+        _ = ReadColor("TAS_USER_SETTING_SOLARI_SPECIAL_DEFAULT_FG", RED)
+        _ = ReadColor("TAS_USER_SETTING_SOLARI_SPECIAL_DEFAULT_BG", Color(255, 255, 255))
+
+        # Alternate special: yellow on red
+        _ = ReadColor("TAS_USER_SETTING_SOLARI_SPECIAL_ALT_FG", YELLOW)
+        _ = ReadColor("TAS_USER_SETTING_SOLARI_SPECIAL_ALT_BG", RED)
+
+    except:
+        # Non-fatal; the display will still run with built-in defaults
+        pass
+
+    # Keywords: create with sensible defaults if missing
+    try:
+        TBL.SafeGetOrCreateMemoryValue(
+            "TAS_USER_SETTING_SOLARI_SPECIAL_KEYWORDS",
+            "buffet,restaurant,trolley,dining"
+        )
+    except:
+        pass
+
+# Call once at import so TASSetup can discover these memories immediately
+try:
+    SeedSpecialSettings()
+except:
+    pass
 
 HingeRatio  = 0.50
 
