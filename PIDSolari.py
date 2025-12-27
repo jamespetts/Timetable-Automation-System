@@ -73,6 +73,632 @@ def ReadBool(memName, defaultVal=False):
         return bool(defaultVal)
     except:
         return bool(defaultVal)
+        
+
+def ColorToRgbText(c):
+    try:
+        return "%d,%d,%d" % (int(c.getRed()), int(c.getGreen()), int(c.getBlue()))
+    except:
+        return "255,255,255"
+
+def ParseColorSpec(raw, defaultColor):
+    # Accept: "r,g,b", "r g b", "r;g;b", "#RRGGBB", "RRGGBB", and a few names.
+    try:
+        s = str(raw if raw is not None else "").strip()
+        if s == "":
+            return defaultColor
+        sl = s.lower()
+        if sl == "black":
+            return Color(0, 0, 0)
+        if sl == "white":
+            return Color(255, 255, 255)
+        if sl == "red":
+            return RED
+        if sl == "yellow":
+            return YELLOW
+
+        hx = sl
+        if hx.startswith("#"):
+            hx = hx[1:]
+        if len(hx) == 6:
+            try:
+                r = int(hx[0:2], 16)
+                g = int(hx[2:4], 16)
+                b = int(hx[4:6], 16)
+                return Color(r, g, b)
+            except:
+                pass
+
+        t = s.replace(";", ",").replace(" ", ",")
+        parts = [p for p in t.split(",") if p.strip() != ""]
+        if len(parts) >= 3:
+            r = int(float(parts[0].strip()))
+            g = int(float(parts[1].strip()))
+            b = int(float(parts[2].strip()))
+            if r < 0:
+                r = 0
+            if r > 255:
+                r = 255
+            if g < 0:
+                g = 0
+            if g > 255:
+                g = 255
+            if b < 0:
+                b = 0
+            if b > 255:
+                b = 255
+            return Color(r, g, b)
+    except:
+        pass
+    return defaultColor
+
+def ReadColor(memName, defaultColor):
+    # Store as "r,g,b" or "#RRGGBB". Default written in "r,g,b" form.
+    try:
+        defaultText = ColorToRgbText(defaultColor)
+    except:
+        defaultText = "255,255,255"
+    raw = TBL.SafeGetOrCreateMemoryValue(memName, defaultText)
+    return ParseColorSpec(raw, defaultColor)
+
+def SplitKeywords(raw):
+    out = []
+    try:
+        s = str(raw if raw is not None else "")
+        s = s.replace(";", ",")
+        for k in s.split(","):
+            kk = (k or "").strip().lower()
+            if kk != "":
+                out.append(kk)
+    except:
+        pass
+    return out
+
+def GetSpecialStyleForMessage(msg):
+    # Defaults: red on white; alternate: yellow on red when keywords match.
+    defaultFg = ReadColor("TAS_USER_SETTING_SOLARI_SPECIAL_DEFAULT_FG", RED)
+    defaultBg = ReadColor("TAS_USER_SETTING_SOLARI_SPECIAL_DEFAULT_BG", Color(255, 255, 255))
+    altFg = ReadColor("TAS_USER_SETTING_SOLARI_SPECIAL_ALT_FG", YELLOW)
+    altBg = ReadColor("TAS_USER_SETTING_SOLARI_SPECIAL_ALT_BG", RED)
+
+    keysRaw = TBL.SafeGetOrCreateMemoryValue(
+        "TAS_USER_SETTING_SOLARI_SPECIAL_KEYWORDS",
+        "buffet,restaurant,trolley,dining"
+    )
+    keys = SplitKeywords(keysRaw)
+
+    try:
+        ml = str(msg if msg is not None else "").lower()
+    except:
+        ml = ""
+
+    useAlt = False
+    for k in keys:
+        try:
+            if k in ml:
+                useAlt = True
+                break
+        except:
+            pass
+
+    if useAlt:
+        return (altBg, altFg)
+    return (defaultBg, defaultFg)
+
+def DrawUnifiedTextWithFont(g2, flap, text, fontObj):
+    # Unified (single-line) text centered over full flap height, with truncation.
+    margin = Sc(12)
+    s = str(text or "")
+
+    g2.setFont(fontObj)
+    fm = g2.getFontMetrics(fontObj)
+
+    maxWidth = int(flap.w) - 2 * int(margin)
+    if maxWidth < 4:
+        maxWidth = 4
+
+    if fm.stringWidth(s) > maxWidth:
+        try:
+            attrs = {TextAttribute.TRACKING: -0.04}
+            f2 = fontObj.deriveFont(attrs)
+            fm2 = g2.getFontMetrics(f2)
+            if fm2.stringWidth(s) > maxWidth:
+                t = s
+                while len(t) > 1 and fm2.stringWidth(t + "...") > maxWidth:
+                    t = t[:-1]
+                if len(t) > 1:
+                    t = t + "..."
+                s = t
+                g2.setFont(f2)
+            else:
+                g2.setFont(fontObj)
+        except:
+            t = s
+            while len(t) > 1 and fm.stringWidth(t + "...") > maxWidth:
+                t = t[:-1]
+            if len(t) > 1:
+                t = t + "..."
+            s = t
+            g2.setFont(fontObj)
+
+    fm = g2.getFontMetrics(g2.getFont())
+    baseline = (int(flap.h) + fm.getAscent()) // 2 - 2
+    g2.drawString(s, int(margin), int(baseline))
+
+def SetUnifiedFlapPainter(flap, bgColor, fgColor, fontSize):
+    # Custom painter for a unified message with chosen colours/font.
+    def _Paint(g):
+        g2 = g.create()
+        try:
+            SetTextHints(g2)
+            hingeY = int(flap.h * HingeRatio)
+            PaintFlapFrame(g2, flap.w, flap.h, bgColor, PURE_BLK, hingeY=hingeY)
+            g2.setColor(fgColor)
+
+            f = MakeFont(fontSize, bold=False)
+            oldText = getattr(flap, "prevTopForBottom", flap.curTop)
+
+            try:
+                frac = flap.EaseInOut(flap.t)
+            except:
+                frac = 0.0
+
+            if flap.phase == "idle":
+                try:
+                    g2.setClip(None)
+                except:
+                    pass
+                DrawUnifiedTextWithFont(g2, flap, flap.curTop, f)
+
+            elif flap.phase == "topFlip":
+                newText = getattr(flap, "nextTop", flap.curTop)
+                reveal = int(round(frac * float(hingeY)))
+                if reveal < 0:
+                    reveal = 0
+                if reveal > hingeY:
+                    reveal = hingeY
+
+                if reveal > 0:
+                    g2.setClip(awt.Rectangle(0, 0, flap.w, reveal))
+                    DrawUnifiedTextWithFont(g2, flap, newText, f)
+                if reveal < hingeY:
+                    g2.setClip(awt.Rectangle(0, reveal, flap.w, hingeY - reveal))
+                    DrawUnifiedTextWithFont(g2, flap, oldText, f)
+
+                g2.setClip(awt.Rectangle(0, hingeY, flap.w, flap.h - hingeY))
+                DrawUnifiedTextWithFont(g2, flap, oldText, f)
+
+            elif flap.phase == "bottomFlip":
+                newText = flap.curTop
+                botH = int(flap.h) - int(hingeY)
+                reveal = int(round(frac * float(botH)))
+                if reveal < 0:
+                    reveal = 0
+                if reveal > botH:
+                    reveal = botH
+
+                g2.setClip(awt.Rectangle(0, 0, flap.w, hingeY))
+                DrawUnifiedTextWithFont(g2, flap, newText, f)
+
+                if reveal > 0:
+                    g2.setClip(awt.Rectangle(0, hingeY, flap.w, reveal))
+                    DrawUnifiedTextWithFont(g2, flap, newText, f)
+                if reveal < botH:
+                    g2.setClip(awt.Rectangle(0, hingeY + reveal, flap.w, botH - reveal))
+                    DrawUnifiedTextWithFont(g2, flap, oldText, f)
+
+            else:
+                try:
+                    g2.setClip(None)
+                except:
+                    pass
+                DrawUnifiedTextWithFont(g2, flap, flap.curTop, f)
+
+        finally:
+            try:
+                g2.setClip(None)
+            except:
+                pass
+            DrawHingeOver(g2, flap.w, flap.h, PURE_BLK)
+            g2.dispose()
+
+    flap.paintComponent = _Paint
+
+def _MeasureStringWidthWithCallFont(s, maxWidth):
+    # Measure text width using FONT_CALL.
+    # Apply SetTextHints so metrics match the painter, and use a small safety pad so
+    # "just fits" strings do not get clipped under the flap frame.
+    try:
+        wMax = int(maxWidth)
+        if wMax < 4:
+            wMax = 4
+
+        # Safety pad: allow for frame thickness (t = Sc(2) each side in PaintFlapFrame)
+        # plus a couple of pixels for AA/fractional metric differences.
+        try:
+            safety = (Sc(2) * 2) + 2
+        except:
+            safety = 6
+        wMax = wMax - int(safety)
+        if wMax < 4:
+            wMax = 4
+
+        txt = str(s or "")
+
+        f = MakeFont(FONT_CALL, bold=False)
+        img = BufferedImage(1, 1, BufferedImage.TYPE_INT_ARGB)
+        g2 = img.createGraphics()
+        try:
+            SetTextHints(g2)
+
+            g2.setFont(f)
+            fm = g2.getFontMetrics(f)
+            w0 = fm.stringWidth(txt)
+            if w0 <= wMax:
+                return (True, w0, wMax)
+
+            # If it doesn't fit normally, try the same tracking reduction used elsewhere.
+            try:
+                attrs = {TextAttribute.TRACKING: -0.04}
+                f2 = f.deriveFont(attrs)
+                g2.setFont(f2)
+                fm2 = g2.getFontMetrics(f2)
+                w1 = fm2.stringWidth(txt)
+                return (w1 <= wMax, w1, wMax)
+            except:
+                return (False, w0, wMax)
+        finally:
+            try:
+                g2.dispose()
+            except:
+                pass
+    except:
+        try:
+            return (False, 999999, int(maxWidth))
+        except:
+            return (False, 999999, 0)
+
+def SplitSpecialToTwoLines(msg, flapWidth):
+    # Standard greedy, left-aligned word wrap across two lines:
+    # Put as many whole words as fit on the TOP line; remainder on the BOTTOM line.
+    s = str(msg or "")
+    try:
+        s = s.replace("\r", "\n")
+    except:
+        pass
+
+    if s.strip() == "":
+        return ("", "")
+
+    # If the user explicitly includes a newline, honour it.
+    if "\n" in s:
+        parts = [p.strip() for p in s.split("\n") if p.strip() != ""]
+        if not parts:
+            return ("", "")
+        if len(parts) == 1:
+            return (parts[0], "")
+        return (parts[0], " ".join(parts[1:]))
+
+    # Normalise whitespace
+    try:
+        s = " ".join(s.split())
+    except:
+        pass
+
+    words = [w for w in s.split(" ") if w != ""]
+    if len(words) <= 1:
+        return (s, "")
+
+    margin = Sc(12)
+    wMax = int(flapWidth) - 2 * int(margin)
+    try:
+        safety = (Sc(2) * 2) + 2
+    except:
+        safety = 6
+    wMax = wMax - int(safety)
+    if wMax < 4:
+        wMax = 4
+    if wMax < 4:
+        wMax = 4
+
+    topWords = []
+    i = 0
+
+    # Greedy fill of top line
+    while i < len(words):
+        cand = " ".join(topWords + [words[i]])
+        fits, _, _ = _MeasureStringWidthWithCallFont(cand, wMax)
+        if fits:
+            topWords.append(words[i])
+            i += 1
+        else:
+            break
+
+    if not topWords:
+        # First word is too long: place it on the top line anyway.
+        top = words[0]
+        bot = " ".join(words[1:]) if len(words) > 1 else ""
+        return (top, bot)
+
+    top = " ".join(topWords)
+    bot = " ".join(words[i:]) if i < len(words) else ""
+    return (top, bot)
+
+def SetSpecialTwoLinePainter(flap, bgColor, fgColor):
+    # Painter that draws TOP and BOTTOM halves separately using FONT_CALL, like calling-pattern text.
+    def _Paint(g):
+        g2 = g.create()
+        try:
+            SetTextHints(g2)
+            hingeY = int(flap.h * HingeRatio)
+            PaintFlapFrame(g2, flap.w, flap.h, bgColor, PURE_BLK, hingeY=hingeY)
+
+            f = MakeFont(FONT_CALL, bold=False)
+            g2.setFont(f)
+            g2.setColor(fgColor)
+            fm = g2.getFontMetrics(f)
+            margin = Sc(12)
+            topH = hingeY
+            botH = int(flap.h) - hingeY
+            maxWidth = int(flap.w) - 2 * int(margin)
+            if maxWidth < 4:
+                maxWidth = 4
+
+            def _FitHalfText(txt):
+                try:
+                    safety = (Sc(2) * 2) + 2
+                except:
+                    safety = 6
+                try:
+                    adjW = int(flap.w) - int(safety)
+                except:
+                    adjW = int(flap.w)
+                if adjW < 10:
+                    adjW = int(flap.w)
+                return FitTextForFlap(txt, adjW, twoLine=True)
+
+            def _DrawHalf(txt, isTop):
+                s = _FitHalfText(str(txt or ""))
+                y0 = 0 if isTop else hingeY
+                hh = topH if isTop else botH
+                baseline = y0 + ((hh + fm.getAscent()) // 2) - 2
+                g2.drawString(s, int(margin), int(baseline))
+
+            oldTop = getattr(flap, "prevFullTop", getattr(flap, "prevTopForBottom", flap.curTop))
+            oldBot = getattr(flap, "prevFullBot", flap.curBot)
+
+            if flap.phase == "idle":
+                _DrawHalf(flap.curTop, True)
+                _DrawHalf(flap.curBot, False)
+
+            elif flap.phase == "fullFlip":
+                newTop = getattr(flap, "nextTop", flap.curTop)
+                newBot = getattr(flap, "nextBot", flap.curBot)
+                try:
+                    frac = flap.EaseInOut(flap.t)
+                except:
+                    frac = 0.0
+                reveal = int(round(frac * float(flap.h)))
+                if reveal < 0:
+                    reveal = 0
+                if reveal > int(flap.h):
+                    reveal = int(flap.h)
+
+                if reveal > 0:
+                    g2.setClip(awt.Rectangle(0, 0, flap.w, reveal))
+                    _DrawHalf(newTop, True)
+                    _DrawHalf(newBot, False)
+
+                if reveal < int(flap.h):
+                    g2.setClip(awt.Rectangle(0, reveal, flap.w, int(flap.h) - reveal))
+                    _DrawHalf(oldTop, True)
+                    _DrawHalf(oldBot, False)
+
+                try:
+                    g2.setClip(None)
+                except:
+                    pass
+
+            elif flap.phase == "topFlip":
+                topTxt = flap.nextTop if flap.t > 0.5 else oldTop
+                _DrawHalf(topTxt, True)
+                _DrawHalf(flap.curBot, False)
+
+            elif flap.phase == "bottomFlip":
+                _DrawHalf(flap.curTop, True)
+                botTxt = flap.nextBot if flap.t > 0.5 else flap.curBot
+                _DrawHalf(botTxt, False)
+
+            else:
+                _DrawHalf(flap.curTop, True)
+                _DrawHalf(flap.curBot, False)
+
+        finally:
+            try:
+                g2.setClip(None)
+            except:
+                pass
+            DrawHingeOver(g2, flap.w, flap.h, PURE_BLK)
+            g2.dispose()
+
+    flap.paintComponent = _Paint
+
+def FillFlapFace(g2, flap, bgColor):
+    # Fill only the flap face (inside the frame), respecting the current clip.
+    try:
+        t = Sc(2)
+        if t < 1:
+            t = 1
+        innerW = int(flap.w) - (2 * int(t))
+        innerH = int(flap.h) - (2 * int(t))
+        if innerW <= 0 or innerH <= 0:
+            return
+        g2.setColor(bgColor)
+        g2.fillRect(int(t), int(t), int(innerW), int(innerH))
+    except:
+        pass
+
+def SetSpecialTwoLinePainterDynamic(flap, ResolveStyleFunc):
+    # Painter that draws TOP and BOTTOM halves separately using FONT_CALL,
+    # and chooses background/foreground colours per (top,bottom) pair.
+    def _Paint(g):
+        g2 = g.create()
+        try:
+            SetTextHints(g2)
+            hingeY = int(flap.h * HingeRatio)
+
+            def _Resolve(topTxt, botTxt):
+                try:
+                    return ResolveStyleFunc(str(topTxt or ""), str(botTxt or ""))
+                except:
+                    return (FLAP_BG, TEXT_WHT)
+
+            # Determine "old" and "new" pairs for the current animation phase.
+            oldTop = getattr(flap, "prevFullTop", getattr(flap, "prevTopForBottom", flap.curTop))
+            oldBot = getattr(flap, "prevFullBot", flap.curBot)
+            newTop = getattr(flap, "nextTop", flap.curTop)
+            newBot = getattr(flap, "nextBot", flap.curBot)
+
+            oldBg, oldFg = _Resolve(oldTop, oldBot)
+            newBg, newFg = _Resolve(newTop, newBot)
+
+            # Draw base frame using OLD style.
+            PaintFlapFrame(g2, flap.w, flap.h, oldBg, PURE_BLK, hingeY=hingeY)
+
+            # Font setup (calling-pattern size).
+            f = MakeFont(FONT_CALL, bold=False)
+            g2.setFont(f)
+            fm = g2.getFontMetrics(f)
+            margin = Sc(12)
+            topH = hingeY
+            botH = int(flap.h) - hingeY
+
+            def _DrawHalf(txt, isTop, fgColor):
+                s = FitTextForFlap(str(txt or ""), flap.w, twoLine=True)
+                y0 = 0 if isTop else hingeY
+                hh = topH if isTop else botH
+                baseline = y0 + ((hh + fm.getAscent()) // 2) - 2
+                g2.setColor(fgColor)
+                g2.drawString(s, int(margin), int(baseline))
+
+            # Helper: paint a region (face bg + text) using a given pair/style.
+            def _PaintPairRegion(topTxt, botTxt, bgColor, fgColor):
+                FillFlapFace(g2, flap, bgColor)
+                _DrawHalf(topTxt, True, fgColor)
+                _DrawHalf(botTxt, False, fgColor)
+
+            if flap.phase == "idle":
+                # Use current displayed content.
+                curBg, curFg = _Resolve(flap.curTop, flap.curBot)
+                PaintFlapFrame(g2, flap.w, flap.h, curBg, PURE_BLK, hingeY=hingeY)
+                _DrawHalf(flap.curTop, True, curFg)
+                _DrawHalf(flap.curBot, False, curFg)
+
+            elif flap.phase == "fullFlip":
+                try:
+                    frac = flap.EaseInOut(flap.t)
+                except:
+                    frac = 0.0
+                reveal = int(round(frac * float(flap.h)))
+                if reveal < 0:
+                    reveal = 0
+                if reveal > int(flap.h):
+                    reveal = int(flap.h)
+
+                # Reveal region: NEW style.
+                if reveal > 0:
+                    g2.setClip(awt.Rectangle(0, 0, flap.w, reveal))
+                    _PaintPairRegion(newTop, newBot, newBg, newFg)
+
+                # Remaining region: OLD style (base already OLD, but re-draw text for correctness).
+                if reveal < int(flap.h):
+                    g2.setClip(awt.Rectangle(0, reveal, flap.w, int(flap.h) - reveal))
+                    _PaintPairRegion(oldTop, oldBot, oldBg, oldFg)
+
+                try:
+                    g2.setClip(None)
+                except:
+                    pass
+
+            elif flap.phase == "topFlip":
+                # Top half transitions to NEW; bottom stays OLD.
+                try:
+                    frac = flap.EaseInOut(flap.t)
+                except:
+                    frac = 0.0
+                reveal = int(round(frac * float(hingeY)))
+                if reveal < 0:
+                    reveal = 0
+                if reveal > int(hingeY):
+                    reveal = int(hingeY)
+
+                # Top reveal uses NEW.
+                if reveal > 0:
+                    g2.setClip(awt.Rectangle(0, 0, flap.w, reveal))
+                    _PaintPairRegion(newTop, oldBot, newBg, newFg)
+
+                # Top remainder uses OLD.
+                if reveal < int(hingeY):
+                    g2.setClip(awt.Rectangle(0, reveal, flap.w, int(hingeY) - reveal))
+                    _PaintPairRegion(oldTop, oldBot, oldBg, oldFg)
+
+                # Bottom half stays OLD.
+                g2.setClip(awt.Rectangle(0, hingeY, flap.w, int(flap.h) - hingeY))
+                _PaintPairRegion(oldTop, oldBot, oldBg, oldFg)
+
+                try:
+                    g2.setClip(None)
+                except:
+                    pass
+
+            elif flap.phase == "bottomFlip":
+                # Top is NEW; bottom transitions to NEW.
+                try:
+                    frac = flap.EaseInOut(flap.t)
+                except:
+                    frac = 0.0
+                botHh = int(flap.h) - hingeY
+                reveal = int(round(frac * float(botHh)))
+                if reveal < 0:
+                    reveal = 0
+                if reveal > int(botHh):
+                    reveal = int(botHh)
+
+                # Top half is NEW.
+                g2.setClip(awt.Rectangle(0, 0, flap.w, hingeY))
+                _PaintPairRegion(flap.curTop, oldBot, newBg, newFg)
+
+                # Bottom reveal region NEW.
+                if reveal > 0:
+                    g2.setClip(awt.Rectangle(0, hingeY, flap.w, reveal))
+                    _PaintPairRegion(flap.curTop, newBot, newBg, newFg)
+
+                # Bottom remainder OLD.
+                if reveal < int(botHh):
+                    g2.setClip(awt.Rectangle(0, hingeY + reveal, flap.w, int(botHh) - reveal))
+                    _PaintPairRegion(flap.curTop, oldBot, oldBg, oldFg)
+
+                try:
+                    g2.setClip(None)
+                except:
+                    pass
+
+            else:
+                # Fallback
+                curBg, curFg = _Resolve(flap.curTop, flap.curBot)
+                PaintFlapFrame(g2, flap.w, flap.h, curBg, PURE_BLK, hingeY=hingeY)
+                _DrawHalf(flap.curTop, True, curFg)
+                _DrawHalf(flap.curBot, False, curFg)
+
+        finally:
+            try:
+                g2.setClip(None)
+            except:
+                pass
+            DrawHingeOver(g2, flap.w, flap.h, PURE_BLK)
+            g2.dispose()
+
+    flap.paintComponent = _Paint
 
 # Global scale: default 60% 
 SCALE_PCT = ReadInt("TAS_USER_SETTING_SOLARI_SCALE_PERCENT", 70, 35, 120)
@@ -343,6 +969,80 @@ def PlatformField(row):
     if val == "": val = (row.get("Platform","") or "").strip()
     return val
 
+def SpecialMessagesPoolAll():
+    # Return a de-duplicated list of all non-empty Special messages in the timetable,
+    # regardless of day. The physical flap set is fixed, so we must include specials
+    # that only run on other days.
+    rows = CsvRows()
+    out = []
+    seen = set()
+    try:
+        for r in rows or []:
+            msg = CaseInsensitive(r, "Special")
+            msg = str(msg or "").strip()
+            if msg == "":
+                continue
+            if msg in seen:
+                continue
+            seen.add(msg)
+            out.append(msg)
+    except:
+        pass
+    return out
+    
+
+def BuildSpecialChatterPool(boardObj, flapWidth):
+    # Build a pool of (top,bottom) display pairs for Special flap cycling, plus a style map.
+    # Pool includes:
+    #  (1) all Special messages in the timetable (boardObj.SpecialMsgsPool), using keyword colours
+    #  (2) standard ECS / CANCELLED / delay-banner texts, using their correct colours
+
+    poolPairs = []
+    styleByPair = {}
+
+    def AddPair(topTxt, botTxt, bgColor, fgColor):
+        # Fit each half using calling-pattern sizing and register the style for that fitted pair.
+        t = FitTextForFlap(str(topTxt or ""), flapWidth, twoLine=True)
+        b = FitTextForFlap(str(botTxt or ""), flapWidth, twoLine=True)
+        key = (t, b)
+        if key in styleByPair:
+            return
+        styleByPair[key] = (bgColor, fgColor)
+        poolPairs.append(key)
+
+    def AddMessage(msgText, bgColor, fgColor):
+        # Split a message into two lines, then add as a pair.
+        t1, t2 = SplitSpecialToTwoLines(str(msgText or ""), flapWidth)
+        AddPair(t1, t2, bgColor, fgColor)
+
+    # (1) All specials from timetable (already de-duped by SpecialMessagesPoolAll)
+    msgs = []
+    try:
+        msgs = list(getattr(boardObj, "SpecialMsgsPool", []) or [])
+    except:
+        msgs = []
+    for m in msgs:
+        mm = str(m or "").strip()
+        if mm == "":
+            continue
+        sbg, sfg = GetSpecialStyleForMessage(mm)
+        AddMessage(mm, sbg, sfg)
+
+    # (2) Standard texts with their correct colours
+    # Delay banner texts (same as existing Solari delay banner for Special line)
+    AddPair("Please listen", "for Announcements", RED, TEXT_WHT)
+
+    # Cancelled (same as existing cancelled special style)
+    AddPair("CANCELLED", "", RED, TEXT_WHT)
+
+    # ECS message (same as existing ECS: red on white)
+    ecsMsg = str(ECS_MESSAGE or "Not for public use").strip()
+    if ecsMsg != "":
+        AddMessage(ecsMsg, Color.WHITE, RED)
+
+    return poolPairs, styleByPair
+
+
 # ---------------------------- TAS user settings ----------------------------
 
 DELAY_THRESHOLD_MIN = ReadInt("TAS_USER_SETTING_DELAY_THRESHOLD_MINUTES", 2, 0, 60)
@@ -358,6 +1058,7 @@ BOARD_CASCADE_MS     = ReadInt("TAS_USER_SETTING_SOLARI_BOARD_CASCADE_MS", 4500,
 # Limit how far ahead we that look when adding new services to free boards.
 # 60 = look for trains 1h ahead; 0 = unlimited (look for trains until the boards are filled without time constraint)
 FUTURE_WINDOW_MIN = ReadInt("TAS_USER_SETTING_SOLARI_FUTURE_WINDOW_MINUTES", 60, 0, 1440)
+TIMEWARP_THRESHOLD_MIN = ReadInt("TAS_USER_SETTING_SOLARI_TIMEWARP_THRESHOLD_MINUTES", 2, 0, 240)
 HIDE_PLAT_UNTIL_ALLOC = ReadBool("TAS_USER_SETTING_HIDE_PLATFORM_UNTIL_ALLOCATED", False)
 
 # Start stagger and extra running time
@@ -544,6 +1245,7 @@ class Service(object):
         self.Via  = CaseInsensitive(row, "Via")
         self.Co   = CaseInsensitive(row, "Company")
         self.Call = CaseInsensitive(row, "Calling pattern")
+        self.Special = CaseInsensitive(row, "Special")
         alloc = PAR.getPlatform(self.RN)
         self.HasAlloc = (alloc is not None and str(alloc).strip() != "")
         if self.HasAlloc:
@@ -2077,12 +2779,11 @@ class SolariBoard(swing.JPanel):
             self.flapSpecial.paintComponent = lambda g: WordFlap.paintComponent(self.flapSpecial, g)
             self.flapSpecial.TextColor = lambda: TEXT_WHT
 
-            
-
         stops = [t.strip() for t in (svc.Call or "").split(",") if (t or "").strip() != ""]
         destKeyForGaps = (svc.Dest or "").strip().upper()
         stops = _ApplyGapsToStops(stops, destKeyForGaps)
-        key = "\n".join([hhmm, plat, destTargetFit, viaTargetFit, svc.Status, ",".join(stops)])
+        specialKey = str(getattr(svc, "Special", "") or "").strip()
+        key = "\n".join([hhmm, plat, destTargetFit, viaTargetFit, svc.Status, specialKey, ",".join(stops)])
         if key == self.lastStateKey and not self._skipBlankOnce:
             return  # nothing changed -> no animation
         self.lastStateKey = key
@@ -2261,11 +2962,73 @@ class SolariBoard(swing.JPanel):
 
             self.flapSpecial.paintComponent = PaintSpecialEcs
             self.flapSpecial.AnimateTo(ecsMsg, "", [])
-       
         else:
-            self.flapSpecial.paintComponent = lambda g: SolariFlap.paintComponent(self.flapSpecial, g)
-            self.flapSpecial.TextColor = lambda: TEXT_WHT
-            self.flapSpecial.AnimateTo("", "", [])
+            specialMsg = str(getattr(svc, "Special", "") or "").strip()
+            if specialMsg != "":        
+                # Build target pair (fitted) and its style.
+                bgColor, fgColor = GetSpecialStyleForMessage(specialMsg)
+                topLine, botLine = SplitSpecialToTwoLines(specialMsg, self.flapSpecial.w)
+                topFit = FitTextForFlap(topLine, self.flapSpecial.w, twoLine=True)
+                botFit = FitTextForFlap(botLine, self.flapSpecial.w, twoLine=True)
+                targetPair = (topFit, botFit)
+
+                # Build pool and per-pair style map for cycling.
+                poolPairs, styleByPair = BuildSpecialChatterPool(self, self.flapSpecial.w)
+
+                # Ensure the target is present with the correct style.
+                if targetPair not in styleByPair:
+                    styleByPair[targetPair] = (bgColor, fgColor)
+                    poolPairs.append(targetPair)
+
+                def ResolveSpecialStyle(topTxt, botTxt):
+                    key = (str(topTxt or ""), str(botTxt or ""))
+                    if key in styleByPair:
+                        return styleByPair[key]
+                    # Fallback: compute style from concatenated text.
+                    try:
+                        msg = (str(topTxt or "") + " " + str(botTxt or "")).strip()
+                    except:
+                        msg = ""
+                    return GetSpecialStyleForMessage(msg)
+
+                # Use dynamic painter so each cycled message uses its own colours.
+                SetSpecialTwoLinePainterDynamic(self.flapSpecial, ResolveSpecialStyle)
+
+                # Build chatter pairs from the pool.
+                chatterPairs = []
+                try:
+                    steps = int(CHATTER_STEPS)
+                except:
+                    steps = 0
+                if steps < 0:
+                    steps = 0
+
+                # Only chatter if we are actually changing content.
+                curPair = (str(self.flapSpecial.curTop or ""), str(self.flapSpecial.curBot or ""))
+                if steps > 0 and poolPairs and curPair != targetPair:
+                    candidates = [p for p in poolPairs if p != targetPair]
+                    if not candidates:
+                        candidates = list(poolPairs)
+                    lastPick = None
+                    for i in range(steps):
+                        try:
+                            pick = random.choice(candidates)
+                        except:
+                            pick = targetPair
+                        # Avoid immediate repeats if possible.
+                        if lastPick is not None and len(candidates) > 1:
+                            tries = 0
+                            while pick == lastPick and tries < 4:
+                                try:
+                                    pick = random.choice(candidates)
+                                except:
+                                    break
+                                tries += 1
+                        lastPick = pick
+                        chatterPairs.append((pick[0], pick[1]))
+
+                dlySpecial = self.CalcStartDelayMs(4, multiChange)
+                self.flapSpecial.AnimateTo(targetPair[0], targetPair[1], chatterPairs, startDelayMs=dlySpecial)
 
         # CALLING AT: no paging; >20 stops -> last flap shows yellow "and stations to:" / DEST
         pairs = []
@@ -2509,6 +3272,8 @@ class SolariWindow(object):
         self.boards = []
         self._boardTimers = []
         self._refreshSerial = 0
+        self._lastNowMinutes = None
+        self._lastDayName = None
         # Persistent assignment of services to boards:
         # each board keeps its service until that service clears.
         self.boardRNs = [None] * int(self.numCols)
@@ -2584,10 +3349,70 @@ class SolariWindow(object):
         now = CurrentMinutes()
         if now is None:
             return
+        
+        # Detect time warps (forward or backward jumps). Use circular delta so midnight rollover
+        # (1439 -> 0) is treated as 1 minute, not 1439 minutes.
+        warpDetected = False
+
+        try:
+            dayNow = str(TBL.SafeGetOrCreateMemoryValue("DAYOFWEEK", "") or "")
+        except:
+            dayNow = ""
+        try:
+            lastNow = getattr(self, "_lastNowMinutes", None)
+        except:
+            lastNow = None
+        try:
+            lastDay = getattr(self, "_lastDayName", None)
+        except:
+            lastDay = None
+
+        try:
+            threshold = int(TIMEWARP_THRESHOLD_MIN)
+        except:
+            threshold = 2
+        if threshold < 0:
+            threshold = 0
+
+        if lastNow is not None:
+            try:
+                a = int(now) % 1440
+                b = int(lastNow) % 1440
+                raw = abs(a - b)
+                delta = min(raw, 1440 - raw)
+
+                # If the day changed, only treat that as a warp if the time jump is not consistent
+                # with a normal midnight rollover (i.e. delta is small).
+                if lastDay is not None and str(lastDay) != str(dayNow):
+                    if threshold == 0:
+                        # Any non-zero delta counts
+                        warpDetected = (delta != 0)
+                    else:
+                        warpDetected = (delta >= threshold)
+                else:
+                    if threshold == 0:
+                        warpDetected = (delta != 0)
+                    else:
+                        warpDetected = (delta >= threshold)
+
+            except:
+                # If we cannot compute safely, treat as warp to avoid stale displays.
+                warpDetected = True
+
+        # Update last-known markers after computing warpDetected
+        try:
+            self._lastNowMinutes = int(now)
+        except:
+            self._lastNowMinutes = now
+        try:
+            self._lastDayName = dayNow
+        except:
+            self._lastDayName = dayNow
 
         try:
             # Get ALL upcoming services (unbounded) so we can validate existing board assignments.
             servicesAll, destPool, viaPool, platCharSet, maxPlatNum = NextServices(0)
+            specialMsgsPool = SpecialMessagesPoolAll()
 
             # Build lookup by reporting number.
             svcByRn = {}
@@ -2628,12 +3453,54 @@ class SolariWindow(object):
 
             # Work out which existing assignments remain valid.
             oldRNs = list(getattr(self, "boardRNs", [None] * int(self.numCols)))
-            newRNs = list(oldRNs)
 
-            for i in range(int(self.numCols)):
-                rn = oldRNs[i]
-                if rn is None:
-                    continue
+            # On time warp, we rebuild assignments from scratch.
+            if warpDetected:
+                newRNs = [None] * int(self.numCols)
+            else:
+                newRNs = list(oldRNs)
+
+                # Enforce "within window" for existing assignments too.
+                # Otherwise, time warps (especially backward) can leave far-future services stuck on boards.
+                try:
+                    limitMin = int(FUTURE_WINDOW_MIN)
+                except:
+                    limitMin = 60
+                if limitMin < 0:
+                    limitMin = 0
+                if limitMin > 0:
+                    try:
+                        upper = int(now) + int(limitMin)
+                    except:
+                        upper = None
+                else:
+                    upper = None
+
+                for i in range(int(self.numCols)):
+                    rn = oldRNs[i]
+                    if rn is None:
+                        continue
+                    try:
+                        rnStr = str(rn)
+                    except:
+                        rnStr = ""
+                    if (not rnStr) or (rnStr not in svcByRn):
+                        # Service has cleared or is no longer displayable
+                        newRNs[i] = None
+                        continue
+
+                    # If we have a window limit, clear if the assigned service is beyond it.
+                    if upper is not None:
+                        try:
+                            depMin = getattr(svcByRn.get(rnStr), "DepMin", None)
+                        except:
+                            depMin = None
+                        try:
+                            if depMin is not None and int(depMin) > int(upper):
+                                newRNs[i] = None
+                        except:
+                            # If uncertain, do not forcibly clear.
+                            pass
                 try:
                     rnStr = str(rn)
                 except:
@@ -2686,7 +3553,11 @@ class SolariWindow(object):
 
             # Schedule per-board updates with the existing board cascade delay.
             for idx in range(int(self.numCols)):
-                board = self.boards[idx]
+                board = self.boards[idx]              
+                try:
+                    board.SpecialMsgsPool = list(specialMsgsPool or [])
+                except:
+                    board.SpecialMsgsPool = []
                 try:
                     startDelay = int(idx) * int(BOARD_CASCADE_MS)
                 except:
