@@ -3513,7 +3513,17 @@ class SolariWindow(object):
         self.numCols = ReadInt("TAS_USER_SETTING_STRIP_COLUMNS", 5, 1, 16)
 
         self.frame = swing.JFrame("Departures")
-        self.frame.setDefaultCloseOperation(swing.JFrame.DISPOSE_ON_CLOSE)
+        self.frame.setDefaultCloseOperation(swing.JFrame.DISPOSE_ON_CLOSE)   
+        # Set TAS window icon (clock icon), same utility as TASSetup.py
+        # Robust try/except so missing TASIcon does not break window creation
+        try:
+            from TASIcon import SetFrameClockIcon
+            SetFrameClockIcon(self.frame, 32)  # 32px icon size
+        except Exception as ex:
+            try:
+                print("[PIDSolari] Failed to set TAS window icon: " + str(ex))
+            except:
+                pass
         cp = self.frame.getContentPane()
         cp.setBackground(PANEL_BG); cp.setLayout(None)
 
