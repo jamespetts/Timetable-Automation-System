@@ -12,10 +12,10 @@
 # You should have received a copy of the GNU General Public License along with the Timetable Automation System.
 # If not, see <https://www.gnu.org/licenses/>. 
 #
-# 1980s monochrome CRT PID (station‑wide summary of arrivals)
-# Uniquified global/class names to avoid cross‑script shadowing.
+# 1980s monochrome CRT PID (station-wide summary of arrivals)
+# Uniquified global/class names to avoid cross-script shadowing.
 # CLEAR-ON-ARRIVAL: remove a working once an arrival is logged at the configured timing point(s)
-# ECS FILTER: hide ECS/empty‑to‑depot workings (class‑5 or keyword‑matched; keywords configurable).
+# ECS FILTER: hide ECS/empty-to-depot workings (class-5 or keyword-matched; keywords configurable).
 #
 # <<PID-DISP-NAME: Monochrome CRT summary of arrivals>>
 # <<DESCRIPTION: British Rail 1980s monitor showing a summary of the next 8 arrivals>>
@@ -453,7 +453,7 @@ class CRTARR_SummaryTablePanel(swing.JPanel):
         extraY = max(0, (availH - gridH) // 2)
         padL = CRTARR_TablePadX + extraX
         padT = CRTARR_TablePadY + extraY
-        # Character grid → x positions
+        # Character grid -> x positions
         x_fr = padL
         x_pl = x_fr + cw * (self.W_FR + 2)
         x_tm = x_pl + cw * (self.W_PL + 2)
@@ -739,7 +739,7 @@ class CRTARR_CRTSummaryArrivalsWindow(object):
             w_ex = max(w_ex, len(it["_expected_text"] or ""))
         w_fr = min(w_fr + 1, 26)
         w_ex = min(w_ex + 1, 12)
-        # Any data change → unlock font and allow a new tighten
+        # Any data change -> unlock font and allow a new tighten
         self._tightened_once = False
         self.table.setItemsAndWidths(items, w_fr, w_pl, w_ti, w_ex)
         swing.SwingUtilities.invokeLater(self._tighten_if_possible)
@@ -756,7 +756,7 @@ class CRTARR_CRTSummaryArrivalsWindow(object):
         innerW = cols * cw + 2*CRTARR_TablePadX
         innerH = rows * lineH + 2*CRTARR_TablePadY
         # 4:3: expand height minimally so inner glass becomes 4:3 (W : H = 4 : 3)
-        targetH = int(round((innerW * 3.0) / 4.0))  # 4:3 → H = W * 3/4
+        targetH = int(round((innerW * 3.0) / 4.0))  # 4:3 -> H = W * 3/4
         if targetH > innerH:
             innerH = targetH  # increase vertical space only (more pad top/bottom)
         # Convert to CRT panel (add bezel)

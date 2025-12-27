@@ -12,7 +12,7 @@
 # If not, see <https://www.gnu.org/licenses/>. 
 #
 #
-# 1980s monochrome CRT PID (station‑wide summary of departures)
+# 1980s monochrome CRT PID (station-wide summary of departures)
 # Uniquified global/class names to avoid cross-script shadowing.
 # CLEAR-ON-DEPARTURE: remove a working once a departure is logged at the configured timing point(s)
 # ECS FILTER: hide ECS/empty-to-depot workings (class-5 or keyword-matched; keywords configurable).
@@ -467,7 +467,7 @@ class CRTSUM_SummaryTablePanel(swing.JPanel):
         extraY = max(0, (availH - gridH) // 2)
         padL = CRTSUM_TablePadX + extraX
         padT = CRTSUM_TablePadY + extraY
-        # Character grid → x positions
+        # Character grid -> x positions
         x_to = padL
         x_pl = x_to + cw * (self.W_TO + 2)
         x_tm = x_pl + cw * (self.W_PL + 2)
@@ -762,7 +762,7 @@ class CRTSUM_CRTSummaryWindow(object):
             w_ex = max(w_ex, len(it["_expected_text"] or ""))
         w_to = min(w_to + 1, 26)
         w_ex = min(w_ex + 1, 12)
-        # Any data change → unlock font and allow a new tighten
+        # Any data change -> unlock font and allow a new tighten
         self._tightened_once = False
         self.table.setItemsAndWidths(items, w_to, w_pl, w_ti, w_ex)
         swing.SwingUtilities.invokeLater(self._tighten_if_possible)
@@ -779,7 +779,7 @@ class CRTSUM_CRTSummaryWindow(object):
         innerW = cols * cw + 2*CRTSUM_TablePadX
         innerH = rows * lineH + 2*CRTSUM_TablePadY
         # 4:3: expand height minimally so inner glass becomes 4:3 (W : H = 4 : 3)
-        targetH = int(round((innerW * 3.0) / 4.0))  # 4:3 → H = W * 3/4
+        targetH = int(round((innerW * 3.0) / 4.0))  # 4:3 -> H = W * 3/4
         if targetH > innerH:
             innerH = targetH  # increase vertical space only (more pad top/bottom)
         # Convert to CRT panel (add bezel)
