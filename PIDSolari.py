@@ -27,6 +27,7 @@
 # <<SETTING DESCRIPTION NUMBER: Solari blank hold ms>>
 # <<SETTING DESCRIPTION NUMBER: Solari blank chatter steps>>
 # <<SETTING DESCRIPTION NUMBER: Solari board cascade ms>>
+# <<SETTING DESCRIPTION NUMBER: Solari future window minutes>>
 # <<SETTING DESCRIPTION NUMBER: Solari stagger row ms>>
 # <<SETTING DESCRIPTION NUMBER: Solari stagger jitter ms>>
 # <<SETTING DESCRIPTION NUMBER: Solari extra word steps max>>
@@ -254,11 +255,13 @@ import java.text.SimpleDateFormat as SimpleDateFormat
 Fmt24    = SimpleDateFormat("HH:mm")
 Parser12 = SimpleDateFormat("h:mm a")
 Parser24 = SimpleDateFormat("H:mm")
+Parser12S = SimpleDateFormat("h:mm:ss a")
+Parser24S = SimpleDateFormat("H:mm:ss")
 
 def ParseMinutes(s):
     s = (s or "").strip()
     if s == "": return None
-    for p in [Parser12, Parser24]:
+    for p in [Parser12, Parser24, Parser12S, Parser24S]:
         try:
             d = p.parse(s)
             return d.getHours()*60 + d.getMinutes()
@@ -280,7 +283,7 @@ def MinutesToHHmm(total):
     return ("%02d:%02d" % (h, m))
 
 def FormatHHmm(schedText):
-    for p in [Parser12, Parser24]:
+    for p in [Parser12, Parser24, Parser12S, Parser24S]:
         try:
             d = p.parse(schedText)
             return Fmt24.format(d)
@@ -336,6 +339,10 @@ DIGIT_FPS           = ReadInt("TAS_USER_SETTING_SOLARI_DIGIT_FPS", 60, 30, 75)
 BLANK_HOLD_MS        = ReadInt("TAS_USER_SETTING_SOLARI_BLANK_HOLD_MS", 300, 0, 2000)
 BLANK_CHATTER_STEPS  = ReadInt("TAS_USER_SETTING_SOLARI_BLANK_CHATTER_STEPS", CHATTER_STEPS, 0, 12)
 BOARD_CASCADE_MS     = ReadInt("TAS_USER_SETTING_SOLARI_BOARD_CASCADE_MS", 4500, 0, 30000)
+
+# Limit how far ahead we that look when adding new services to free boards.
+# 60 = look for trains 1h ahead; 0 = unlimited (look for trains until the boards are filled without time constraint)
+FUTURE_WINDOW_MIN = ReadInt("TAS_USER_SETTING_SOLARI_FUTURE_WINDOW_MINUTES", 60, 0, 1440)
 HIDE_PLAT_UNTIL_ALLOC = ReadBool("TAS_USER_SETTING_HIDE_PLATFORM_UNTIL_ALLOCATED", False)
 
 # Start stagger and extra running time
@@ -540,26 +547,57 @@ def NextServices(count):
     rows = CsvRows()
     day = TBL.SafeGetOrCreateMemoryValue("DAYOFWEEK", "")
     now = CurrentMinutes()
-    if now is None: return [], [], [], set()
-    rowsToday = [r for r in rows if ((r.get(day,"") or "").strip().lower() == "true")]
+    if now is None:
+        return [], [], [], set(), 0
+
+    rowsToday = [r for r in rows if (((r.get(day, "") or "").strip().lower() == "true"))]
+
     models = []
     for r in rowsToday:
         dep = CaseInsensitive(r, "Dep")
-        if dep == "": continue
+        if dep == "":
+            continue
+
         m = Service(r, day, now)
-        if m.DepMin is None: continue
-        if m.DepMin < now: continue
-        if m.Departed: continue
+        if m.DepMin is None:
+            continue
+
+        # Determine disruption status first, because cancellation affects display and clear rules.
         kind, val = ResolveDelayWithInheritance(rowsToday, m.RN, m.DepMin, visited=set())
+
+        # Apply "clearing" rules:
+        # - Normal trains: do not show after scheduled time (existing behaviour), and do not show if departed.
+        # - Cancelled trains: keep showing until 1 minute AFTER scheduled departure time.
         if kind == "cancel":
-            m.Status = "CANCELLED"; m.ShowTime = "CANCELLED"; m.AdjMin = 9999
+            try:
+                if int(now) > (int(m.DepMin) + 1):
+                    continue
+            except:
+                # If anything goes wrong, be conservative and drop it rather than mis-display forever.
+                continue
+        else:
+            if m.DepMin < now:
+                continue
+            if m.Departed:
+                continue
+
+        # Now build the display fields.
+        if kind == "cancel":
+            # Show time like an on-time train and keep chronological sort position.
+            m.Status = "CANCELLED"
+            m.ShowTime = FormatHHmm(m.Dep)
+            m.AdjMin = m.DepMin
         elif kind == "delay" and val and val > 0:
             m.Status = "Delayed" if val >= DELAY_THRESHOLD_MIN else "On time"
             m.ShowTime = MinutesToHHmm(m.DepMin + val)
             m.AdjMin = m.DepMin + val
         else:
-            m.Status = "On time"; m.ShowTime = FormatHHmm(m.Dep); m.AdjMin = m.DepMin
+            m.Status = "On time"
+            m.ShowTime = FormatHHmm(m.Dep)
+            m.AdjMin = m.DepMin
+
         models.append(m)
+
     models.sort(key=lambda t: t.AdjMin)
 
     destPool, viaPool, platCharsSet = [], [], set()
@@ -573,19 +611,32 @@ def NextServices(count):
                     destPool.append(d)
             except:
                 destPool.append(d)
-        if v: viaPool.append(v)
+        if v:
+            viaPool.append(v)
+
         pf = PlatformField(r)
         try:
             if (pf or "").isdigit():
                 nPlat = int(pf)
-                if nPlat > maxPlatNum: maxPlatNum = nPlat
+                if nPlat > maxPlatNum:
+                    maxPlatNum = nPlat
         except:
             pass
-        for ch in (pf or ""): platCharsSet.add(ch)
+        for ch in (pf or ""):
+            platCharsSet.add(ch)
+
     global CALL_GAP_MAPS_BY_DEST
     CALL_GAP_MAPS_BY_DEST = _BuildGapMaps(rowsToday)
-    return models[:count], destPool, viaPool, platCharsSet, maxPlatNum
 
+    # count <= 0 means "no limit" (needed for Solari-style persistent assignment logic).
+    try:
+        n = int(count)
+    except:
+        n = 0
+
+    if n <= 0:
+        return models, destPool, viaPool, platCharsSet, maxPlatNum
+    return models[:n], destPool, viaPool, platCharsSet, maxPlatNum
 
 # ------------------ Flap base ------------------
 from java.lang import System
@@ -1679,7 +1730,51 @@ class SolariBoard(swing.JPanel):
                     pairs.append((random.choice(p), ""))
                 except:
                     pairs.append(("", ""))
-            return pairs
+            return pairs       
+        
+        def _RandPairsSpecialWords():
+         pairs = []
+         if nSteps <= 0:
+          return pairs
+
+         # Only allow text that can legitimately appear on the SPECIAL row.
+         # Pre-fit to keep truncation/ellipsis behaviour stable during animation.
+         specialPool = []
+         try:
+          ecs = str(ECS_MESSAGE or "").strip()
+          if ecs != "":
+           specialPool.append(FitTextForFlap(ecs, self.flapSpecial.w, twoLine=False))
+         except:
+          pass
+
+         for s in ["CANCELLED", "Please listen", "for Announcements"]:
+          try:
+           ss = str(s).strip()
+           if ss != "":
+            specialPool.append(FitTextForFlap(ss, self.flapSpecial.w, twoLine=False))
+          except:
+           pass
+
+         # De-duplicate while preserving order
+         uniq = []
+         seen = set()
+         for s in specialPool:
+          try:
+           if s and s not in seen:
+            seen.add(s)
+            uniq.append(s)
+          except:
+           pass
+
+         if not uniq:
+          return pairs
+
+         for k in range(nSteps):
+          try:
+           pairs.append((random.choice(uniq), ""))
+          except:
+           pairs.append(("", ""))
+         return pairs
 
         def _RandPairsDouble():
             pairs = []
@@ -1770,7 +1865,7 @@ class SolariBoard(swing.JPanel):
         self.flapVia.AnimateTo("", "", _RandPairsWords(), startDelayMs=dlyVia)
 
         dlySpecial = self.CalcStartDelayMs(4, multiChange)
-        self.flapSpecial.AnimateTo("", "", _RandPairsWords(), startDelayMs=dlySpecial)
+        self.flapSpecial.AnimateTo("", "", _RandPairsSpecialWords(), startDelayMs=dlySpecial)
 
         # Calling flaps cascade top-to-bottom
         try:
@@ -2392,6 +2487,9 @@ class SolariWindow(object):
         self.boards = []
         self._boardTimers = []
         self._refreshSerial = 0
+        # Persistent assignment of services to boards:
+        # each board keeps its service until that service clears.
+        self.boardRNs = [None] * int(self.numCols)
         x = OUTER_PAD; y = OUTER_PAD
         # Create one board to learn width/height
         probe = SolariBoard()
@@ -2441,7 +2539,12 @@ class SolariWindow(object):
         self.frame.addWindowListener(CloseHandler())
 
     def Refresh(self, e):
-        # Update boards left-to-right, one at a time, by staggering board start times.
+        # Old Solari behaviour:
+        # - Do NOT cascade or reorder existing services across boards.
+        # - Clear only the board whose service has cleared.
+        # - Add new services only into free boards (first free board left->right).
+        # - Optionally limit how far ahead we look when ADDING new services.
+
         self._refreshSerial += 1
         serial = int(self._refreshSerial)
 
@@ -2456,10 +2559,111 @@ class SolariWindow(object):
             pass
         self._boardTimers = []
 
-        try:
-            services, destPool, viaPool, platCharSet, maxPlatNum = NextServices(self.numCols)
+        now = CurrentMinutes()
+        if now is None:
+            return
 
-            for idx in range(self.numCols):
+        try:
+            # Get ALL upcoming services (unbounded) so we can validate existing board assignments.
+            servicesAll, destPool, viaPool, platCharSet, maxPlatNum = NextServices(0)
+
+            # Build lookup by reporting number.
+            svcByRn = {}
+            try:
+                for s in servicesAll or []:
+                    rn = getattr(s, "RN", "")
+                    if rn is not None:
+                        rn = str(rn)
+                    if rn:
+                        svcByRn[rn] = s
+            except:
+                svcByRn = {}
+
+            # Determine candidate services for filling free boards (bounded by FUTURE_WINDOW_MIN if set).
+            limitMin = 0
+            try:
+                limitMin = int(FUTURE_WINDOW_MIN)
+            except:
+                limitMin = 60
+            if limitMin < 0:
+                limitMin = 0
+
+            if limitMin > 0:
+                upper = int(now) + int(limitMin)
+                fillCandidates = []
+                for s in servicesAll or []:
+                    try:
+                        depMin = getattr(s, "DepMin", None)
+                        if depMin is None:
+                            continue
+                        if int(depMin) <= int(upper):
+                            fillCandidates.append(s)
+                    except:
+                        pass
+            else:
+                # 0 means unlimited: current behaviour for "how far ahead"
+                fillCandidates = list(servicesAll or [])
+
+            # Work out which existing assignments remain valid.
+            oldRNs = list(getattr(self, "boardRNs", [None] * int(self.numCols)))
+            newRNs = list(oldRNs)
+
+            for i in range(int(self.numCols)):
+                rn = oldRNs[i]
+                if rn is None:
+                    continue
+                try:
+                    rnStr = str(rn)
+                except:
+                    rnStr = ""
+                if (not rnStr) or (rnStr not in svcByRn):
+                    # This service has cleared (or is no longer displayable): free this board.
+                    newRNs[i] = None
+
+            # Fill free boards with the next due services not already displayed, without moving others.
+            used = set()
+            for rn in newRNs:
+                if rn is None:
+                    continue
+                try:
+                    rns = str(rn)
+                except:
+                    rns = ""
+                if rns:
+                    used.add(rns)
+
+            # Build a queue of services we can use to fill gaps.
+            queue = []
+            for s in fillCandidates or []:
+                try:
+                    rn = str(getattr(s, "RN", "") or "")
+                except:
+                    rn = ""
+                if rn and (rn not in used):
+                    queue.append(s)
+
+            qIdx = 0
+            for i in range(int(self.numCols)):
+                if newRNs[i] is not None:
+                    continue
+                if qIdx >= len(queue):
+                    break
+                pick = queue[qIdx]
+                qIdx += 1
+                try:
+                    pickRn = str(getattr(pick, "RN", "") or "")
+                except:
+                    pickRn = ""
+                if not pickRn:
+                    continue
+                newRNs[i] = pickRn
+                used.add(pickRn)
+
+            # Commit new assignments.
+            self.boardRNs = list(newRNs)
+
+            # Schedule per-board updates with the existing board cascade delay.
+            for idx in range(int(self.numCols)):
                 board = self.boards[idx]
                 try:
                     startDelay = int(idx) * int(BOARD_CASCADE_MS)
@@ -2468,18 +2672,40 @@ class SolariWindow(object):
                 if startDelay < 0:
                     startDelay = 0
 
-                def _MakeRun(i, b, delayMs):
-                    def _Run(ev):
+                rnToShow = newRNs[idx]
+
+                def _MakeRun(i, b, rnTarget, delayMs):
+                    def _Run(ev, i=i, b=b, rnTarget=rnTarget):
                         # Ignore stale refresh sequences.
                         if int(self._refreshSerial) != serial:
                             return
                         try:
-                            if i >= len(services):
-                                # Clear board i with chatter to blank.
-                                b.BeginClearTransition(destPool, viaPool, platCharSet, maxPlatNum)
+                            if rnTarget is None:
+                                # Clear only if the board isn't already blank/unknown.
+                                try:
+                                    if getattr(b, "lastStateKey", None) is not None:
+                                        b.BeginClearTransition(destPool, viaPool, platCharSet, maxPlatNum)
+                                except:
+                                    # If we cannot tell, err on the side of leaving it alone.
+                                    pass
                                 return
 
-                            svc = services[i]
+                            rnKey = ""
+                            try:
+                                rnKey = str(rnTarget)
+                            except:
+                                rnKey = ""
+
+                            svc = svcByRn.get(rnKey)
+                            if svc is None:
+                                # Service vanished: clear this board (no cascading).
+                                try:
+                                    b.BeginClearTransition(destPool, viaPool, platCharSet, maxPlatNum)
+                                except:
+                                    pass
+                                return
+
+                            # Apply/update this service on this board.
                             b.ApplyService(svc, destPool, viaPool, platCharSet, maxPlatNum)
                         except Exception as ex:
                             try:
@@ -2495,10 +2721,13 @@ class SolariWindow(object):
                     except:
                         pass
 
-                _MakeRun(idx, board, startDelay)
+                _MakeRun(idx, board, rnToShow, startDelay)
 
         except Exception as ex:
-            print("[PIDSolari] Refresh error:", ex)
+            try:
+                print("[PIDSolari] Refresh error:", ex)
+            except:
+                pass
 
     def Cleanup(self):
         try:
