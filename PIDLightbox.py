@@ -889,6 +889,10 @@ class PIDLightboxConcourseWindow(object):
 
         self.Brightness = {}
 
+        # Track fast-clock progression so that time warps backwards can reset Solari-style assignments.
+        self._lastNowMin = None
+        self._lastDayName = None
+
         self.Frame = swing.JFrame("Departures")
         self.Frame.setDefaultCloseOperation(swing.JFrame.DISPOSE_ON_CLOSE)
         self.Frame.setResizable(False)
@@ -921,6 +925,15 @@ class PIDLightboxConcourseWindow(object):
             pass
         try:
             PAR.addPlatformListener(self._displayListener)
+        except:
+            pass
+
+        # Ensure updates when the Fast Clock advances (minute change events).
+        self._timebaseMinuteListenerAdded = False
+        try:
+            if Timebase is not None:
+                Timebase.addMinuteChangeListener(self._displayListener)
+                self._timebaseMinuteListenerAdded = True
         except:
             pass
 
@@ -1415,6 +1428,28 @@ class PIDLightboxConcourseWindow(object):
                 if st is not None:
                     st["t"] = 1.0
 
+    def _ResetAssignments(self):
+        # When the fast clock is set backwards, previously assigned workings must be cleared
+        # so that earlier services can be displayed again.
+        try:
+            for g in (self.Groups or []):
+                try:
+                    g.AssignedRNs = [None] * int(g.ColCount)
+                except:
+                    pass
+        except:
+            pass
+        # Also clear illumination state to avoid stale lit apertures after a jump.
+        try:
+            for st in self.Brightness.values():
+                try:
+                    st["b"] = 0.0
+                    st["t"] = 0.0
+                except:
+                    pass
+        except:
+            pass
+
     def UpdateDisplay(self, event=None):
         oldCols = int(self.NumCols)
         oldLimit = int(self.RowLimit)
@@ -1437,6 +1472,25 @@ class PIDLightboxConcourseWindow(object):
         rowsAll = CsvRows()
         dayName = str(DayMem.getValue() or "").strip()
         nowMin = CurrentMinutes()
+
+        # Detect time warps backwards and reset persistent column assignments accordingly.
+        try:
+            if self._lastDayName is not None and str(dayName) != str(self._lastDayName):
+                self._ResetAssignments()
+            elif self._lastNowMin is not None and nowMin is not None:
+                try:
+                    lastMin = int(self._lastNowMin)
+                    thisMin = int(nowMin)
+                    # Treat 23:xx -> 00:yy as forward wrap if the day has not updated yet.
+                    wrapForward = (lastMin >= 1380 and thisMin <= 60)
+                    if (thisMin < lastMin) and (not wrapForward):
+                        self._ResetAssignments()
+                except:
+                    pass
+        except:
+            pass
+        self._lastNowMin = nowMin
+        self._lastDayName = dayName
         if nowMin is None:
             try:
                 self.Panel.repaint()
@@ -1836,6 +1890,12 @@ class PIDLightboxConcourseWindow(object):
                     pass
         except:
             pass
+        try:
+            if getattr(self, "_timebaseMinuteListenerAdded", False) and Timebase is not None and self._displayListener is not None:
+                Timebase.removeMinuteChangeListener(self._displayListener)
+        except:
+            pass
+
         try:
             PAR.removePlatformListener(self._displayListener)
         except:
