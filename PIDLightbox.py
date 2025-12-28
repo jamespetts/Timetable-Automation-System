@@ -889,7 +889,7 @@ class PIDLightboxConcourseWindow(object):
 
         self.Brightness = {}
 
-        self.Frame = swing.JFrame("Concourse departures")
+        self.Frame = swing.JFrame("Departures")
         self.Frame.setDefaultCloseOperation(swing.JFrame.DISPOSE_ON_CLOSE)
         self.Frame.setResizable(False)
         self.Panel = LightboxPanel(self)
