@@ -1,8 +1,7 @@
 
 # This file is part of the Timetable Automation System by James E. Petts
 #
-# The Timetable Automation System is free software: you can redistribute it and/or modify it under the terms of the
-# GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or
+# The Timetable Automation System is free3 of the License, or# The Timetable Automation System is free software: you can redistribute it and/or modify it under the terms of the
 # (at your option) any later version.
 #
 # The Timetable Automation System is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY;
@@ -26,13 +25,12 @@
 # Notes on behaviour:
 # - Destinations and vias are always faintly visible (unlit apertures), with brighter illumination when lit.
 # - When 'Require platform allocation' is true, a train is shown only once it has an allocation in PlatformAllocationRegister.
-#   In that case, lookahead minutes is ignored (allocation governs visibility).
+# In that case, lookahead minutes is ignored (allocation governs visibility).
 # - When 'Require platform allocation' is false, lookahead minutes governs visibility (0 => always show the next N trains).
 # - Row positions are fixed per timetable and sorted alphabetically for consistency.
 # - For long destination/via text, wrap to multiple lines and expand the cell height (no mid-border line).
 #
 # Jython 2.7 / ASCII only / CamelCase / Thread-safe EDT
-
 import javax.swing as swing
 import java.awt as awt
 from java.awt import Color, Font, RenderingHints, Dimension
@@ -46,21 +44,17 @@ from javax.swing import SwingUtilities
 from java.lang import Runnable
 import java.beans as beans
 import java.text.SimpleDateFormat as SimpleDateFormat
-
 import jmri
 from jmri import InstanceManager
-
 import os, csv, math
-
 import TASBeanLookup as TBL
 import TimingRegister as TR
 import PlatformAllocationRegister as PAR
 from DisruptionRegister import getDisruption
 
-# ---------------------------
+# ------------------------------------------------------------
 # EDT helper
-# ---------------------------
-
+# ------------------------------------------------------------
 def InvokeLater(fn):
     class _R(Runnable):
         def run(self):
@@ -79,10 +73,9 @@ def InvokeLater(fn):
         except:
             pass
 
-# ---------------------------
+# ------------------------------------------------------------
 # TAS user settings (via TASSetup.py)
-# ---------------------------
-
+# ------------------------------------------------------------
 def _SettingMemoryName(label):
     # Must match TASSetup.py memory naming so options affect this script.
     # key = re.sub(r"[^A-Za-z0-9]+", "_", label).upper()
@@ -126,51 +119,45 @@ DEFAULT_LOOKAHEAD_MIN = 10
 DEFAULT_REQUIRE_ALLOC = False
 DEFAULT_HIDE_ECS = False
 
-# ---------------------------
+# ------------------------------------------------------------
 # Theme / geometry
-# ---------------------------
-
+# ------------------------------------------------------------
 CABINET_COLOR = Color(0, 0, 0)
 BORDER_COLOR = Color(0, 0, 0)
-
 # Your chosen colours
 HEADER_BG = Color(20, 20, 20)
 HEADER_TEXT = Color(245, 245, 245)
 CELL_BG = Color(34, 34, 34)
 UNLIT_TEXT = Color(28, 28, 28)
-
 # Warm white lit text
 LIT_TEXT = Color(255, 230, 190)
-
 CABINET_PAD = 10
 CELL_PAD_X = 18
 # Separate header and cell vertical padding so we can increase cell padding without making headers too tall.
 HEADER_PAD_Y = 10
 CELL_PAD_Y = 18
 GRID_STROKE = BasicStroke(4.0)
-
 HEADER_FONT_SIZE = 34
 CELL_FONT_SIZE = 30
+
+# Special text (left column) geometry
+SPECIAL_COL_W = 280
 
 # Animation
 ANIM_FPS_MS = 40
 RISE_TAU_S = 0.06
 FALL_TAU_S = 0.08
-
 PERIODIC_REFRESH_MS = 60000
 
-# ---------------------------
+# ------------------------------------------------------------
 # Memories / fast clock
-# ---------------------------
-
+# ------------------------------------------------------------
 TimeMem = TBL.ProvideMemoryBySuffix("CURRENTTIME", "")
 DayMem = TBL.ProvideMemoryBySuffix("DAYOFWEEK", "")
 TimetableMem = TBL.ProvideMemoryBySuffix("CURRENTTIMETABLE", "")
 DepartTPMem = TBL.ProvideMemoryBySuffix("PID_DEPARTURE_TP", "")
 OverridesMem = TBL.ProvideMemoryBySuffix("PID_PLATFORM_OVERRIDES", "")
-
 Timebase = InstanceManager.getDefault(jmri.Timebase)
-
 TimeParser12 = SimpleDateFormat("h:mm a")
 TimeParser24 = SimpleDateFormat("H:mm")
 
@@ -206,10 +193,9 @@ def ActiveProfileNameUpper():
     except:
         return ""
 
-# ---------------------------
+# ------------------------------------------------------------
 # Timetable access
-# ---------------------------
-
+# ------------------------------------------------------------
 def TimetablePath():
     try:
         name = TimetableMem.getValue() or ""
@@ -254,6 +240,18 @@ def PlatformField(row):
             v = ""
     return v
 
+def CaseInsensitive(row, key):
+    # Case-insensitive lookup for CSV column names.
+    target = (key or "").strip().lower()
+    try:
+        for k in (row.keys() or []):
+            if (k or "").strip().lower() == target:
+                v = row.get(k, "")
+                return (v or "").strip()
+    except:
+        pass
+    return ""
+
 def DetectPlatforms():
     plats = set()
     for r in CsvRows():
@@ -268,10 +266,9 @@ def DetectPlatforms():
         except:
             return []
 
-# ---------------------------
+# ------------------------------------------------------------
 # Departure timing point logic
-# ---------------------------
-
+# ------------------------------------------------------------
 def _DepartureTPList():
     names = []
     try:
@@ -342,10 +339,9 @@ def HasAnyTimingToday(reportingNumber, dayName):
                 return True
     return False
 
-# ---------------------------
+# ------------------------------------------------------------
 # Platform override helper
-# ---------------------------
-
+# ------------------------------------------------------------
 def ParseOverrides(s):
     out = {}
     if not s:
@@ -369,22 +365,19 @@ def GetPlatformOverride(reportingNumber):
     except:
         return None
 
-# ---------------------------
+# ------------------------------------------------------------
 # Disruption-aware ordering
-# ---------------------------
-
+# ------------------------------------------------------------
 def ResolveDelayWithInheritance(rowsToday, rn, schedDepMin, visited=None):
     if visited is None:
         visited = set()
     if rn in visited:
         return ("ontime", 0)
     visited.add(rn)
-
     try:
         d = getDisruption(rn)
     except:
         d = None
-
     if d is not None:
         try:
             delay = int(d)
@@ -394,7 +387,6 @@ def ResolveDelayWithInheritance(rowsToday, rn, schedDepMin, visited=None):
             return ("cancel", None)
         if delay > 0:
             return ("delay", delay)
-
     formers = []
     for r in rowsToday:
         try:
@@ -404,10 +396,8 @@ def ResolveDelayWithInheritance(rowsToday, rn, schedDepMin, visited=None):
                 formers.append((r, arrMin))
         except:
             pass
-
     if not formers:
         return ("ontime", 0)
-
     chosen = None
     if schedDepMin is not None:
         before = [t for t in formers if t[1] is not None and t[1] <= schedDepMin]
@@ -419,10 +409,9 @@ def ResolveDelayWithInheritance(rowsToday, rn, schedDepMin, visited=None):
     formerRN = (chosen.get("Reporting number", "") or "").strip()
     return ResolveDelayWithInheritance(rowsToday, formerRN, schedDepMin, visited)
 
-# ---------------------------
+# ------------------------------------------------------------
 # Font selection
-# ---------------------------
-
+# ------------------------------------------------------------
 def AvailableFamilies():
     try:
         ge = GraphicsEnvironment.getLocalGraphicsEnvironment()
@@ -485,10 +474,9 @@ def IsEcsDestination(destUpper):
     except:
         return False
 
-# ---------------------------
+# ------------------------------------------------------------
 # Painting panel
-# ---------------------------
-
+# ------------------------------------------------------------
 class LightboxPanel(swing.JPanel):
     def __init__(self, window):
         swing.JPanel.__init__(self)
@@ -500,12 +488,10 @@ class LightboxPanel(swing.JPanel):
         # Clear background explicitly (avoid calling JPanel.paintComponent)
         g.setColor(self.getBackground())
         g.fillRect(0, 0, self.getWidth(), self.getHeight())
-
         g2 = g.create()
         try:
             g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
             g2.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON)
-
             w = self.getWidth()
             h = self.getHeight()
             pad = int(CABINET_PAD)
@@ -513,10 +499,9 @@ class LightboxPanel(swing.JPanel):
         finally:
             g2.dispose()
 
-# ---------------------------
+# ------------------------------------------------------------
 # Property change listener (EDT safe)
-# ---------------------------
-
+# ------------------------------------------------------------
 class _PidPropertyChangeListener(beans.PropertyChangeListener):
     def __init__(self, callback):
         self._callback = callback
@@ -532,31 +517,30 @@ class _PidPropertyChangeListener(beans.PropertyChangeListener):
                     pass
         InvokeLater(_do)
 
-# ---------------------------
+# ------------------------------------------------------------
 # Main per-platform window
-# ---------------------------
-
+# ------------------------------------------------------------
 class PIDWindow(object):
     def __init__(self, platform, onCloseCallback=None):
         self.Platform = str(platform)
         self.OnCloseCallback = onCloseCallback
         self.Cleaned = False
-
         self.NumTrains = DEFAULT_TRAINS_SHOWN
         self.LookAheadMin = DEFAULT_LOOKAHEAD_MIN
         self.RequireAlloc = DEFAULT_REQUIRE_ALLOC
         self.HideEcs = DEFAULT_HIDE_ECS
-
         self.Destinations = []
         self.Vias = []
         self.HasViaSection = False
-
         self.ModeSingleTrain = False
         self.ColCount = 2
         self.ColumnHeaders = []
-
         self.Brightness = {}
         self.RowLayouts = []
+        self.Specials = []
+        self.SpecialNorms = []
+        self.SpecialLayouts = []
+        self.HasSpecialPanel = False
         self._lastAnimMs = None
 
         self.Frame = swing.JFrame("Destination indicator: platform " + self.Platform)
@@ -614,7 +598,6 @@ class PIDWindow(object):
             SetFrameClockIcon(self.Frame, 32)
         except:
             pass
-
         self.Frame.setVisible(True)
 
     def ReadSettings(self):
@@ -624,14 +607,34 @@ class PIDWindow(object):
         self.RequireAlloc = ReadBoolSetting("Only show trains whose platform has been allocated (requires platform allocation setup)", DEFAULT_REQUIRE_ALLOC)
         self.HideEcs = ReadBoolSetting("Hide empty stock workings", DEFAULT_HIDE_ECS)
 
+    def _CollectSpecialsForPlatform(self, rows):
+        specialMap = {}
+        for r in (rows or []):
+            try:
+                if str(PlatformField(r)) != str(self.Platform):
+                    continue
+            except:
+                continue
+            try:
+                sp = (CaseInsensitive(r, "Special") or "").strip()
+            except:
+                sp = ""
+            if sp == "":
+                continue
+            k = sp.strip().lower()
+            if k not in specialMap:
+                specialMap[k] = sp.strip()
+        keys = sorted(list(specialMap.keys()))
+        out = [specialMap[k] for k in keys]
+        norms = [k for k in keys]
+        return out, norms
+
     def RebuildStaticLayout(self):
         self.ReadSettings()
         rows = CsvRows()
         profUpper = ActiveProfileNameUpper()
-
         destSet = set()
         viaSet = set()
-
         for r in rows:
             try:
                 d = (r.get("Destination", "") or "").strip()
@@ -645,17 +648,19 @@ class PIDWindow(object):
                     if du == profUpper:
                         du = "THIS STATION"
                     destSet.add(du)
-
             try:
                 v = (r.get("Via", "") or "").strip()
             except:
                 v = ""
             if v and v.strip():
                 viaSet.add(("VIA " + v.strip()).upper())
-
         self.Destinations = sorted(list(destSet), key=lambda s: str(s).upper())
         self.Vias = sorted(list(viaSet), key=lambda s: str(s).upper())
         self.HasViaSection = (len(self.Vias) > 0)
+
+        # Specials for this platform only; preserve case, dedupe case-insensitively.
+        self.Specials, self.SpecialNorms = self._CollectSpecialsForPlatform(rows)
+        self.HasSpecialPanel = (len(self.Specials) > 0)
 
         self.ModeSingleTrain = (int(self.NumTrains) == 1)
         if self.ModeSingleTrain:
@@ -682,7 +687,12 @@ class PIDWindow(object):
         if self.ModeSingleTrain:
             baseColW = 340
 
-        contentW = self.ColCount * baseColW
+        mainW = self.ColCount * baseColW
+        if self.ModeSingleTrain:
+            mainW = 2 * baseColW
+
+        specialW = int(SPECIAL_COL_W) if bool(self.HasSpecialPanel) else 0
+        contentW = int(mainW + specialW)
 
         img = BufferedImage(1, 1, BufferedImage.TYPE_INT_ARGB)
         g2 = img.createGraphics()
@@ -695,15 +705,12 @@ class PIDWindow(object):
             fmC = g2.getFontMetrics(CELL_FONT)
             lineAdvance = self._LineAdvance(fmC)
 
-            # IMPORTANT:
-            # The single-train display paints in two columns (left/right) with paired rows.
-            # Height must be computed the same way, otherwise the window will be too tall.
+            # Compute main body height
             self.RowLayouts = []
-
+            bodyHMain = 0
             if self.ModeSingleTrain:
                 colW = int(baseColW)
                 maxTextW = colW - (2 * CELL_PAD_X)
-
                 def RowHeightForPair(leftKey, rightKey):
                     maxLines = 1
                     if leftKey:
@@ -720,8 +727,6 @@ class PIDWindow(object):
                             pass
                     return (2 * CELL_PAD_Y) + (maxLines * lineAdvance)
 
-                bodyH = 0
-
                 # Destinations: two columns, paired per row
                 destLeft = self.Destinations[0::2]
                 destRight = self.Destinations[1::2]
@@ -729,19 +734,18 @@ class PIDWindow(object):
                 for i in range(rowsN):
                     leftKey = destLeft[i] if i < len(destLeft) else ""
                     rightKey = destRight[i] if i < len(destRight) else ""
-                    bodyH += RowHeightForPair(leftKey, rightKey)
+                    bodyHMain += RowHeightForPair(leftKey, rightKey)
 
                 # Via section (optional): same pairing logic, plus spacer
                 if self.HasViaSection and self.Vias:
-                    bodyH += int(lineAdvance * 0.8)
+                    bodyHMain += int(lineAdvance * 0.8)
                     viaLeft = self.Vias[0::2]
                     viaRight = self.Vias[1::2]
                     rowsN = max(len(viaLeft), len(viaRight))
                     for i in range(rowsN):
                         leftKey = viaLeft[i] if i < len(viaLeft) else ""
                         rightKey = viaRight[i] if i < len(viaRight) else ""
-                        bodyH += RowHeightForPair(leftKey, rightKey)
-
+                        bodyHMain += RowHeightForPair(leftKey, rightKey)
             else:
                 # Multi-train mode: one row per key, used directly by PaintContent()
                 def addRowsForKeys(kind, keys):
@@ -755,10 +759,20 @@ class PIDWindow(object):
                 if self.HasViaSection:
                     self.RowLayouts.append({"type": "spacer", "key": "", "lines": [""], "height": int(lineAdvance * 0.8)})
                     addRowsForKeys("via", self.Vias)
+                bodyHMain = sum([int(r["height"]) for r in self.RowLayouts])
 
-                bodyH = sum([int(r["height"]) for r in self.RowLayouts])
+            # Compute special body height
+            self.SpecialLayouts = []
+            bodyHSpecial = 0
+            if bool(self.HasSpecialPanel) and self.Specials:
+                maxTextW = int(SPECIAL_COL_W) - (2 * CELL_PAD_X)
+                for sp in self.Specials:
+                    lines = WrapTextLines(sp, fmC, maxTextW)
+                    height = (2 * CELL_PAD_Y) + (len(lines) * lineAdvance)
+                    self.SpecialLayouts.append({"text": sp, "lines": lines, "height": height})
+                    bodyHSpecial += int(height)
 
-            contentH = headerH + bodyH
+            contentH = int(headerH + max(int(bodyHMain), int(bodyHSpecial)))
 
         finally:
             try:
@@ -768,10 +782,8 @@ class PIDWindow(object):
 
         totalW = contentW + (2 * CABINET_PAD)
         totalH = contentH + (2 * CABINET_PAD)
-
         totalW = max(totalW, 520)
         totalH = max(totalH, 240)
-
         try:
             self.Panel.setPreferredSize(Dimension(int(totalW), int(totalH)))
             self.Frame.pack()
@@ -789,7 +801,6 @@ class PIDWindow(object):
                 self.Brightness[("dest", 0, i)] = {"b": 0.0, "t": 0.0, "key": k}
             for i, k in enumerate(destRight):
                 self.Brightness[("dest", 1, i)] = {"b": 0.0, "t": 0.0, "key": k}
-
             if self.HasViaSection and self.Vias:
                 viaLeft = self.Vias[0::2]
                 viaRight = self.Vias[1::2]
@@ -804,6 +815,11 @@ class PIDWindow(object):
             for k in self.Vias:
                 for c in range(self.ColCount):
                     self.Brightness[("via", k, c)] = {"b": 0.0, "t": 0.0}
+
+        # Specials: one targetable entry per special row (next-service highlighting).
+        if bool(self.HasSpecialPanel) and self.SpecialNorms:
+            for i, norm in enumerate(self.SpecialNorms):
+                self.Brightness[("special", i)] = {"b": 0.0, "t": 0.0, "norm": norm}
 
     def _RowsToday(self, rows, dayName):
         out = []
@@ -820,7 +836,6 @@ class PIDWindow(object):
             return "THIS STATION"
         return destRawUpper
 
-
     def GetNextTrains(self):
         rows = CsvRows()
         dayName = str(DayMem.getValue() or "").strip()
@@ -828,13 +843,10 @@ class PIDWindow(object):
         if nowMin is None:
             return []
         rowsToday = self._RowsToday(rows, dayName)
-
         profUpper = ActiveProfileNameUpper()
         lookAhead = int(self.LookAheadMin)
         requireAlloc = bool(self.RequireAlloc)
-
         candidates = []
-
         for r in rowsToday:
             dep = (r.get("Dep", "") or "").strip()
             if dep == "":
@@ -842,7 +854,6 @@ class PIDWindow(object):
             depMin = ParseTimeToMinutes(dep)
             if depMin is None:
                 continue
-
             rn = (r.get("Reporting number", "") or "").strip()
             if rn == "":
                 continue
@@ -910,7 +921,13 @@ class PIDWindow(object):
             via = (r.get("Via", "") or "").strip()
             viaKey = ("VIA " + via).upper() if via else ""
 
-            candidates.append({"effMin": effMin, "destKey": destKey, "viaKey": viaKey})
+            # Special text (case preserved)
+            try:
+                specialText = (CaseInsensitive(r, "Special") or "").strip()
+            except:
+                specialText = ""
+
+            candidates.append({"effMin": effMin, "destKey": destKey, "viaKey": viaKey, "specialText": specialText})
 
         # Apply lookahead ONLY as an upper bound when allocation is not required,
         # matching the Lightbox header semantics ("0 => show next N trains regardless of distance").
@@ -921,11 +938,10 @@ class PIDWindow(object):
         candidates.sort(key=lambda t: t.get("effMin", 999999))
         out = []
         for c in candidates:
-            out.append({"destKey": c.get("destKey", ""), "viaKey": c.get("viaKey", "")})
+            out.append({"destKey": c.get("destKey", ""), "viaKey": c.get("viaKey", ""), "specialText": c.get("specialText", "")})
             if len(out) >= int(self.NumTrains):
                 break
         return out
-
 
     def UpdateDisplay(self, event=None):
         oldNum = self.NumTrains
@@ -933,7 +949,6 @@ class PIDWindow(object):
         self.ReadSettings()
         if int(self.NumTrains) != int(oldNum) or bool(self.HideEcs) != bool(oldHide):
             self.RebuildStaticLayout()
-
         try:
             if event is not None and (event.getSource() == TimetableMem):
                 self.RebuildStaticLayout()
@@ -944,6 +959,16 @@ class PIDWindow(object):
 
         for st in self.Brightness.values():
             st["t"] = 0.0
+
+        # Next-service special illumination (only the first/next service drives it).
+        nextSpecialNorm = None
+        if trains:
+            try:
+                sraw = (trains[0].get("specialText", "") or "").strip()
+            except:
+                sraw = ""
+            if sraw != "":
+                nextSpecialNorm = sraw.lower()
 
         if self.ModeSingleTrain:
             t0 = trains[0] if trains else None
@@ -974,6 +999,15 @@ class PIDWindow(object):
                     if st is not None:
                         st["t"] = 1.0
 
+        # Apply special highlight (if any) after other targets are set.
+        if nextSpecialNorm is not None and bool(self.HasSpecialPanel) and self.SpecialNorms:
+            for i, norm in enumerate(self.SpecialNorms):
+                if norm == nextSpecialNorm:
+                    st = self.Brightness.get(("special", i))
+                    if st is not None:
+                        st["t"] = 1.0
+                    break
+
         try:
             self.Panel.repaint()
         except:
@@ -990,7 +1024,6 @@ class PIDWindow(object):
             dtMs = 1
         self._lastAnimMs = nowMs
         dt = float(dtMs) / 1000.0
-
         anyChange = False
         for st in self.Brightness.values():
             b = float(st.get("b", 0.0))
@@ -1006,7 +1039,6 @@ class PIDWindow(object):
             alpha = 1.0 - math.exp(-dt / float(tau))
             st["b"] = b + (t - b) * alpha
             anyChange = True
-
         if anyChange:
             try:
                 self.Panel.repaint()
@@ -1020,10 +1052,124 @@ class PIDWindow(object):
         if adv <= 0:
             adv = 1
         return int(yTop + (hBox - adv) // 2 + fm.getAscent())
+  
+    def _DistributeExtraHeights(self, minHeights, totalH):
+        # Return adjusted heights whose sum equals totalH (if totalH >= sum(minHeights)),
+        # distributing the extra evenly. If totalH is smaller, return minHeights unchanged.
+        hs = []
+        for h in (minHeights or []):
+            try:
+                hs.append(int(h))
+            except:
+                hs.append(0)
+        n = len(hs)
+        if n <= 0:
+            return hs
+        s = 0
+        for h in hs:
+            s += int(h)
+        try:
+            tot = int(totalH)
+        except:
+            tot = s
+        if tot <= s:
+            return hs
+        extra = tot - s
+        add = extra // n
+        rem = extra % n
+        out = []
+        for i, h in enumerate(hs):
+            inc = add + (1 if i < rem else 0)
+            out.append(int(h) + int(inc))
+        return out
+
+    def _AddExtraToIndices(self, heights, extra, indices):
+        # Add extra pixels across selected indices so total height increases by extra.
+        hs = []
+        for h in (heights or []):
+            try:
+                hs.append(int(h))
+            except:
+                hs.append(0)
+        try:
+            ex = int(extra)
+        except:
+            ex = 0
+        if ex <= 0:
+            return hs
+        idxs = list(indices or [])
+        if not idxs:
+            return hs
+        n = len(idxs)
+        add = ex // n
+        rem = ex % n
+        for k, idx in enumerate(idxs):
+            if idx < 0 or idx >= len(hs):
+                continue
+            hs[idx] = int(hs[idx]) + int(add) + (1 if k < rem else 0)
+        return hs
+
+    def _PaintSpecialPanel(self, g2, x, y, w, totalH, lineAdvance):
+        # Draw special column with NO header row.
+        # Specials occupy the full height (including the main panel's header area).
+        # Exactly one row per special string. If sum(min heights) < totalH, stretch
+        # the existing rows so their total equals totalH. Never draw filler cells.
+        g2.setStroke(GRID_STROKE)
+
+        curY = int(y)
+
+        # If no rows, fill the whole special area as plain background.
+        if not (self.SpecialLayouts or []):
+            try:
+                th = int(totalH)
+            except:
+                th = 0
+            if th > 0:
+                g2.setColor(CELL_BG)
+                g2.fillRect(x, curY, w, th)
+                g2.setColor(BORDER_COLOR)
+                g2.drawRect(x, curY, w, th)
+            return
+
+        # Minimum heights for each special cell.
+        minHeights = []
+        for row in (self.SpecialLayouts or []):
+            try:
+                rh = int(row.get("height", 0))
+            except:
+                rh = 0
+            if rh <= 0:
+                rh = (2 * CELL_PAD_Y) + int(lineAdvance)
+            minHeights.append(int(rh))
+
+        try:
+            th = int(totalH)
+        except:
+            th = 0
+
+        adjHeights = self._DistributeExtraHeights(minHeights, th)
+
+        for i, row in enumerate(self.SpecialLayouts or []):
+            lines = row.get("lines", [""])
+            rowH = int(adjHeights[i]) if i < len(adjHeights) else int(minHeights[i])
+
+            g2.setColor(CELL_BG)
+            g2.fillRect(x, curY, w, rowH)
+            g2.setColor(BORDER_COLOR)
+            g2.drawRect(x, curY, w, rowH)
+
+            # Unlit first
+            self.PaintCellText(g2, x, curY, w, rowH, lines, 0.0)
+
+            # Lit overlay if targeted
+            st = self.Brightness.get(("special", i))
+            b = float(st.get("b", 0.0)) if st is not None else 0.0
+            if b > 0.001:
+                self.PaintCellText(g2, x, curY, w, rowH, lines, b)
+
+            curY += rowH
 
     def PaintContent(self, g2, x, y, w, h):
-        colW = int(w // self.ColCount)
-
         g2.setFont(HEADER_FONT)
         fmH = g2.getFontMetrics(HEADER_FONT)
         headerH = fmH.getHeight() + (2 * HEADER_PAD_Y)
@@ -1032,73 +1178,152 @@ class PIDWindow(object):
         fmC = g2.getFontMetrics(CELL_FONT)
         lineAdvance = self._LineAdvance(fmC)
 
+        specialW = int(SPECIAL_COL_W) if bool(self.HasSpecialPanel) else 0
+        mainX = x + specialW
+        mainW = w - specialW
+
+        bodyH = max(0, int(h - headerH))
+
+        # Special panel (if present) occupies the FULL height (no header row)
+        if specialW > 0:
+            try:
+                self._PaintSpecialPanel(g2, x, y, specialW, h, lineAdvance)
+            except:
+                pass
+
         if self.ModeSingleTrain:
+            colW = int(max(1, mainW // 2))
+
+            # Header spans main panel only (special has blank header already)
             g2.setColor(HEADER_BG)
-            g2.fillRect(x, y, w, headerH)
+            g2.fillRect(mainX, y, mainW, headerH)
             g2.setColor(HEADER_TEXT)
             g2.setFont(HEADER_FONT)
             txt = "NEXT TRAIN"
             tw = fmH.stringWidth(txt)
-            tx = x + (w - tw) // 2
+            tx = mainX + (mainW - tw) // 2
             ty = self._HeaderBaselineY(y, headerH, fmH) - 2
             g2.drawString(txt, tx, ty)
-
             g2.setColor(BORDER_COLOR)
             g2.setStroke(GRID_STROKE)
-            g2.drawRect(x, y, w, headerH)
+            g2.drawRect(mainX, y, mainW, headerH)
 
-            CurYBox = [y + headerH]
+            # Build row plan (dest pairs, optional spacer, via pairs)
             destLeft = self.Destinations[0::2]
             destRight = self.Destinations[1::2]
+            maxTextW = colW - (2 * CELL_PAD_X)
 
-            def PaintTwoColSection(keysLeft, keysRight, kind):
-                rowsN = max(len(keysLeft), len(keysRight))
-                for i in range(rowsN):
-                    leftKey = keysLeft[i] if i < len(keysLeft) else ""
-                    rightKey = keysRight[i] if i < len(keysRight) else ""   
+            rowsPlan = []
 
-                    maxLines = 1
-                    leftLines = [""]
-                    rightLines = [""]
-                    maxTextW = colW - (2 * CELL_PAD_X)
-                    if leftKey:
-                        leftLines = WrapTextLines(leftKey, fmC, maxTextW)
-                        maxLines = max(maxLines, len(leftLines))
-                    if rightKey:
-                        rightLines = WrapTextLines(rightKey, fmC, maxTextW)
-                        maxLines = max(maxLines, len(rightLines))
+            # Destination rows
+            rowsN = max(len(destLeft), len(destRight))
+            for i in range(rowsN):
+                leftKey = destLeft[i] if i < len(destLeft) else ""
+                rightKey = destRight[i] if i < len(destRight) else ""
 
-                    rowH = (2 * CELL_PAD_Y) + (maxLines * lineAdvance)
+                leftLines = WrapTextLines(leftKey, fmC, maxTextW) if leftKey else [""]
+                rightLines = WrapTextLines(rightKey, fmC, maxTextW) if rightKey else [""]
 
-                    for colIdx, (cellKey, lines) in enumerate([(leftKey, leftLines), (rightKey, rightLines)]):
-                        cx = x + (colIdx * colW)
-                        g2.setColor(CELL_BG)
-                        g2.fillRect(cx, CurYBox[0], colW, rowH)
-                        g2.setColor(BORDER_COLOR)
-                        g2.setStroke(GRID_STROKE)
-                        g2.drawRect(cx, CurYBox[0], colW, rowH)
+                maxLines = max(1, len(leftLines), len(rightLines))
+                minH = (2 * CELL_PAD_Y) + (maxLines * lineAdvance)
 
-                        if cellKey:
-                            self.PaintCellText(g2, cx, CurYBox[0], colW, rowH, lines, 0.0)
-                            st = self.Brightness.get((kind, colIdx, i))
-                            b = float(st.get("b", 0.0)) if st is not None else 0.0
-                            if b > 0.001:
-                                self.PaintCellText(g2, cx, CurYBox[0], colW, rowH, lines, b)
+                rowsPlan.append({
+                    "type": "pair",
+                    "kind": "dest",
+                    "rowIdx": i,
+                    "leftKey": leftKey,
+                    "rightKey": rightKey,
+                    "leftLines": leftLines,
+                    "rightLines": rightLines,
+                    "minH": int(minH)
+                })
 
-                    CurYBox[0] += rowH
-
-            PaintTwoColSection(destLeft, destRight, "dest")
-
+            # Via rows (with spacer)
             if self.HasViaSection and self.Vias:
-                CurYBox[0] += int(lineAdvance * 0.8)
+                spacerH = int(lineAdvance * 0.8)
+                rowsPlan.append({"type": "spacer", "minH": int(spacerH)})
+
                 viaLeft = self.Vias[0::2]
                 viaRight = self.Vias[1::2]
-                PaintTwoColSection(viaLeft, viaRight, "via")
+                rowsN = max(len(viaLeft), len(viaRight))
+                for i in range(rowsN):
+                    leftKey = viaLeft[i] if i < len(viaLeft) else ""
+                    rightKey = viaRight[i] if i < len(viaRight) else ""
+
+                    leftLines = WrapTextLines(leftKey, fmC, maxTextW) if leftKey else [""]
+                    rightLines = WrapTextLines(rightKey, fmC, maxTextW) if rightKey else [""]
+
+                    maxLines = max(1, len(leftLines), len(rightLines))
+                    minH = (2 * CELL_PAD_Y) + (maxLines * lineAdvance)
+
+                    rowsPlan.append({
+                        "type": "pair",
+                        "kind": "via",
+                        "rowIdx": i,
+                        "leftKey": leftKey,
+                        "rightKey": rightKey,
+                        "leftLines": leftLines,
+                        "rightLines": rightLines,
+                        "minH": int(minH)
+                    })
+
+            # Stretch main rows if needed to fill bodyH (when specials require more height).
+            minHeights = [int(r.get("minH", 0)) for r in rowsPlan]
+            sumMin = 0
+            for hh in minHeights:
+                sumMin += int(hh)
+
+            adjHeights = list(minHeights)
+            if bodyH > sumMin and rowsPlan:
+                extra = int(bodyH - sumMin)
+                stretchIdx = [idx for idx, r in enumerate(rowsPlan) if r.get("type") != "spacer"]
+                if not stretchIdx:
+                    stretchIdx = [idx for idx in range(len(rowsPlan))]
+                adjHeights = self._AddExtraToIndices(adjHeights, extra, stretchIdx)
+
+            curY = y + headerH
+            for idx, r in enumerate(rowsPlan):
+                rowH = int(adjHeights[idx]) if idx < len(adjHeights) else int(r.get("minH", 0))
+
+                if r.get("type") == "spacer":
+                    curY += rowH
+                    continue
+
+                kind = r.get("kind")
+                rowIdx = int(r.get("rowIdx", 0))
+                leftLines = r.get("leftLines", [""])
+                rightLines = r.get("rightLines", [""])
+                leftKey = r.get("leftKey", "")
+                rightKey = r.get("rightKey", "")
+
+                for colIdx, (cellKey, lines) in enumerate([(leftKey, leftLines), (rightKey, rightLines)]):
+                    cx = mainX + (colIdx * colW)
+
+                    g2.setColor(CELL_BG)
+                    g2.fillRect(cx, curY, colW, rowH)
+                    g2.setColor(BORDER_COLOR)
+                    g2.setStroke(GRID_STROKE)
+                    g2.drawRect(cx, curY, colW, rowH)
+
+                    # Unlit
+                    if cellKey:
+                        self.PaintCellText(g2, cx, curY, colW, rowH, lines, 0.0)
+
+                    # Lit overlay
+                    st = self.Brightness.get((kind, colIdx, rowIdx))
+                    b = float(st.get("b", 0.0)) if st is not None else 0.0
+                    if b > 0.001:
+                        self.PaintCellText(g2, cx, curY, colW, rowH, lines, b)
+
+                curY += rowH
 
         else:
+            colW = int(max(1, mainW // self.ColCount))
+
+            # Headers (main panel only)
             g2.setFont(HEADER_FONT)
             for c in range(self.ColCount):
-                cx = x + (c * colW)
+                cx = mainX + (c * colW)
                 g2.setColor(HEADER_BG)
                 g2.fillRect(cx, y, colW, headerH)
                 g2.setColor(HEADER_TEXT)
@@ -1107,24 +1332,43 @@ class PIDWindow(object):
                 tx = cx + (colW - tw) // 2
                 ty = self._HeaderBaselineY(y, headerH, fmH) - 2
                 g2.drawString(txt, tx, ty)
-
                 g2.setColor(BORDER_COLOR)
                 g2.setStroke(GRID_STROKE)
                 g2.drawRect(cx, y, colW, headerH)
 
-            curY = y + headerH
+            # Stretch row bands if needed to fill bodyH (when specials require more height).
+            rowHeights = []
             for row in self.RowLayouts:
+                try:
+                    rowHeights.append(int(row.get("height", 0)))
+                except:
+                    rowHeights.append(0)
+
+            sumMin = 0
+            for hh in rowHeights:
+                sumMin += int(hh)
+
+            if bodyH > sumMin and self.RowLayouts:
+                extra = int(bodyH - sumMin)
+                stretchIdx = [idx for idx, r in enumerate(self.RowLayouts) if r.get("type") != "spacer"]
+                if not stretchIdx:
+                    stretchIdx = [idx for idx in range(len(self.RowLayouts))]
+                rowHeights = self._AddExtraToIndices(rowHeights, extra, stretchIdx)
+
+            curY = y + headerH
+            for idx, row in enumerate(self.RowLayouts):
                 rtype = row["type"]
+                rowH = int(rowHeights[idx]) if idx < len(rowHeights) else int(row.get("height", 0))
+
                 if rtype == "spacer":
-                    curY += int(row["height"])
+                    curY += rowH
                     continue
 
                 key = row["key"]
                 lines = row["lines"]
-                rowH = int(row["height"])
 
                 for c in range(self.ColCount):
-                    cx = x + (c * colW)
+                    cx = mainX + (c * colW)
                     g2.setColor(CELL_BG)
                     g2.fillRect(cx, curY, colW, rowH)
                     g2.setColor(BORDER_COLOR)
@@ -1132,6 +1376,7 @@ class PIDWindow(object):
                     g2.drawRect(cx, curY, colW, rowH)
 
                     self.PaintCellText(g2, cx, curY, colW, rowH, lines, 0.0)
+
                     st = self.Brightness.get((rtype, key, c))
                     b = float(st.get("b", 0.0)) if st is not None else 0.0
                     if b > 0.001:
@@ -1150,7 +1395,6 @@ class PIDWindow(object):
         g2.setFont(CELL_FONT)
         fm = g2.getFontMetrics(CELL_FONT)
         frc = g2.getFontRenderContext()
-
         lineAdvance = self._LineAdvance(fm)
         n = max(1, len(lines))
         blockH = n * lineAdvance
@@ -1197,10 +1441,8 @@ class PIDWindow(object):
             gw = boundsW[i]
             if gw <= 0.0:
                 return float(x + CELL_PAD_X)
-
             centerLeft = float(x) + (float(w) - gw) / 2.0
             bx = centerLeft - boundsX[i]
-
             lo = float(x + CELL_PAD_X) - boundsX[i]
             hi = float(x + w - CELL_PAD_X) - (boundsX[i] + gw)
             if lo <= hi:
@@ -1247,7 +1489,6 @@ class PIDWindow(object):
         colors = [ScaleColor(LIT_TEXT, 0.25 + 0.75 * bval), ScaleColor(LIT_TEXT, 0.05 * bval)]
         fractions = [0.0, 1.0]
         paint = RadialGradientPaint(Point2D.Float(cx, cy), float(radius), fractions, colors)
-
         try:
             g2.setPaint(paint)
             for i in range(n):
@@ -1324,10 +1565,9 @@ class PIDWindow(object):
         except:
             pass
 
-# ---------------------------
+# ------------------------------------------------------------
 # Manager: one window per platform
-# ---------------------------
-
+# ------------------------------------------------------------
 class PlatformPIDManager(object):
     def __init__(self):
         self.Windows = {}
@@ -1347,7 +1587,6 @@ class PlatformPIDManager(object):
         for p in plats:
             if p not in self.Windows:
                 self.Windows[p] = PIDWindow(p, self.OnWindowClosed)
-
         toRemove = [p for p in self.Windows.keys() if p not in plats]
         for p in toRemove:
             try:
@@ -1359,7 +1598,6 @@ class PlatformPIDManager(object):
                 del self.Windows[p]
             except:
                 pass
-
         x0, y0 = 50, 50
         dx, dy = 40, 40
         idx = 0
@@ -1392,8 +1630,7 @@ class PlatformPIDManager(object):
         except:
             pass
 
-# ---------------------------
+# ------------------------------------------------------------
 # Run
-# ---------------------------
-
+# ------------------------------------------------------------
 PID_Manager = PlatformPIDManager()
