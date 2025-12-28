@@ -34,6 +34,10 @@
 # <<SETTING DESCRIPTION NUMBER: Solari extra digit cycles max>>
 # <<SETTING DESCRIPTION BOOLEAN: Hide platform until allocated>>
 # <<SETTING DESCRIPTION NUMBER: Delay threshold minutes>>
+# <<SETTING DESCRIPTION STRING: Delay via banner top>>
+# <<SETTING DESCRIPTION STRING: Delay via banner bottom>>
+# <<SETTING DESCRIPTION STRING: Delay special banner top>>
+# <<SETTING DESCRIPTION STRING: Delay special banner bottom>>
 # <<SETTING DESCRIPTION STRING: ECS message>>
 # <<SETTING DESCRIPTION COLOR: Solari special default fg>>
 # <<SETTING DESCRIPTION COLOR: Solari special default bg>>
@@ -1172,7 +1176,7 @@ def BuildSpecialChatterPool(boardObj, flapWidth):
 
     # (2) Standard texts with their correct colours
     # Delay banner texts (same as existing Solari delay banner for Special line)
-    AddPair("Please listen", "for Announcements", RED, TEXT_WHT)
+    AddPair(str(DELAY_SPECIAL_BANNER_TOP or DEFAULT_DELAY_SPECIAL_BANNER_TOP), str(DELAY_SPECIAL_BANNER_BOTTOM or DEFAULT_DELAY_SPECIAL_BANNER_BOTTOM), RED, TEXT_WHT)
 
     # Cancelled (same as existing cancelled special style)
     AddPair("CANCELLED", "", RED, TEXT_WHT)
@@ -1213,6 +1217,15 @@ EXTRA_DIGIT_CYCLES_MAX = ReadInt("TAS_USER_SETTING_SOLARI_EXTRA_DIGIT_CYCLES_MAX
 
 # ECS message (shown when the service is already being displayed as ECS)
 ECS_MESSAGE = TBL.SafeGetOrCreateMemoryValue("TAS_USER_SETTING_ECS_MESSAGE", "Not for public use")
+# Delay banner text (two-line within a single flap).
+DEFAULT_DELAY_VIA_BANNER_TOP = "Incoming Service"
+DEFAULT_DELAY_VIA_BANNER_BOTTOM = "Delayed"
+DEFAULT_DELAY_SPECIAL_BANNER_TOP = "Please listen"
+DEFAULT_DELAY_SPECIAL_BANNER_BOTTOM = "for Announcements"
+DELAY_VIA_BANNER_TOP = TBL.SafeGetOrCreateMemoryValue("TAS_USER_SETTING_DELAY_VIA_BANNER_TOP", DEFAULT_DELAY_VIA_BANNER_TOP)
+DELAY_VIA_BANNER_BOTTOM = TBL.SafeGetOrCreateMemoryValue("TAS_USER_SETTING_DELAY_VIA_BANNER_BOTTOM", DEFAULT_DELAY_VIA_BANNER_BOTTOM)
+DELAY_SPECIAL_BANNER_TOP = TBL.SafeGetOrCreateMemoryValue("TAS_USER_SETTING_DELAY_SPECIAL_BANNER_TOP", DEFAULT_DELAY_SPECIAL_BANNER_TOP)
+DELAY_SPECIAL_BANNER_BOTTOM = TBL.SafeGetOrCreateMemoryValue("TAS_USER_SETTING_DELAY_SPECIAL_BANNER_BOTTOM", DEFAULT_DELAY_SPECIAL_BANNER_BOTTOM)
 
 MEM_Cols            = "TAS_USER_SETTING_STRIP_COLUMNS"  # sam
 
@@ -2645,7 +2658,7 @@ class SolariBoard(swing.JPanel):
          except:
           pass
 
-         for s in ["CANCELLED", "Please listen", "for Announcements"]:
+         for s in ["CANCELLED", str(DELAY_SPECIAL_BANNER_TOP or DEFAULT_DELAY_SPECIAL_BANNER_TOP), str(DELAY_SPECIAL_BANNER_BOTTOM or DEFAULT_DELAY_SPECIAL_BANNER_BOTTOM)]:
           try:
            ss = str(s).strip()
            if ss != "":
@@ -3096,7 +3109,7 @@ class SolariBoard(swing.JPanel):
         self.AnimateWordFlap(self.flapDest, destTargetFit, pool=destPoolUpperFit, startDelayMs=dlyDest, multiChange=multiChange)
         if showDelayBanner:
             _SetBannerPainter(self.flapVia)
-            self.flapVia.AnimateTo("Incoming Service", "Delayed", [], startDelayMs=dlyVia)
+            self.flapVia.AnimateTo(str(DELAY_VIA_BANNER_TOP or DEFAULT_DELAY_VIA_BANNER_TOP), str(DELAY_VIA_BANNER_BOTTOM or DEFAULT_DELAY_VIA_BANNER_BOTTOM), [], startDelayMs=dlyVia)
         else:
             _SetViaDefaultPainter()
             self.AnimateWordFlap(self.flapVia, viaTargetFit, pool=viaPoolFit, startDelayMs=dlyVia, multiChange=multiChange)
@@ -3105,7 +3118,7 @@ class SolariBoard(swing.JPanel):
         if showDelayBanner:
             _SetBannerPainter(self.flapSpecial)
             dlySpecial = self.CalcStartDelayMs(4, multiChange)
-            self.flapSpecial.AnimateTo("Please listen", "for Announcements", [], startDelayMs=dlySpecial)
+            self.flapSpecial.AnimateTo(str(DELAY_SPECIAL_BANNER_TOP or DEFAULT_DELAY_SPECIAL_BANNER_TOP), str(DELAY_SPECIAL_BANNER_BOTTOM or DEFAULT_DELAY_SPECIAL_BANNER_BOTTOM), [], startDelayMs=dlySpecial)
 
         # SPECIAL
         if showDelayBanner:
