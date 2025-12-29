@@ -27,7 +27,7 @@
 # BUILD-ID: CRTPlatformSingleColourV2 2025-12-29
 # BUILD-ID: CRTPlatformSingleColourV3 2025-12-29
 # BUILD-ID: CRTPlatformSingleColourV3_Final 2025-12-29
-# BUILD-ID: CRTPlatformSingleColour_NoTrainCenterFix 2025-12-29
+# BUILD-ID: CancelCyan 2025-12-29
 
 import javax.swing as swing
 import java.awt as awt
@@ -655,12 +655,14 @@ class CRTSPC_ScreenPanel(swing.JPanel):
         dueText = ""
         statusText = ""
         statusColor = CRTSPC_TextWhite
+        cancelledStatus = False
 
         if train is not None:
             dueText = CRTSPC_FormatHHmm(train.get("time") or "")
             if train.get("cancelled", False):
                 statusText = "CANCELLED"
-                statusColor = CRTSPC_TextWhite
+                statusColor = CRTSPC_CancelText
+                cancelledStatus = True
             else:
                 expMin = train.get("expMin")
                 if expMin is not None:
@@ -672,10 +674,21 @@ class CRTSPC_ScreenPanel(swing.JPanel):
 
         g2.setColor(CRTSPC_TextWhite)
         g2.drawString(dueText, leftX, y1)
-
-        g2.setColor(statusColor)
-        sw = headerFm.stringWidth(statusText)
-        g2.drawString(statusText, rightX + max(0, rightW - sw), y1)
+        if cancelledStatus and statusText:
+            # Draw a cyan background behind CANCELLED and render the text in black.
+            sw = headerFm.stringWidth(statusText)
+            pad = 4
+            xText = rightX + max(0, rightW - sw)
+            yTop = y1 - headerFm.getAscent()
+            hBox = headerFm.getAscent() + headerFm.getDescent()
+            g2.setColor(CRTSPC_CancelBg)
+            g2.fillRect(xText - pad, yTop, sw + (2 * pad), hBox)
+            g2.setColor(CRTSPC_CancelText)
+            g2.drawString(statusText, xText, y1)
+        else:
+            g2.setColor(statusColor)
+            sw = headerFm.stringWidth(statusText)
+            g2.drawString(statusText, rightX + max(0, rightW - sw), y1)
 
         # Row 2: destination (left) and Plat x (right)
         destText = ""
