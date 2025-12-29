@@ -41,7 +41,7 @@
 
 import javax.swing as swing
 import java.awt as awt
-from java.awt import Color, Font, RenderingHints, BasicStroke, Dimension
+from java.awt import Color, Font, RenderingHints, BasicStroke, Dimension, GradientPaint
 from java.awt.geom import RoundRectangle2D
 from java.awt.image import BufferedImage
 from javax.swing import Timer
@@ -1033,7 +1033,7 @@ class PIDUndergroundLedWindow(object):
         g2.setColor(CASE_DARK)
         g2.fill(rr2)
 
-        # Face
+        # Face (outer frame)
         faceX = caseX + 12
         faceY = caseY + 12
         faceW = caseW - 24
@@ -1044,12 +1044,46 @@ class PIDUndergroundLedWindow(object):
         g2.setColor(FACE_BLACK)
         g2.fill(rrFace)
 
-        # Red border matches face
+        # Red border matches the outer face frame
         g2.setColor(RED_LINE)
         g2.setStroke(BasicStroke(2.0))
         rrRed = RoundRectangle2D.Float(float(faceX + 2), float(faceY + 2), float(faceW - 4), float(faceH - 4), float(arcFace), float(arcFace))
         g2.draw(rrRed)
 
+        # Bevel between the red border and the inner text box (subtle chamfer effect)
+        # The previous implementation used a single GradientPaint across the whole area, which
+        # makes the bevel appear to fade out toward one side. The prototype bevel is uniform.
+        # Here we render a constant-tone bevel ring with two subtle outline strokes.
+        bevelT = 6  # bevel thickness in pixels
+        bevelOuterX = faceX + 4
+        bevelOuterY = faceY + 4
+        bevelOuterW = faceW - 8
+        bevelOuterH = faceH - 8
+        bevelArc = int(max(0, arcFace - 2))
+        rrBevelOuter = RoundRectangle2D.Float(float(bevelOuterX), float(bevelOuterY), float(bevelOuterW), float(bevelOuterH), float(bevelArc), float(bevelArc))
+
+        # Solid bevel tone (no directional fade)
+        g2.setColor(Color(18, 18, 18))
+        g2.fill(rrBevelOuter)
+
+        # Outer highlight line (subtle)
+        g2.setColor(Color(38, 38, 38))
+        g2.setStroke(BasicStroke(1.5))
+        g2.draw(rrBevelOuter)
+        # Inner text box (actual black display area)
+        textX = bevelOuterX + bevelT
+        textY = bevelOuterY + bevelT
+        textW = bevelOuterW - 2 * bevelT
+        textH = bevelOuterH - 2 * bevelT
+        textArc = int(max(0, bevelArc - 6))
+        rrText = RoundRectangle2D.Float(float(textX), float(textY), float(textW), float(textH), float(textArc), float(textArc))
+        g2.setColor(FACE_BLACK)
+        g2.fill(rrText)
+
+        # Inner edge line to suggest bevel depth (subtle)
+        g2.setColor(Color(8, 8, 8))
+        g2.setStroke(BasicStroke(1.0))
+        g2.draw(rrText)
         # Two text rows
         # Forensic note: the large visible gap is mainly from each row being half the face height
         # (rowH ~= (faceH-rowGap)/2) combined with vertical centering of the text within that tall row.
@@ -1060,21 +1094,21 @@ class PIDUndergroundLedWindow(object):
         # Tight rows: use the font height directly to match the prototype close spacing.
         rowH = int(fmMain.getHeight()) - 10
         blockH = (2 * rowH) + rowGap
-        blockTop = int(faceY + (faceH - blockH) // 2)
+        blockTop = int(textY + (textH - blockH) // 2)
         topY = blockTop
         botY = blockTop + rowH + rowGap
 
         # Top row fixed
         topLeft, topMins = self._TopRowText()
-        self._DrawRow(g2, int(faceX), int(topY), int(faceW), int(rowH), topLeft, topMins)
+        self._DrawRow(g2, int(textX), int(topY), int(textW), int(rowH), topLeft, topMins)
 
         # Bottom row clipped for slide-up
         clip = g2.getClip()
-        g2.clipRect(int(faceX), int(botY), int(faceW), int(rowH))
+        g2.clipRect(int(textX), int(botY), int(textW), int(rowH))
 
         if self.Mode == "NORMAL":
             bLeft, bMins = self._BottomCandidate(self.BottomShowingIndex)
-            self._DrawRow(g2, int(faceX), int(botY), int(faceW), int(rowH), bLeft, bMins)
+            self._DrawRow(g2, int(textX), int(botY), int(textW), int(rowH), bLeft, bMins)
 
         elif self.Mode == "SLIDE":
             phase = float(self.SlidePhase)
@@ -1083,10 +1117,10 @@ class PIDUndergroundLedWindow(object):
             toLeft, toMins = self.SlideToText
 
             if fromLeft or fromMins is not None:
-                self._DrawRow(g2, int(faceX), int(botY + dy), int(faceW), int(rowH), fromLeft, fromMins)
+                self._DrawRow(g2, int(textX), int(botY + dy), int(textW), int(rowH), fromLeft, fromMins)
 
             if toLeft or toMins is not None:
-                self._DrawRow(g2, int(faceX), int(botY + dy + rowH), int(faceW), int(rowH), toLeft, toMins)
+                self._DrawRow(g2, int(textX), int(botY + dy + rowH), int(textW), int(rowH), toLeft, toMins)
 
         elif self.Mode == "BLANK":
             pass
@@ -1103,15 +1137,15 @@ class PIDUndergroundLedWindow(object):
                 if frac > 1.0:
                     frac = 1.0
 
-                wipeW = int(round(float(faceW) * frac))
+                wipeW = int(round(float(textW) * frac))
                 oldClip = g2.getClip()
-                g2.clipRect(int(faceX), int(botY), int(wipeW), int(rowH))
+                g2.clipRect(int(textX), int(botY), int(wipeW), int(rowH))
 
                 g2.setColor(ORANGE)
                 g2.setFont(FONT_SPECIAL)
                 fm = g2.getFontMetrics(FONT_SPECIAL)
                 tw = fm.stringWidth(msg)
-                tx = int(faceX + (faceW - tw) // 2)
+                tx = int(textX + (textW - tw) // 2)
                 ty = _RowCenterBaseline(int(botY), int(rowH), fm)
                 g2.drawString(msg, tx, int(ty))
 
