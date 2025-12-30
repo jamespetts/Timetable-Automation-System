@@ -13,8 +13,8 @@
 #
 # Underground-style small electronic board PID (per platform) for JMRI 5.14
 #
-# <<PID-DISP-NAME: Underground LED 2-line platform display (font rendering)>>
-# <<DESCRIPTION: Two-line orange board with 1/2/3 ordering, lower-line slide alternation and periodic special message; uses normal font rendering for clarity>>
+# <<PID-DISP-NAME: Underground LED 2-line platform display>>
+# <<DESCRIPTION: Two-line LED destination indicator of the type introduced by the London Underground in the 1980s>>
 #
 # User-configurable settings discovered by TASSetup.py (do not modify TASSetup.py):
 # <<SETTING DESCRIPTION NUMBER: Show trains scheduled less than this many minutes in the future>>
