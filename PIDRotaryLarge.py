@@ -16,15 +16,15 @@
 # <<PID-DISP-NAME: Departure board (rotary blocks, large)>>
 # <<DESCRIPTION: Rotary-block indicator with deterministic destination grouping and per-row roller decks. Animates service changes with true roller motion: faces roll through intermediate positions (numbers and stations). Uses CURRENTTIME memory as primary time source with lightweight polling.>>
 # User-configurable settings discovered by TASSetup:
-# <<SETTING DESCRIPTION NUMBER: Preferred maximum columns>>
-# <<SETTING DESCRIPTION NUMBER: Preferred rows>>
-# <<SETTING DESCRIPTION NUMBER: Clear blank hold ms>>
-# <<SETTING DESCRIPTION BOOLEAN: Use 12 hour time>>
-# <<SETTING DESCRIPTION BOOLEAN: Hide platform until allocated>>
-# <<SETTING DESCRIPTION NUMBER: Future window minutes>>
+# <<SETTING DESCRIPTION NUMBER: Rotary preferred columns>>
+# <<SETTING DESCRIPTION NUMBER: Rotary preferred rows>>
+# <<SETTING DESCRIPTION NUMBER: Rotary clear blank hold ms>>
+# <<SETTING DESCRIPTION BOOLEAN: Rotary use 12 hour time>>
+# <<SETTING DESCRIPTION BOOLEAN: Rotary hide platform until allocated>>
+# <<SETTING DESCRIPTION NUMBER: Rotary future window minutes>>
 # <<SETTING DESCRIPTION NUMBER: Rotary timewarp threshold minutes>>
-# <<SETTING DESCRIPTION STRING: Header font family>>
-# <<SETTING DESCRIPTION STRING: Cell font family>>
+# <<SETTING DESCRIPTION STRING: Rotary header font family>>
+# <<SETTING DESCRIPTION STRING: Rotary cell font family>>
 #
 
 import javax.swing as swing
@@ -97,7 +97,14 @@ def ReadStr(MemName, DefaultVal=""):
             return ""
 
 
-PREF_MAX_COLS = ReadInt("TAS_USER_SETTING_ROTARY_PREFERRED_MAX_COLUMNS", 15, 1, 200)
+try:
+    _oldPref = str(TBL.SafeGetMemoryValue("TAS_USER_SETTING_ROTARY_PREFERRED_MAX_COLUMNS", "") or "").strip()
+    _newPref = str(TBL.SafeGetMemoryValue("TAS_USER_SETTING_ROTARY_PREFERRED_COLUMNS", "") or "").strip()
+    if (_newPref == "") and (_oldPref != ""):
+        TBL.SafeSetMemoryValue("TAS_USER_SETTING_ROTARY_PREFERRED_COLUMNS", _oldPref)
+except:
+    pass
+PREF_COLS = ReadInt("TAS_USER_SETTING_ROTARY_PREFERRED_COLUMNS", 15, 1, 200)
 PREF_ROWS = ReadInt("TAS_USER_SETTING_ROTARY_PREFERRED_ROWS", 15, 1, 200)
 CLEAR_BLANK_HOLD_MS = ReadInt("TAS_USER_SETTING_ROTARY_CLEAR_BLANK_HOLD_MS", 2000, 0, 60000)
 USE_12_HOUR_TIME = ReadBool("TAS_USER_SETTING_ROTARY_USE_12_HOUR_TIME", False)
@@ -2122,7 +2129,7 @@ class RotaryLargeWindow(object):
             rowsAll = CsvRows()
             capStations = max(3, int(PREF_ROWS) * 3)
             minGroups = ComputeHardMinimumGroups(rowsAll, PREF_ROWS)
-            minCols = max(int(PREF_MAX_COLS), int(minGroups))
+            minCols = max(int(PREF_COLS), int(minGroups))
             # Heuristic: fewer, broader groups (reduces over-fragmentation for shared-route destinations).
             try:
                 freqAll, _stationSetAll, _dn = _DestProfilesWeek(rowsAll)
@@ -2155,9 +2162,9 @@ class RotaryLargeWindow(object):
                     pass
             if hardMinCols < 1:
                 hardMinCols = 1
-            # Preferred maximum columns acts as a cap unless the timetable requires more.
+            # Preferred columns is a minimum; the timetable may require more.
             try:
-                prefMax = int(PREF_MAX_COLS)
+                prefMax = int(PREF_COLS)
             except:
                 prefMax = 15
             if prefMax < 1:
@@ -2184,6 +2191,68 @@ class RotaryLargeWindow(object):
                 ng['StationSet'] = set(g.get('StationSet', set()))
                 plan.append(ng)
             # Rebuild destination->group index mapping after final plan.
+            # Preferred columns is a minimum; increase columns to at least this value.
+            try:
+                _prefColsMin = int(PREF_COLS)
+            except:
+                _prefColsMin = 15
+            if _prefColsMin < 1:
+                _prefColsMin = 1
+            try:
+                _have = 0
+                for _g in plan:
+                    _have += int(_g.get('Cols', 0))
+                if _have < int(_prefColsMin) and len(plan) > 0:
+                    _extra = int(_prefColsMin) - int(_have)
+                    _sumFreq = 0
+                    for _g in plan:
+                        try:
+                            _sumFreq += int(_g.get('Freq', 0))
+                        except:
+                            pass
+                    if _sumFreq <= 0:
+                        _sumFreq = len(plan)
+                    _bases = [0] * len(plan)
+                    _rems = []
+                    _used = 0
+                    for _i in range(len(plan)):
+                        try:
+                            _f = int(plan[_i].get('Freq', 0))
+                        except:
+                            _f = 0
+                        if _f < 0:
+                            _f = 0
+                        try:
+                            _exact = (float(_f) * float(_extra)) / float(_sumFreq)
+                        except:
+                            _exact = 0.0
+                        _b = int(_exact)
+                        if _b < 0:
+                            _b = 0
+                        _bases[_i] = _b
+                        _used += _b
+                        _r = float(_exact) - float(_b)
+                        try:
+                            _k = str(_GroupKeyText(plan[_i].get('Dests') or [])).upper()
+                        except:
+                            _k = ""
+                        _rems.append((_r, _f, _k, _i))
+                    _left = int(_extra) - int(_used)
+                    if _left > 0:
+                        _rems.sort(key=lambda t: (0.0 - float(t[0]), 0 - int(t[1]), str(t[2]), int(t[3])))
+                        _p = 0
+                        while _left > 0 and len(_rems) > 0:
+                            _i = int(_rems[_p % len(_rems)][3])
+                            _bases[_i] = int(_bases[_i]) + 1
+                            _left -= 1
+                            _p += 1
+                    for _i in range(len(plan)):
+                        try:
+                            plan[_i]['Cols'] = int(plan[_i].get('Cols', 0)) + int(_bases[_i])
+                        except:
+                            pass
+            except:
+                pass
             giByDest = BuildGroupIndexByDest(plan)
             platformSeq = BuildPlatformRollerSequence(rowsAll)
             timeSeqs = TimeRollerSequences(USE_12_HOUR_TIME)
@@ -2310,7 +2379,7 @@ class RotaryLargeWindow(object):
                     if ColWarnKey is not None:
                         if getattr(self, '_LastColWarn', None) != ColWarnKey:
                             try:
-                                print('[PIDRotaryLarge] WARN: timetable requires ' + str(ColWarnKey[0]) + ' columns; exceeds preferred maximum ' + str(ColWarnKey[1]))
+                                print('[PIDRotaryLarge] WARN: timetable requires ' + str(ColWarnKey[0]) + ' columns; exceeds preferred ' + str(ColWarnKey[1]))
                             except:
                                 pass
                             self._LastColWarn = ColWarnKey
