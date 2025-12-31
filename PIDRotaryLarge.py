@@ -13,7 +13,8 @@
 # If not, see <https://www.gnu.org/licenses/>.
 #
 # Rotary block indicator (large): early mechanical/electro-mechanical departures board.
-# Checkpoint 14: clip-safe roller animation + stable text sizing during motion + stronger 3D roller cues.
+# Fix Checkpoint 1: 12-hour AM/PM roller + no leading zeros in 12-hour mode + dynamic row increase + specials slide-in.
+# NOTE: This file is a checkpoint build to avoid overwriting issues.
 # JMRI 5.14 / Jython 2.7 / ASCII only / CamelCase / Thread-safe EDT.
 # <<PID-DISP-NAME: Departure board (rotary blocks, large)>>
 # <<DESCRIPTION: Rotary-block indicator with deterministic destination grouping and per-row roller decks. Animates service changes with true roller motion: faces roll through intermediate positions (numbers and stations). Uses CURRENTTIME memory as primary time source with lightweight polling.>>
@@ -102,7 +103,8 @@ def ReadStr(MemName, DefaultVal=""):
 PREF_MAX_COLS = ReadInt("TAS_USER_SETTING_ROTARY_PREFERRED_MAX_COLUMNS", 15, 1, 200)
 PREF_ROWS = ReadInt("TAS_USER_SETTING_ROTARY_PREFERRED_ROWS", 15, 1, 200)
 CLEAR_BLANK_HOLD_MS = ReadInt("TAS_USER_SETTING_ROTARY_CLEAR_BLANK_HOLD_MS", 2000, 0, 60000)
-USE_12_HOUR_TIME = ReadBool("TAS_USER_SETTING_ROTARY_USE_12_HOUR_TIME", False)
+#USE_12_HOUR_TIME = ReadBool("TAS_USER_SETTING_ROTARY_USE_12_HOUR_TIME", False)
+USE_12_HOUR_TIME = True
 HIDE_PLAT_UNTIL_ALLOC = ReadBool("TAS_USER_SETTING_ROTARY_HIDE_PLATFORM_UNTIL_ALLOCATED", False)
 FUTURE_WINDOW_MIN = ReadInt("TAS_USER_SETTING_ROTARY_FUTURE_WINDOW_MINUTES", 0, 0, 1440)
 TIMEWARP_THRESHOLD_MIN = ReadInt("TAS_USER_SETTING_ROTARY_TIMEWARP_THRESHOLD_MINUTES", 2, 0, 240)
@@ -235,8 +237,8 @@ def MinutesToDisplayParts(TotalMinutes, Use12Hour):
     H12 = H24 % 12
     if H12 == 0:
         H12 = 12
-    return (str(H12), "%02d" % int(M), "AM" if Am else "PM")
-
+    # No leading zero on hours or minutes in 12-hour mode.
+    return (str(H12), str(int(M)), "AM" if Am else "PM")
 
 def TimeRollerSequences(Use12Hour):
     if not Use12Hour:
@@ -250,13 +252,13 @@ def TimeRollerSequences(Use12Hour):
     h = [""]
     for i in range(1, 13):
         h.append(str(i))
+    # No leading zero on minutes in 12-hour mode.
     m = [""]
     for i in range(60):
-        m.append("%02d" % i)
+        m.append(str(i))
+    # Blank between PM and AM in the forward direction: blank, AM, PM, blank...
     ap = ["", "AM", "PM"]
     return {'H': h, 'M': m, 'AP': ap}
-
-
 Timebase = None
 try:
     Timebase = InstanceManager.getDefault(jmri.Timebase)
@@ -1465,11 +1467,10 @@ class RotaryLargePanel(swing.JPanel):
             g2.setColor(awt.Color(0, 0, 0))
             g2.drawRect(Rh.x, Rh.y, Rh.width, Rh.height)
 
-            anim = ColAnim.get(ci) or {}
-
-            # Time rollers (narrow and centered)
+            anim = ColAnim.get(ci) or {}            # Time rollers (narrow and centered)
             hIdx = int(anim.get('TimeHIdx', 0))
             mIdx = int(anim.get('TimeMIdx', 0))
+            apIdx = int(anim.get('TimeApIdx', 0))
 
             try:
                 hourTxt = str(TimeSeqs['H'][hIdx % len(TimeSeqs['H'])])
@@ -1484,12 +1485,26 @@ class RotaryLargePanel(swing.JPanel):
                 minTxt = ""
                 nextMin = ""
 
+            apTxt = ""
+            nextAp = ""
+            apSeq = TimeSeqs.get('AP')
+            if apSeq is not None:
+                try:
+                    apTxt = str(apSeq[apIdx % len(apSeq)])
+                    nextAp = str(apSeq[(apIdx + 1) % len(apSeq)])
+                except:
+                    apTxt = ""
+                    nextAp = ""
+
             rollerH = 20
             rollerY = baseY + 10
             rollerGap = 8
             hourW = 26
             minW = 30
+            apW = 30 if apSeq is not None else 0
             totW = hourW + rollerGap + minW
+            if apSeq is not None:
+                totW = totW + rollerGap + apW
             startX = cx + (ColW - totW) // 2
 
             RHour = awt.Rectangle(startX, rollerY, hourW, rollerH)
@@ -1497,9 +1512,13 @@ class RotaryLargePanel(swing.JPanel):
 
             hOff = int(anim.get('TimeHOffset', 0))
             mOff = int(anim.get('TimeMOffset', 0))
+            apOff = int(anim.get('TimeApOffset', 0))
 
             DrawRollerAnimated(g2, RHour, hourTxt, nextHour, hOff, timeFont, awt.Color(255, 255, 255), 4000 + ci)
             DrawRollerAnimated(g2, RMin, minTxt, nextMin, mOff, timeFont, awt.Color(255, 255, 255), 5000 + ci)
+            if apSeq is not None:
+                RAp = awt.Rectangle(startX + hourW + rollerGap + minW + rollerGap, rollerY, apW, rollerH)
+                DrawRollerAnimated(g2, RAp, apTxt, nextAp, apOff, timeFont, awt.Color(255, 255, 255), 4500 + ci)
 
             # PLATFORM label
             RpLab = awt.Rectangle(cx + 6, baseY + 40, ColW - 12, 16)
@@ -1640,20 +1659,33 @@ class RotaryLargePanel(swing.JPanel):
                     if curKey != "":
                         DrawCellTextTwoLineOffset(g2, Rcell, txtU, FONT_FAM_NARROW, 12, 8, 0 - int(off))
                     if nextKey != "":
-                        DrawCellTextTwoLineOffset(g2, Rcell, nextU, FONT_FAM_NARROW, 12, 8, int(h - off))
-
-            # Special line
+                        DrawCellTextTwoLineOffset(g2, Rcell, nextU, FONT_FAM_NARROW, 12, 8, int(h - off))            # Special line
             Rs = awt.Rectangle(cx + 6, cellsY + int(Rows) * CellH + 4, ColW - 12, SpecialH)
             DrawWood(g2, Rs, 3000 + ci)
             g2.setColor(awt.Color(0, 0, 0))
             g2.drawRect(Rs.x, Rs.y, Rs.width, Rs.height)
+            # Always show the frame; the plate itself slides in from the top when present.
+            sOff = int(anim.get('SpecialOffset', 0))
             if special:
-                inner = awt.Rectangle(Rs.x + 2, Rs.y + 2, Rs.width - 4, Rs.height - 4)
+                oldClip2 = None
+                try:
+                    oldClip2 = g2.getClip()
+                    g2.setClip(int(Rs.x), int(Rs.y), int(Rs.width), int(Rs.height))
+                except:
+                    oldClip2 = None
+                inner = awt.Rectangle(Rs.x + 2, Rs.y + 2 + sOff, Rs.width - 4, Rs.height - 4)
                 g2.setColor(awt.Color(0, 0, 0))
                 g2.fillRect(inner.x, inner.y, inner.width, inner.height)
                 g2.setColor(awt.Color(255, 255, 255))
                 stxt = str(special).upper()
                 DrawCellTextTwoLineOffset(g2, inner, stxt, FONT_FAM_NARROW, 11, 7, 0)
+                try:
+                    if oldClip2 is not None:
+                        g2.setClip(oldClip2)
+                    else:
+                        g2.setClip(None)
+                except:
+                    pass
 
         g2.dispose()
 
@@ -1905,18 +1937,26 @@ class RotaryLargeWindow(object):
             a['TimeHIdx'] = 0
         if 'TimeMIdx' not in a:
             a['TimeMIdx'] = 0
+        if 'TimeApIdx' not in a:
+            a['TimeApIdx'] = 0
         if 'PlatIdx' not in a:
             a['PlatIdx'] = 0
         if 'Status' not in a:
             a['Status'] = ''
         if 'Special' not in a:
             a['Special'] = ''
+        if 'SpecialOffset' not in a:
+            a['SpecialOffset'] = 0
+        if 'SpecialTargetOffset' not in a:
+            a['SpecialTargetOffset'] = 0
         if 'SvcKey' not in a:
             a['SvcKey'] = None
         if 'TimeHOffset' not in a:
             a['TimeHOffset'] = 0
         if 'TimeMOffset' not in a:
             a['TimeMOffset'] = 0
+        if 'TimeApOffset' not in a:
+            a['TimeApOffset'] = 0
         if 'PlatOffset' not in a:
             a['PlatOffset'] = 0
         if 'RowAnimRow' not in a:
@@ -1972,11 +2012,17 @@ class RotaryLargeWindow(object):
 
             for gi, g in enumerate(plan):
                 stToRow, rowFaces, stToFace, cycle, used = SolveGroupRowsForRollerDecks(rowsAll, g.get('Dests') or [], PREF_ROWS)
+                try:
+                    if int(used) > int(maxRowsNeeded):
+                        maxRowsNeeded = int(used)
+                except:
+                    pass
                 groupRowFaces[int(gi)] = list(rowFaces)
                 groupStationToRow[int(gi)] = dict(stToRow)
                 groupStationToFace[int(gi)] = dict(stToFace)
 
             effRows = int(PREF_ROWS)
+            maxRowsNeeded = int(PREF_ROWS)
 
             renderGroups = StripDiagnosticStationSet(plan)
             cols = []
@@ -2081,8 +2127,15 @@ class RotaryLargeWindow(object):
                 self.GroupStationToFace = dict(groupStationToFace)
 
                 self.SvcByRn = dict(svcByRn)
+                effRows = int(maxRowsNeeded)
+                if effRows < int(PREF_ROWS):
+                    effRows = int(PREF_ROWS)
+                if effRows != int(PREF_ROWS):
+                    try:
+                        print('[PIDRotaryLarge] NOTE: increasing rows from preferred ' + str(PREF_ROWS) + ' to ' + str(effRows))
+                    except:
+                        pass
                 self.RenderGeom['Rows'] = int(effRows)
-
                 for ci in range(totalCols):
                     if ci not in self.DisplayByCol:
                         self.DisplayByCol[ci] = None
@@ -2159,15 +2212,19 @@ class RotaryLargeWindow(object):
         a['TargetRowFaces'] = [0] * rows
         a['TargetTimeH'] = ''
         a['TargetTimeM'] = ''
+        a['TargetTimeAp'] = ''
         a['TargetPlat'] = ''
         a['TargetStatus'] = ''
         a['TargetSpecial'] = ''
         a['Status'] = ''
         a['Special'] = ''
+        a['SpecialOffset'] = 0
+        a['SpecialTargetOffset'] = 0
         a['SvcKey'] = None
 
         a['TimeHOffset'] = 0
         a['TimeMOffset'] = 0
+        a['TimeApOffset'] = 0
         a['PlatOffset'] = 0
         a['RowAnimRow'] = -1
         a['RowAnimOffset'] = 0
@@ -2192,6 +2249,8 @@ class RotaryLargeWindow(object):
             return self._ContinueRoller(col, ver, 'TimeH')
         if int(a.get('TimeMOffset', 0)) > 0:
             return self._ContinueRoller(col, ver, 'TimeM')
+        if int(a.get('TimeApOffset', 0)) > 0:
+            return self._ContinueRoller(col, ver, 'TimeAp')
         if int(a.get('PlatOffset', 0)) > 0:
             return self._ContinueRoller(col, ver, 'Plat')
 
@@ -2200,10 +2259,12 @@ class RotaryLargeWindow(object):
 
         tgtH = str(a.get('TargetTimeH', '') or '')
         tgtM = str(a.get('TargetTimeM', '') or '')
+        tgtA = str(a.get('TargetTimeAp', '') or '')
         tgtP = str(a.get('TargetPlat', '') or '')
 
         hIdx = int(a.get('TimeHIdx', 0))
         mIdx = int(a.get('TimeMIdx', 0))
+        aIdx = int(a.get('TimeApIdx', 0))
         pIdx = int(a.get('PlatIdx', 0))
 
         try:
@@ -2214,6 +2275,13 @@ class RotaryLargeWindow(object):
             curM = str(timeSeqs['M'][mIdx % len(timeSeqs['M'])])
         except:
             curM = ''
+        curA = ''
+        apSeq = timeSeqs.get('AP')
+        if apSeq is not None:
+            try:
+                curA = str(apSeq[aIdx % len(apSeq)])
+            except:
+                curA = ''
         try:
             curP = str(platSeq[pIdx % len(platSeq)])
         except:
@@ -2225,6 +2293,10 @@ class RotaryLargeWindow(object):
             return True
         if curM != tgtM:
             a['TimeMOffset'] = 1
+            self._RepaintLater(int(ROLL_FRAME_MS), col, ver, self._AnimateToTargets)
+            return True
+        if apSeq is not None and curA != tgtA:
+            a['TimeApOffset'] = 1
             self._RepaintLater(int(ROLL_FRAME_MS), col, ver, self._AnimateToTargets)
             return True
         if curP != tgtP:
@@ -2264,6 +2336,16 @@ class RotaryLargeWindow(object):
                     a['TimeMIdx'] = int(a.get('TimeMIdx', 0)) + 1
             else:
                 a['TimeMOffset'] = off
+        elif kind == 'TimeAp':
+            off = int(a.get('TimeApOffset', 0)) + step
+            if off >= h:
+                a['TimeApOffset'] = 0
+                try:
+                    a['TimeApIdx'] = (int(a.get('TimeApIdx', 0)) + 1) % len(self.TimeSeqs.get('AP') or [''])
+                except:
+                    a['TimeApIdx'] = int(a.get('TimeApIdx', 0)) + 1
+            else:
+                a['TimeApOffset'] = off
         elif kind == 'Plat':
             off = int(a.get('PlatOffset', 0)) + step
             if off >= h:
@@ -2313,7 +2395,7 @@ class RotaryLargeWindow(object):
             r += 1
 
         if r >= rows:
-            self._OnPhaseComplete(col, ver)
+            self._AnimateSpecialThenComplete(col, ver)
             return
 
         a['RowAnimRow'] = int(r)
@@ -2370,6 +2452,25 @@ class RotaryLargeWindow(object):
 
         self._RepaintLater(int(ROW_FRAME_MS), col, ver, self._AnimateToTargets)
 
+    def _AnimateSpecialThenComplete(self, col, ver):
+        a = self.ColAnim.get(col) or {}
+        if int(a.get('Version', 0)) != int(ver):
+            return
+        off = int(a.get('SpecialOffset', 0))
+        tgt = int(a.get('SpecialTargetOffset', 0))
+        if off != tgt:
+            step = int(ROW_PIX_PER_FRAME)
+            if step < 1:
+                step = 1
+            if off < tgt:
+                off = min(tgt, off + step)
+            else:
+                off = max(tgt, off - step)
+            a['SpecialOffset'] = int(off)
+            self._RepaintLater(int(ROW_FRAME_MS), col, ver, self._AnimateSpecialThenComplete)
+            return
+        self._OnPhaseComplete(col, ver)
+
     def _OnPhaseComplete(self, col, ver):
         a = self.ColAnim.get(col) or {}
         if int(a.get('Version', 0)) != int(ver):
@@ -2407,6 +2508,7 @@ class RotaryLargeWindow(object):
         tgtPlat = ''
         tgtH = ''
         tgtM = ''
+        tgtAp = ''
 
         if svc is not None:
             tgtStatus = str(getattr(svc, 'Status', '') or '').strip().upper()
@@ -2419,6 +2521,7 @@ class RotaryLargeWindow(object):
                 hh, mm, ap = ('', '', '')
             tgtH = hh
             tgtM = mm
+            tgtAp = ap
 
             gi = None
             try:
@@ -2453,11 +2556,22 @@ class RotaryLargeWindow(object):
         a['TargetRowFaces'] = tgtRowFaces
         a['TargetTimeH'] = tgtH
         a['TargetTimeM'] = tgtM
+        a['TargetTimeAp'] = tgtAp
         a['TargetPlat'] = tgtPlat
         a['TargetStatus'] = tgtStatus
         a['TargetSpecial'] = tgtSpecial
         a['Status'] = tgtStatus
         a['Special'] = tgtSpecial
+        try:
+            sh = int(self.RenderGeom.get('SpecialH', 26))
+        except:
+            sh = 26
+        if str(tgtSpecial or '') != '':
+            a['SpecialOffset'] = 0 - int(sh)
+            a['SpecialTargetOffset'] = 0
+        else:
+            a['SpecialOffset'] = 0
+            a['SpecialTargetOffset'] = 0
 
         try:
             a['SvcKey'] = str(tgtH) + '|' + str(tgtM) + '|' + str(tgtPlat) + '|' + str(tgtStatus)
