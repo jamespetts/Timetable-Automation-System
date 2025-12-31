@@ -15,6 +15,68 @@
 # Works with JMRI 5.14 and later.
 import jmri
 
+import java.util.concurrent.locks
+
+_FORENSIC_LOCK = java.util.concurrent.locks.ReentrantLock()
+
+# Set True to enable forensic logging (recommended during investigation)
+ENABLE_TASBEANLOOKUP_FORENSICS = False
+
+# Set True only if you want to log every creation (very noisy)
+LOG_TASBEANLOOKUP_ALL_CREATES = False
+
+def _ForensicDump(event, rawSuffix, normSuffix, memManager, createdMem):
+    if not ENABLE_TASBEANLOOKUP_FORENSICS:
+        return
+    try:
+        _FORENSIC_LOCK.lock()
+        try:
+            print("[TASBeanLookup] FORENSIC " + str(event))
+            try:
+                print("  rawSuffixType=" + str(type(rawSuffix)) + " rawSuffixRepr=" + repr(rawSuffix))
+            except:
+                print("  rawSuffix=<unprintable>")
+            try:
+                print("  normSuffixRepr=" + repr(normSuffix))
+            except:
+                print("  normSuffix=<unprintable>")
+            try:
+                print("  mm.class=" + str(memManager.__class__))
+                print("  mm.getSystemPrefix=" + str(memManager.getSystemPrefix()))
+                print("  mm.getSystemNamePrefix=" + str(memManager.getSystemNamePrefix()))
+            except:
+                pass
+            try:
+                print("  isValid(raw)=" + str(memManager.isValidSystemNameFormat(str(rawSuffix))))
+                print("  makeSystemName(raw)=" + str(memManager.makeSystemName(str(rawSuffix))))
+            except:
+                pass
+            try:
+                print("  isValid(norm)=" + str(memManager.isValidSystemNameFormat(str(normSuffix))))
+                print("  makeSystemName(norm)=" + str(memManager.makeSystemName(str(normSuffix))))
+            except:
+                pass
+            try:
+                if createdMem is not None:
+                    sn = str(createdMem.getSystemName())
+                    print("  created.systemName=" + sn)
+                    print("  created.isNested=" + str(_IsNestedImSystemName(sn.strip().upper())))
+            except:
+                pass
+            try:
+                import traceback
+                for line in traceback.format_stack():
+                    print(line.rstrip())
+            except:
+                pass
+        finally:
+            _FORENSIC_LOCK.unlock()
+    except:
+        try:
+            _FORENSIC_LOCK.unlock()
+        except:
+            pass
+
 _WARNED_COLLISIONS = set()
 
 def _NormSuffix(s):
@@ -220,6 +282,7 @@ def ProvideMemoryBySuffix(suffix, default=""):
     If found (using ordered preference IM, then I2M, I3M, ...), return it.
     If not found, create it using the MemoryManager's current system prefix and seed with default.
     """
+    rawSuffix = suffix
     suffix = _NormSuffix(suffix)
     if not suffix:
         return None
@@ -242,6 +305,15 @@ def ProvideMemoryBySuffix(suffix, default=""):
         prefix = "IM"
 
     newMem = memManager.provideMemory(suffix)
+    if LOG_TASBEANLOOKUP_ALL_CREATES:
+        _ForensicDump("CREATED", rawSuffix, suffix, memManager, newMem)
+
+    try:
+        snu = str(newMem.getSystemName()).strip().upper()
+        if _IsNestedImSystemName(snu):
+            _ForensicDump("NESTED_CREATED", rawSuffix, suffix, memManager, newMem)
+    except:
+        pass
     try:
         if newMem.getValue() is None:
             newMem.setValue(default)
