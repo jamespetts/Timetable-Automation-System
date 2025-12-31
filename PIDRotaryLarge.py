@@ -1,4 +1,3 @@
-\
 # This file is part of the Timetable Automation System by James E. Petts
 #
 # The Timetable Automation System is free software: you can redistribute it and/or modify it under the terms of the
@@ -13,8 +12,6 @@
 # If not, see <https://www.gnu.org/licenses/>.
 #
 # Rotary block indicator (large): early mechanical/electro-mechanical departures board.
-# Fix Checkpoint 1: 12-hour AM/PM roller + no leading zeros in 12-hour mode + dynamic row increase + specials slide-in.
-# NOTE: This file is a checkpoint build to avoid overwriting issues.
 # JMRI 5.14 / Jython 2.7 / ASCII only / CamelCase / Thread-safe EDT.
 # <<PID-DISP-NAME: Departure board (rotary blocks, large)>>
 # <<DESCRIPTION: Rotary-block indicator with deterministic destination grouping and per-row roller decks. Animates service changes with true roller motion: faces roll through intermediate positions (numbers and stations). Uses CURRENTTIME memory as primary time source with lightweight polling.>>
@@ -103,8 +100,8 @@ def ReadStr(MemName, DefaultVal=""):
 PREF_MAX_COLS = ReadInt("TAS_USER_SETTING_ROTARY_PREFERRED_MAX_COLUMNS", 15, 1, 200)
 PREF_ROWS = ReadInt("TAS_USER_SETTING_ROTARY_PREFERRED_ROWS", 15, 1, 200)
 CLEAR_BLANK_HOLD_MS = ReadInt("TAS_USER_SETTING_ROTARY_CLEAR_BLANK_HOLD_MS", 2000, 0, 60000)
+USE_12_HOUR_TIME = True # Set for TESTing only - the below is the correct line
 #USE_12_HOUR_TIME = ReadBool("TAS_USER_SETTING_ROTARY_USE_12_HOUR_TIME", False)
-USE_12_HOUR_TIME = True
 HIDE_PLAT_UNTIL_ALLOC = ReadBool("TAS_USER_SETTING_ROTARY_HIDE_PLATFORM_UNTIL_ALLOCATED", False)
 FUTURE_WINDOW_MIN = ReadInt("TAS_USER_SETTING_ROTARY_FUTURE_WINDOW_MINUTES", 0, 0, 1440)
 TIMEWARP_THRESHOLD_MIN = ReadInt("TAS_USER_SETTING_ROTARY_TIMEWARP_THRESHOLD_MINUTES", 2, 0, 240)
@@ -117,6 +114,7 @@ ROLL_FRAME_MS = 30
 ROLL_PIX_PER_FRAME = 3
 ROW_FRAME_MS = 30
 ROW_PIX_PER_FRAME = 3
+ROLLER_GAP = 4 # Reduced gap to allow AM/PM rollers to fit in 90px column width
 
 
 # -------------------------------
@@ -458,7 +456,7 @@ def NextServicesTodayAll():
         if M.DepMin is None:
             continue
 
-        # Exclude arrivals to the current station.
+        # Exclude arrivals to current station.
         try:
             if CurStation != "" and str(M.Dest or "").strip().upper() == CurStation:
                 continue
@@ -730,6 +728,9 @@ def SolveGroupRowsForRollerDecks(RowsAll, GroupDests, PreferredRows):
     RowToStations = []
 
     def _RowConflict(n, rowIdx):
+        # Physical constraint: Max 3 stations per row (plus blank)
+        if len(RowToStations[rowIdx]) >= 3:
+            return True
         for other in (RowToStations[rowIdx] or []):
             if other in Co.get(n, set()):
                 return True
@@ -810,9 +811,9 @@ def _FindBestMerge(groups, StationSet, capStations, RowsAll, PrefRows):
 
             newDests = list(Gi.get('Dests') or []) + list(Gj.get('Dests') or [])
             rowsNeed = _RowsRequiredForGroup(RowsAll, newDests, PrefRows)
-            if rowsNeed > int(PrefRows):
-                continue
-
+            # REMOVED CONSTRAINT: Allow merge even if rowsNeed > PrefRows.
+            # This enables dynamic row increase to accommodate larger groups.
+            
             sim = 0.0
             for da in (Gi.get('Dests') or []):
                 for db in (Gj.get('Dests') or []):
@@ -821,6 +822,7 @@ def _FindBestMerge(groups, StationSet, capStations, RowsAll, PrefRows):
             combFreq = int(Gi.get('Freq', 0)) + int(Gj.get('Freq', 0))
             pairKey = "|".join(sorted([_GroupKeyText(Gi.get('Dests')), _GroupKeyText(Gj.get('Dests'))]))
 
+            # Tuple contains 7 values: score, sim, freq, union, key, i, j
             cand = (0 - int(rowsNeed), sim, combFreq, 0 - unionSize, pairKey, i, j)
             if Best is None or cand > Best:
                 Best = cand
@@ -841,6 +843,7 @@ def BuildDestinationGroupsWithCap(RowsAll, TargetGroups, CapStations, PreferredR
         best = _FindBestMerge(groups, StationSet, cap, RowsAll, PreferredRows)
         if best is None:
             break
+        # Unpack 7 values: score, sim, freq, union, key, i, j
         _, _, _, _, _, i, j = best
         if j < i:
             i, j = j, i
@@ -1285,7 +1288,7 @@ def _DrawRecessApertureShading(g2, R):
 def _DrawRidgeLine(g2, x1, x2, y):
     # A bright/dark double line to suggest the cuboid edge.
     try:
-        g2.setColor(awt.Color(255, 255, 255, 40))
+        g2.setColor(awt.Color(255,255,255, 40))
         g2.drawLine(int(x1), int(y), int(x2), int(y))
         g2.setColor(awt.Color(0, 0, 0, 200))
         g2.drawLine(int(x1), int(y + 1), int(x2), int(y + 1))
@@ -1408,7 +1411,8 @@ class RotaryLargePanel(swing.JPanel):
 
         OuterPad = int(State.get('OuterPad', 16))
         ColW = int(State.get('ColW', 90))
-        ColGap = int(State.get('ColGap', 10))
+        # Use ROLLER_GAP from constants
+        ColGap = int(ROLLER_GAP) 
         GroupH = int(State.get('GroupH', 44))
         HeaderH = int(State.get('HeaderH', 92))
         CellH = int(State.get('CellH', 22))
@@ -1495,13 +1499,19 @@ class RotaryLargePanel(swing.JPanel):
                 except:
                     apTxt = ""
                     nextAp = ""
-
             rollerH = 20
             rollerY = baseY + 10
-            rollerGap = 8
+            # Use ROLLER_GAP (4)
+            rollerGap = int(ROLLER_GAP)
             hourW = 26
             minW = 30
-            apW = 30 if apSeq is not None else 0
+            apW = 0
+            if apSeq is not None:
+                # 12-hour mode: three rollers must fit within the column.
+                rollerGap = 2
+                hourW = 24
+                minW = 30
+                apW = 24
             totW = hourW + rollerGap + minW
             if apSeq is not None:
                 totW = totW + rollerGap + apW
@@ -1661,31 +1671,52 @@ class RotaryLargePanel(swing.JPanel):
                     if nextKey != "":
                         DrawCellTextTwoLineOffset(g2, Rcell, nextU, FONT_FAM_NARROW, 12, 8, int(h - off))            # Special line
             Rs = awt.Rectangle(cx + 6, cellsY + int(Rows) * CellH + 4, ColW - 12, SpecialH)
+            # Frame always visible
             DrawWood(g2, Rs, 3000 + ci)
             g2.setColor(awt.Color(0, 0, 0))
             g2.drawRect(Rs.x, Rs.y, Rs.width, Rs.height)
-            # Always show the frame; the plate itself slides in from the top when present.
+
+            pad = 3
+            Rhole = awt.Rectangle(Rs.x + pad, Rs.y + pad, Rs.width - 2*pad, Rs.height - 2*pad)
+            
             sOff = int(anim.get('SpecialOffset', 0))
+            
+            # Draw Hole Background (Wood/Recess)
+            # Only draw if hole is visible (i.e., plate not fully covering it)
+            # If special and sOff >= SpecialH, hole is covered.
+            if not special or sOff < int(SpecialH):
+                 DrawWood(g2, Rhole, 4000 + ci) # Wood background
+                 _DrawRecessApertureShading(g2, Rhole) # Shading
+
+            # Draw Plate
             if special:
                 oldClip2 = None
                 try:
                     oldClip2 = g2.getClip()
-                    g2.setClip(int(Rs.x), int(Rs.y), int(Rs.width), int(Rs.height))
-                except:
-                    oldClip2 = None
-                inner = awt.Rectangle(Rs.x + 2, Rs.y + 2 + sOff, Rs.width - 4, Rs.height - 4)
-                g2.setColor(awt.Color(0, 0, 0))
-                g2.fillRect(inner.x, inner.y, inner.width, inner.height)
-                g2.setColor(awt.Color(255, 255, 255))
-                stxt = str(special).upper()
-                DrawCellTextTwoLineOffset(g2, inner, stxt, FONT_FAM_NARROW, 11, 7, 0)
-                try:
-                    if oldClip2 is not None:
-                        g2.setClip(oldClip2)
-                    else:
-                        g2.setClip(None)
-                except:
+                    # Clip to the frame interior Rs
+                    g2.setClip(Rs.x, Rs.y, Rs.width, Rs.height)
+
+                    plateRect = awt.Rectangle(Rs.x + pad, Rs.y + pad + sOff, Rs.width - 2*pad, Rs.height - 2*pad)
+                    
+                    # Black background
+                    g2.setColor(awt.Color(0, 0, 0))
+                    g2.fillRect(plateRect.x, plateRect.y, plateRect.width, plateRect.height)
+                    
+                    # Text on plate
+                    stxt = str(special).upper()
+                    DrawCellTextTwoLineOffset(g2, plateRect, stxt, FONT_FAM_NARROW, 11, 7, 0)
+                    
+                except Exception as ExInner:
+                    # Ignore rendering errors for special plate
                     pass
+                finally:
+                    try:
+                        if oldClip2 is not None:
+                            g2.setClip(oldClip2)
+                        else:
+                            g2.setClip(None)
+                    except:
+                        pass
 
         g2.dispose()
 
@@ -1731,7 +1762,7 @@ class RotaryLargeWindow(object):
         self.RenderGeom = {
             'OuterPad': 16,
             'ColW': 90,
-            'ColGap': 10,
+            'ColGap': int(ROLLER_GAP),
             'GroupH': 44,
             'HeaderH': 92,
             'CellH': 22,
@@ -1826,7 +1857,6 @@ class RotaryLargeWindow(object):
                 self.TTMem.addPropertyChangeListener(self._pcl)
         except:
             pass
-
         try:
             if PAR is not None:
                 PAR.addPlatformListener(self._pcl)
@@ -1985,19 +2015,26 @@ class RotaryLargeWindow(object):
         def _Work():
             rowsAll = CsvRows()
             capStations = max(3, int(PREF_ROWS) * 3)
-
             minGroups = ComputeHardMinimumGroups(rowsAll, PREF_ROWS)
             minCols = max(int(PREF_MAX_COLS), int(minGroups))
-
+            # Heuristic: fewer, broader groups (reduces over-fragmentation for shared-route destinations).
             try:
-                desiredGroups = int(round(float(minCols) / 3.0))
+                freqAll, _stationSetAll, _dn = _DestProfilesWeek(rowsAll)
+                nDests = int(len(freqAll.keys()))
+            except:
+                nDests = 0
+            try:
+                desiredGroups = int(round(float(minCols) / 5.0))
             except:
                 desiredGroups = 2
+            if nDests > 0 and desiredGroups > nDests:
+                desiredGroups = nDests
+            if nDests >= 3 and desiredGroups < 3:
+                desiredGroups = 3
             if desiredGroups < 1:
                 desiredGroups = 1
             if desiredGroups < minGroups:
                 desiredGroups = minGroups
-
             groupsRaw = BuildDestinationGroupsWithCap(rowsAll, desiredGroups, capStations, PREF_ROWS)
             plan = AllocateColumnsToGroups(groupsRaw, minCols)
             giByDest = BuildGroupIndexByDest(plan)
@@ -2010,6 +2047,8 @@ class RotaryLargeWindow(object):
             groupStationToRow = {}
             groupStationToFace = {}
 
+            maxRowsNeeded = int(PREF_ROWS)
+
             for gi, g in enumerate(plan):
                 stToRow, rowFaces, stToFace, cycle, used = SolveGroupRowsForRollerDecks(rowsAll, g.get('Dests') or [], PREF_ROWS)
                 try:
@@ -2020,9 +2059,6 @@ class RotaryLargeWindow(object):
                 groupRowFaces[int(gi)] = list(rowFaces)
                 groupStationToRow[int(gi)] = dict(stToRow)
                 groupStationToFace[int(gi)] = dict(stToFace)
-
-            effRows = int(PREF_ROWS)
-            maxRowsNeeded = int(PREF_ROWS)
 
             renderGroups = StripDiagnosticStationSet(plan)
             cols = []
