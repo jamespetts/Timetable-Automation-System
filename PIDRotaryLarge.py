@@ -100,10 +100,9 @@ def ReadStr(MemName, DefaultVal=""):
 PREF_MAX_COLS = ReadInt("TAS_USER_SETTING_ROTARY_PREFERRED_MAX_COLUMNS", 15, 1, 200)
 PREF_ROWS = ReadInt("TAS_USER_SETTING_ROTARY_PREFERRED_ROWS", 15, 1, 200)
 CLEAR_BLANK_HOLD_MS = ReadInt("TAS_USER_SETTING_ROTARY_CLEAR_BLANK_HOLD_MS", 2000, 0, 60000)
-USE_12_HOUR_TIME = True # Set for TESTing only - the below is the correct line
-#USE_12_HOUR_TIME = ReadBool("TAS_USER_SETTING_ROTARY_USE_12_HOUR_TIME", False)
+USE_12_HOUR_TIME = ReadBool("TAS_USER_SETTING_ROTARY_USE_12_HOUR_TIME", False)
 HIDE_PLAT_UNTIL_ALLOC = ReadBool("TAS_USER_SETTING_ROTARY_HIDE_PLATFORM_UNTIL_ALLOCATED", False)
-FUTURE_WINDOW_MIN = ReadInt("TAS_USER_SETTING_ROTARY_FUTURE_WINDOW_MINUTES", 0, 0, 1440)
+FUTURE_WINDOW_MIN = ReadInt("TAS_USER_SETTING_ROTARY_FUTURE_WINDOW_MINUTES", 0, 0, 10)
 TIMEWARP_THRESHOLD_MIN = ReadInt("TAS_USER_SETTING_ROTARY_TIMEWARP_THRESHOLD_MINUTES", 2, 0, 240)
 HEADER_FONT_FAMILY = ReadStr("TAS_USER_SETTING_ROTARY_HEADER_FONT_FAMILY", "SansSerif")
 CELL_FONT_FAMILY = ReadStr("TAS_USER_SETTING_ROTARY_CELL_FONT_FAMILY", "")
@@ -518,6 +517,84 @@ def NextServicesTodayAll():
 # -------------------------------
 # Grouping logic (solvability-based)
 # -------------------------------
+
+
+# ------------------------------------------------------------------
+# Minimum columns per group based on look-ahead window
+# ------------------------------------------------------------------
+
+def _ParseDayFlags(Row):
+    # Return list of day field names that are true for this row.
+    out = []
+    try:
+        for k in (Row.keys() or []):
+            try:
+                v = (Row.get(k, '') or '').strip().lower()
+            except:
+                v = ''
+            if v == 'true':
+                lk = (k or '').strip().lower()
+                if lk in ['monday','tuesday','wednesday','thursday','friday','saturday','sunday']:
+                    out.append(k)
+    except:
+        pass
+    return out
+
+def ComputeMinColumnsByGroup(RowsAll, GroupIndexByDest, FutureWindowMin):
+    # Returns dict: groupIndex -> required columns (>=0).
+    # Requirement is the maximum number of services in that group that could be displayable at any time,
+    # given the look-ahead window and the timetable over the whole week.
+    # If FutureWindowMin <= 0, treat as 'no limit'.
+    try:
+        w = int(FutureWindowMin)
+    except:
+        w = 0
+    if w < 0:
+        w = 0
+
+    perDay = {}  # dayName -> groupIndex -> sorted dep minutes
+
+    for R in (RowsAll or []):
+        dest = (CaseInsensitive(R, 'Destination') or '').strip()
+        if dest == '' or _IsEcsDestination(dest):
+            continue
+        try:
+            gi = GroupIndexByDest.get(str(dest).strip().lower())
+        except:
+            gi = None
+        if gi is None:
+            continue
+        depStr = (CaseInsensitive(R, 'Dep') or '').strip()
+        depMin = ParseMinutes(depStr)
+        if depMin is None:
+            continue
+        for d in _ParseDayFlags(R):
+            perDay.setdefault(d, {}).setdefault(int(gi), []).append(int(depMin))
+
+    req = {}
+    for d, byGroup in perDay.items():
+        for gi, deps in byGroup.items():
+            deps.sort()
+            if not deps:
+                continue
+            if w == 0:
+                m = len(deps)
+            else:
+                m = 0
+                j = 0
+                for i in range(len(deps)):
+                    if j < i:
+                        j = i
+                    limit = deps[i] + w
+                    while j < len(deps) and deps[j] <= limit:
+                        j += 1
+                    cnt = j - i
+                    if cnt > m:
+                        m = cnt
+            if m > int(req.get(int(gi), 0)):
+                req[int(gi)] = int(m)
+
+    return req
 
 def _NormKey(s):
     try:
@@ -1239,14 +1316,26 @@ def DrawCellTextTwoLineOffset(g2, Rect, Text, Fam, BaseSize, MinSize, YOffset):
             bestFont = f
             break
         sz -= 1
-
     oldClip = None
     try:
         oldClip = g2.getClip()
-        g2.setClip(int(Rect.x), int(Rect.y), int(Rect.width), int(Rect.height))
+        # Preserve any existing clip by intersecting it with this cell rectangle.
+        if oldClip is None:
+            g2.setClip(int(Rect.x), int(Rect.y), int(Rect.width), int(Rect.height))
+        else:
+            try:
+                b = oldClip.getBounds()
+            except:
+                b = oldClip
+            try:
+                rr = awt.Rectangle(int(Rect.x), int(Rect.y), int(Rect.width), int(Rect.height))
+                bb = awt.Rectangle(int(b.x), int(b.y), int(b.width), int(b.height))
+                ii = bb.intersection(rr)
+                g2.setClip(int(ii.x), int(ii.y), int(ii.width), int(ii.height))
+            except:
+                g2.setClip(int(Rect.x), int(Rect.y), int(Rect.width), int(Rect.height))
     except:
         oldClip = None
-
     try:
         g2.setFont(bestFont)
         fm = g2.getFontMetrics(bestFont)
@@ -1502,16 +1591,17 @@ class RotaryLargePanel(swing.JPanel):
             rollerH = 20
             rollerY = baseY + 10
             # Use ROLLER_GAP (4)
-            rollerGap = int(ROLLER_GAP)
-            hourW = 26
-            minW = 30
+            # Narrower digit windows with larger gaps between them.
+            rollerGap = 6
+            hourW = 22
+            minW = 26
             apW = 0
             if apSeq is not None:
                 # 12-hour mode: three rollers must fit within the column.
-                rollerGap = 2
-                hourW = 24
-                minW = 30
-                apW = 24
+                rollerGap = 6
+                hourW = 22
+                minW = 26
+                apW = 22
             totW = hourW + rollerGap + minW
             if apSeq is not None:
                 totW = totW + rollerGap + apW
@@ -1701,7 +1791,10 @@ class RotaryLargePanel(swing.JPanel):
                     # Black background
                     g2.setColor(awt.Color(0, 0, 0))
                     g2.fillRect(plateRect.x, plateRect.y, plateRect.width, plateRect.height)
-                    
+                                  
+                    # Text must be drawn in a contrasting colour (otherwise it is black-on-black).
+                    g2.setColor(awt.Color(255, 255, 255))
+                 
                     # Text on plate
                     stxt = str(special).upper()
                     DrawCellTextTwoLineOffset(g2, plateRect, stxt, FONT_FAM_NARROW, 11, 7, 0)
@@ -1742,6 +1835,9 @@ class RotaryLargeWindow(object):
 
         self._lastNowMinutes = None
 
+
+        self._LastRowIncreaseNote = None
+        self._LastColWarn = None
         self.GroupsPlan = []
         self.Columns = []
         self.GroupIndexByDest = {}
@@ -2012,6 +2108,16 @@ class RotaryLargeWindow(object):
         except:
             Thread = None
 
+        # Snapshot mutable state used for planning so the worker thread never touches self.* directly.
+        try:
+            LastNowSnapshot = self._lastNowMinutes
+        except:
+            LastNowSnapshot = None
+        try:
+            DisplayByColSnapshot = dict(self.DisplayByCol or {})
+        except:
+            DisplayByColSnapshot = {}
+
         def _Work():
             rowsAll = CsvRows()
             capStations = max(3, int(PREF_ROWS) * 3)
@@ -2036,9 +2142,49 @@ class RotaryLargeWindow(object):
             if desiredGroups < minGroups:
                 desiredGroups = minGroups
             groupsRaw = BuildDestinationGroupsWithCap(rowsAll, desiredGroups, capStations, PREF_ROWS)
-            plan = AllocateColumnsToGroups(groupsRaw, minCols)
+            # First pass plan to get stable group indices for destinations.
+            planSeed = AllocateColumnsToGroups(groupsRaw, max(1, len(groupsRaw or [])))
+            giByDest = BuildGroupIndexByDest(planSeed)
+            # Compute required columns per group based on the look-ahead window over the whole week.
+            minColsByGroup = ComputeMinColumnsByGroup(rowsAll, giByDest, FUTURE_WINDOW_MIN)
+            hardMinCols = 0
+            for gi in range(len(planSeed or [])):
+                try:
+                    hardMinCols += int(max(0, int(minColsByGroup.get(int(gi), 0))))
+                except:
+                    pass
+            if hardMinCols < 1:
+                hardMinCols = 1
+            # Preferred maximum columns acts as a cap unless the timetable requires more.
+            try:
+                prefMax = int(PREF_MAX_COLS)
+            except:
+                prefMax = 15
+            if prefMax < 1:
+                prefMax = 1
+            totalCols = int(hardMinCols)
+            ColWarnKey = None
+            if int(hardMinCols) > int(prefMax):
+                try:
+                    ColWarnKey = (int(hardMinCols), int(prefMax))
+                except:
+                    ColWarnKey = ('?', '?')
+            # Allocate at least the required columns to each group, then distribute any extra (if ever used).
+            plan = []
+            for gi, g in enumerate(groupsRaw or []):
+                try:
+                    need = int(minColsByGroup.get(int(gi), 0))
+                except:
+                    need = 0
+                if need < 0:
+                    need = 0
+                if need == 0:
+                    need = 1
+                ng = {'Dests': list(g.get('Dests') or []), 'Freq': int(g.get('Freq', 0)), 'Cols': int(need)}
+                ng['StationSet'] = set(g.get('StationSet', set()))
+                plan.append(ng)
+            # Rebuild destination->group index mapping after final plan.
             giByDest = BuildGroupIndexByDest(plan)
-
             platformSeq = BuildPlatformRollerSequence(rowsAll)
             timeSeqs = TimeRollerSequences(USE_12_HOUR_TIME)
 
@@ -2083,7 +2229,7 @@ class RotaryLargeWindow(object):
             nowMin = CurrentMinutes()
             warpDetected = False
             try:
-                lastNow = self._lastNowMinutes
+                lastNow = LastNowSnapshot
             except:
                 lastNow = None
             try:
@@ -2099,12 +2245,12 @@ class RotaryLargeWindow(object):
                     warpDetected = (delta != 0) if threshold == 0 else (delta >= threshold)
                 except:
                     warpDetected = True
-            self._lastNowMinutes = nowMin
+            LastNowComputed = nowMin
 
             desiredByCol = {}
             usedRn = set()
             try:
-                curDisplay = {} if warpDetected else dict(self.DisplayByCol or {})
+                curDisplay = {} if warpDetected else dict(DisplayByColSnapshot or {})
             except:
                 curDisplay = {}
 
@@ -2150,6 +2296,29 @@ class RotaryLargeWindow(object):
                 queues[gi] = q
 
             def _ApplyPlanAndAnimate():
+                try:
+                    self._lastNowMinutes = LastNowComputed
+                except:
+                    try:
+                        self._lastNowMinutes = nowMin
+                    except:
+                        pass
+
+
+                # Only log this once per required column-count to avoid console spam.
+                try:
+                    if ColWarnKey is not None:
+                        if getattr(self, '_LastColWarn', None) != ColWarnKey:
+                            try:
+                                print('[PIDRotaryLarge] WARN: timetable requires ' + str(ColWarnKey[0]) + ' columns; exceeds preferred maximum ' + str(ColWarnKey[1]))
+                            except:
+                                pass
+                            self._LastColWarn = ColWarnKey
+                    else:
+                        self._LastColWarn = None
+                except:
+                    pass
+
                 self.GroupsPlan = list(renderGroups)
                 self.Columns = list(cols)
                 self.GroupIndexByDest = dict(giByDest)
@@ -2167,8 +2336,16 @@ class RotaryLargeWindow(object):
                 if effRows < int(PREF_ROWS):
                     effRows = int(PREF_ROWS)
                 if effRows != int(PREF_ROWS):
+                    # Only log this once per effective row-count to avoid console spam.
                     try:
-                        print('[PIDRotaryLarge] NOTE: increasing rows from preferred ' + str(PREF_ROWS) + ' to ' + str(effRows))
+                        if getattr(self, '_LastRowIncreaseNote', None) != int(effRows):
+                            print('[PIDRotaryLarge] NOTE: increasing rows from preferred ' + str(PREF_ROWS) + ' to ' + str(effRows))
+                            self._LastRowIncreaseNote = int(effRows)
+                    except:
+                        pass
+                else:
+                    try:
+                        self._LastRowIncreaseNote = None
                     except:
                         pass
                 self.RenderGeom['Rows'] = int(effRows)
