@@ -35,10 +35,62 @@ import TimingRegister as TR  # read-only access to timing tuples (reportingNumbe
 import TASBeanLookup as TBL
 import PlatformAllocationRegister as PAR   # allocation takes precedence over timetable/overrides
 
+# ---- Cross-script: locate the summary PID frame so this script can match its on-screen size.
+def CRTS_FindSummaryFrame():
+    try:
+        frames = awt.Frame.getFrames()
+    except:
+        return None
+    for f in frames:
+        try:
+            if f is None:
+                continue
+            title = f.getTitle()
+        except:
+            continue
+        if str(title or "") == "Passenger information display: summary of departures":
+            return f
+    return None
+
 # ==================
 # UNIFORM SCALING
 # ==================
 CRTS_TargetGlassWidth = 640.0  # matches your CRT summary
+
+# If the CRT summary window is already running, match its actual on-screen size.
+# The summary window may auto-tighten to a smaller CRT glass width; we replicate that here
+# so the platform windows have the same fixed cabinet size that you see on screen.
+CRTS_TargetGlassWidthFromSummary = None
+try:
+    _sf = CRTS_FindSummaryFrame()
+    if _sf is not None:
+        try:
+            _cp = _sf.getContentPane()
+            _sz = _cp.getSize()
+            _w = int(_sz.width)
+            _h = int(_sz.height)
+            if _w <= 0 or _h <= 0:
+                _pref = _cp.getPreferredSize()
+                _w = int(_pref.width)
+                _h = int(_pref.height)
+            # Summary geometry constants (from PIDCRTSummary.py):
+            # FramePad=4, InnerPad=16, SideMargin=6, BezelInset=3, HeaderHeight=108, Top/BottomMargin=6.
+            _glassW_byW = _w - (2*4 + 2*16 + 2*6 + 2*3)
+            _glassH = _h - (2*4 + 2*16 + 108 + 6 + 6 + 2*3)
+            _glassW_byH = int(round(_glassH * 4.0/3.0))
+            _cands = []
+            if _glassW_byW > 100:
+                _cands.append(int(round(_glassW_byW)))
+            if _glassW_byH > 100:
+                _cands.append(int(round(_glassW_byH)))
+            if _cands:
+                CRTS_TargetGlassWidthFromSummary = float(min(_cands))
+        except:
+            CRTS_TargetGlassWidthFromSummary = None
+except:
+    CRTS_TargetGlassWidthFromSummary = None
+if CRTS_TargetGlassWidthFromSummary is not None:
+    CRTS_TargetGlassWidth = CRTS_TargetGlassWidthFromSummary
 
 # ---- BASE ----
 CRTS_BaseGlassWidth = 820.0
@@ -79,6 +131,19 @@ CRTS_CrtBezelInset = CRTS_S(CRTS_BaseCrtBezelInset)
 CRTS_SideMargin = CRTS_S(CRTS_BaseSideMargin)
 CRTS_TopMargin = CRTS_S(CRTS_BaseTopMargin)
 CRTS_BottomMargin = CRTS_S(CRTS_BaseBottomMargin)
+
+# ==================
+# COMPACT WINDOW SIZE (match PIDCRTSummary)
+# ==================
+# Override the cabinet/margin geometry so the overall window matches PIDCRTSummary.
+CRTS_HeaderHeight = 108
+CRTS_InnerPad = 16
+CRTS_FramePad = 4
+CRTS_CrtBezelInset = 3
+CRTS_SideMargin = 6
+CRTS_TopMargin = 6
+CRTS_BottomMargin = 6
+
 CRTS_RuleOffsetPx = CRTS_S(CRTS_BaseRuleOffset)
 CRTS_PlatExtraGap = CRTS_S(CRTS_BasePlatGap)
 CRTS_StrokeEdge = max(2, int(round(CRTS_BaseStrokeEdge * CRTS_Scale)))
@@ -275,7 +340,7 @@ def CRTS_HasDepartedAtConfiguredTP(reportingNumber, dayName, nowMinutes):
 # ---- "Due within X minutes" window ----
 CRTS_DefaultWithinMinutes = 5  # default when memory not set/invalid
 
-def HasAnyTimingToday(reportingNumber, dayName):
+def CRTS_HasAnyTimingToday(reportingNumber, dayName):
     try:
         tps = TR.listTimingPoints() or []
     except:
@@ -637,6 +702,25 @@ class CRTS_CRTPIDWindow(object):
         self.refresh()
         self.frame.setVisible(True)
 
+        # Some Swing setups can ignore pack()/preferred sizes with null layouts.
+        # Enforce the fixed cabinet size after the window is realized (insets known).
+        def _crts_enforce_size():
+            try:
+                ins = self.frame.getInsets()
+                ow = int(frameW + ins.left + ins.right)
+                oh = int(frameH + ins.top + ins.bottom)
+                self.frame.setSize(ow, oh)
+                self.frame.setMinimumSize(Dimension(ow, oh))
+                self.frame.setMaximumSize(Dimension(ow, oh))
+                self.frame.validate()
+            except:
+                pass
+        try:
+            swing.SwingUtilities.invokeLater(_crts_enforce_size)
+        except:
+            pass
+
+
     # ---- selection (with depart-clearing, due-within-X, and ECS filtering) ----
     def pick_next_train(self):
         rows = CRTS_CsvRows()
@@ -770,7 +854,7 @@ class CRTS_CRTPIDWindow(object):
                     direct = getDisruption(rn)
                 except:
                     direct = None
-                if (direct is None) and (not HasAnyTimingToday(rn, curDay)):
+                if (direct is None) and (not CRTS_HasAnyTimingToday(rn, curDay)):
                     if depMin < curMin:
                         continue
             adjusted = expMin if expMin is not None else depMin
