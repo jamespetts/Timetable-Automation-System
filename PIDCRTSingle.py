@@ -21,6 +21,11 @@
 # <<PID-DISP-NAME: Monochrome CRT platform display>>
 # <<DESCRIPTION: British Rail 1980s monitors showing the next train's time, destination and calling patterm per platform>>
 
+#
+# User-configurable settings discovered by TASSetup:
+# <<SETTING DESCRIPTION NUMBER: Monochrome CRT platform display: Due window (minutes)>>
+# <<SETTING DESCRIPTION STRING: Monochrome CRT platform display: ECS filter terms>>
+
 import javax.swing as swing
 import java.awt as awt
 from java.awt import Color, Font, GradientPaint, RenderingHints, BasicStroke, Dimension
@@ -198,8 +203,23 @@ CRTS_TimetableMem = TBL.ProvideMemoryBySuffix("CURRENTTIMETABLE", "")
 CRTS_OverridesMem = TBL.ProvideMemoryBySuffix("PID_PLATFORM_OVERRIDES", "")
 CRTS_DepartTPMem = TBL.ProvideMemoryBySuffix("PID_DEPARTURE_TP", "")
 CRTS_WithInMinMem = TBL.ProvideMemoryBySuffix("PID_CRT_WITHIN_MINUTES", "5")
+# TASSetup user-setting memories (friendly label and legacy key).
+# Friendly label: "Due window (minutes)" -> TAS_USER_SETTING_DUE_WINDOW_MINUTES_
+TAS_USER_SETTING_MONOCHROME_CRT_PLATFORM_DISPLAY_DUE_WINDOW_MINUTES_Mem = TBL.ProvideMemoryBySuffix("TAS_USER_SETTING_MONOCHROME_CRT_PLATFORM_DISPLAY_DUE_WINDOW_MINUTES_", "5")
+# Legacy TASSetup key: WITHIN_MINUTES
+TAS_USER_SETTING_MONOCHROME_CRT_PLATFORM_DISPLAY_WITHIN_MINUTES_LegacyMem = TBL.ProvideMemoryBySuffix("TAS_USER_SETTING_WITHIN_MINUTES", "")
+
 CRTS_EcsFilterMem = TBL.ProvideMemoryBySuffix("PID_ECS_FILTER_TERMS", "")
 
+# TASSetup user-setting memory for ECS filter terms (semicolon/comma separated). Seeded with defaults on first run.
+TAS_USER_SETTING_MONOCHROME_CRT_PLATFORM_DISPLAY_ECS_FILTER_TERMS_Mem = TBL.ProvideMemoryBySuffix("TAS_USER_SETTING_MONOCHROME_CRT_PLATFORM_DISPLAY_ECS_FILTER_TERMS", "ECS;DEPOT;CARRIAGE SIDINGS;CARRIAGE SDGS;SIDING;SIDINGS;C.S.;CS;TMD;TRSMD;UP SIDINGS;DOWN SIDINGS")
+try:
+    if TAS_USER_SETTING_MONOCHROME_CRT_PLATFORM_DISPLAY_ECS_FILTER_TERMS_Mem is not None:
+        _v = TAS_USER_SETTING_MONOCHROME_CRT_PLATFORM_DISPLAY_ECS_FILTER_TERMS_Mem.getValue()
+        if _v is None or str(_v).strip() == "":
+            TAS_USER_SETTING_MONOCHROME_CRT_PLATFORM_DISPLAY_ECS_FILTER_TERMS_Mem.setValue("ECS;DEPOT;CARRIAGE SIDINGS;CARRIAGE SDGS;SIDING;SIDINGS;C.S.;CS;TMD;TRSMD;UP SIDINGS;DOWN SIDINGS")
+except:
+    pass
 # Optional authoritative fast clock
 CRTS_Timebase = InstanceManager.getDefault(jmri.Timebase)
 
@@ -290,7 +310,7 @@ def CRTS_DepartureTPList():
     """
     names = []
     try:
-        raw = CRTS_DepartTPMem.getValue() if CRTS_DepartTPMem is not None else None
+        raw = TAS_USER_SETTING_MONOCHROME_CRT_PLATFORM_DISPLAY_ECS_FILTER_TERMS_Mem.getValue() if TAS_USER_SETTING_MONOCHROME_CRT_PLATFORM_DISPLAY_ECS_FILTER_TERMS_Mem is not None else None
         if raw:
             parts = str(raw).replace(",", ";").split(";")
             for p in parts:
@@ -360,21 +380,30 @@ def CRTS_HasAnyTimingToday(reportingNumber, dayName):
     return False
 
 def CRTS_ReadWithinMinutes():
-    """Read X from IMPID_CRT_WITHIN_MINUTES; default to 5; clamp to sensible range."""
+ """Read due-window minutes. Preference order:
+ 1) TASSetup friendly setting (Due window minutes)
+ 2) TASSetup legacy setting (WITHIN_MINUTES)
+ 3) Legacy runtime memory PID_CRT_WITHIN_MINUTES
+ 4) Default
+ """
+ try:
+  for mem in [TAS_USER_SETTING_MONOCHROME_CRT_PLATFORM_DISPLAY_DUE_WINDOW_MINUTES_Mem, TAS_USER_SETTING_MONOCHROME_CRT_PLATFORM_DISPLAY_WITHIN_MINUTES_LegacyMem, CRTS_WithInMinMem]:
+   try:
+    v = mem.getValue() if mem is not None else None
+   except:
+    v = None
+   s = ("" if v is None else str(v)).strip()
+   if s != "":
     try:
-        val = CRTS_WithInMinMem.getValue() if CRTS_WithInMinMem is not None else None
-        if val is None:
-            return CRTS_DefaultWithinMinutes
-        s = str(val).strip()
-        if not s:
-            return CRTS_DefaultWithinMinutes
-        x = int(s)
-        if x < 0:
-            return CRTS_DefaultWithinMinutes
-        return x
+     x = int(float(s))
     except:
-        return CRTS_DefaultWithinMinutes
-
+     x = CRTS_DefaultWithinMinutes
+    if x < 0:
+     x = CRTS_DefaultWithinMinutes
+    return x
+  return CRTS_DefaultWithinMinutes
+ except:
+  return CRTS_DefaultWithinMinutes
 # ---- NEW: ECS detector (class-5 or keyword heuristics) ----
 CRTS_DefaultEcsTerms = [
     "ECS", "DEPOT", "CARRIAGE SIDINGS", "CARRIAGE SDGS",
@@ -383,21 +412,26 @@ CRTS_DefaultEcsTerms = [
 ]  # NEW
 
 def CRTS_ReadExtraEcsTerms():
-    """Read extra ECS terms from IMPID_ECS_FILTER_TERMS (split on ';' or ',')."""  # NEW
-    try:
-        raw = CRTS_EcsFilterMem.getValue() if CRTS_EcsFilterMem is not None else None
-        if not raw:
-            return []
-        parts = str(raw).replace(",", ";").split(";")
-        out = []
-        for p in parts:
-            t = p.strip()
-            if t:
-                out.append(t.upper())
-        return out
-    except:
-        return []
-
+ """Read extra ECS terms from TASSetup setting or legacy memory (split on ';' or ',')."""
+ try:
+  raw = None
+  try:
+   raw = TAS_USER_SETTING_MONOCHROME_CRT_PLATFORM_DISPLAY_ECS_FILTER_TERMS_Mem.getValue() if TAS_USER_SETTING_MONOCHROME_CRT_PLATFORM_DISPLAY_ECS_FILTER_TERMS_Mem is not None else None
+  except:
+   raw = None
+  if not raw:
+   raw = CRTS_EcsFilterMem.getValue() if CRTS_EcsFilterMem is not None else None
+  if not raw:
+   return []
+  parts = str(raw).replace(",", ";").split(";")
+  out = []
+  for p in parts:
+   t = p.strip()
+   if t:
+    out.append(t.upper())
+  return out
+ except:
+  return []
 def CRTS_IsEcsWorking(row):
     """
     Return True if the row is an ECS/empty-to-depot working.
@@ -681,8 +715,14 @@ class CRTS_CRTPIDWindow(object):
             CRTS_DepartTPMem.addPropertyChangeListener(self.RefreshListener)
         if CRTS_WithInMinMem is not None:
             CRTS_WithInMinMem.addPropertyChangeListener(self.RefreshListener)
+        if TAS_USER_SETTING_MONOCHROME_CRT_PLATFORM_DISPLAY_DUE_WINDOW_MINUTES_Mem is not None:
+            TAS_USER_SETTING_MONOCHROME_CRT_PLATFORM_DISPLAY_DUE_WINDOW_MINUTES_Mem.addPropertyChangeListener(self.RefreshListener)
+        if TAS_USER_SETTING_MONOCHROME_CRT_PLATFORM_DISPLAY_WITHIN_MINUTES_LegacyMem is not None:
+            TAS_USER_SETTING_MONOCHROME_CRT_PLATFORM_DISPLAY_WITHIN_MINUTES_LegacyMem.addPropertyChangeListener(self.RefreshListener)
         if CRTS_EcsFilterMem is not None: # NEW: react to ECS filter changes
             CRTS_EcsFilterMem.addPropertyChangeListener(self.RefreshListener)
+        if TAS_USER_SETTING_MONOCHROME_CRT_PLATFORM_DISPLAY_ECS_FILTER_TERMS_Mem is not None:
+            TAS_USER_SETTING_MONOCHROME_CRT_PLATFORM_DISPLAY_ECS_FILTER_TERMS_Mem.addPropertyChangeListener(self.RefreshListener)
 
         # Ensure user close runs our cleanup, unregisters from manager, then disposes.
         self.frame.setDefaultCloseOperation(swing.JFrame.DO_NOTHING_ON_CLOSE)
@@ -865,7 +905,7 @@ class CRTS_CRTPIDWindow(object):
 
             # Due-within-X constraint
             delta = (adjusted - curMin) % (24*60)
-            if delta == 0 or (within >= 0 and 0 <= delta <= within):
+            if within == 0 or delta == 0 or (within >= 0 and 0 <= delta <= within):
                 cands.append({
                     "rn": rn,
                     "time": dep,
@@ -1131,11 +1171,17 @@ class CRTS_CRTPIDWindow(object):
         try:
             if L is not None and CRTS_WithInMinMem is not None:
                 CRTS_WithInMinMem.removePropertyChangeListener(L)
+            if L is not None and TAS_USER_SETTING_MONOCHROME_CRT_PLATFORM_DISPLAY_DUE_WINDOW_MINUTES_Mem is not None:
+                TAS_USER_SETTING_MONOCHROME_CRT_PLATFORM_DISPLAY_DUE_WINDOW_MINUTES_Mem.removePropertyChangeListener(L)
+            if L is not None and TAS_USER_SETTING_MONOCHROME_CRT_PLATFORM_DISPLAY_WITHIN_MINUTES_LegacyMem is not None:
+                TAS_USER_SETTING_MONOCHROME_CRT_PLATFORM_DISPLAY_WITHIN_MINUTES_LegacyMem.removePropertyChangeListener(L)
         except:
             pass
         try:
             if L is not None and CRTS_EcsFilterMem is not None: # NEW
                 CRTS_EcsFilterMem.removePropertyChangeListener(L)
+            if L is not None and TAS_USER_SETTING_MONOCHROME_CRT_PLATFORM_DISPLAY_ECS_FILTER_TERMS_Mem is not None:
+                TAS_USER_SETTING_MONOCHROME_CRT_PLATFORM_DISPLAY_ECS_FILTER_TERMS_Mem.removePropertyChangeListener(L)
         except:
             pass
 
@@ -1167,8 +1213,14 @@ class CRTS_PlatformCRTManager(object):
             CRTS_DepartTPMem.addPropertyChangeListener(self.refresh_all)
         if CRTS_WithInMinMem is not None:
             CRTS_WithInMinMem.addPropertyChangeListener(self.refresh_all)
+        if TAS_USER_SETTING_MONOCHROME_CRT_PLATFORM_DISPLAY_DUE_WINDOW_MINUTES_Mem is not None:
+            TAS_USER_SETTING_MONOCHROME_CRT_PLATFORM_DISPLAY_DUE_WINDOW_MINUTES_Mem.addPropertyChangeListener(self.refresh_all)
+        if TAS_USER_SETTING_MONOCHROME_CRT_PLATFORM_DISPLAY_WITHIN_MINUTES_LegacyMem is not None:
+            TAS_USER_SETTING_MONOCHROME_CRT_PLATFORM_DISPLAY_WITHIN_MINUTES_LegacyMem.addPropertyChangeListener(self.refresh_all)
         if CRTS_EcsFilterMem is not None:  # NEW: ECS filter changes
             CRTS_EcsFilterMem.addPropertyChangeListener(self.refresh_all)
+        if TAS_USER_SETTING_MONOCHROME_CRT_PLATFORM_DISPLAY_ECS_FILTER_TERMS_Mem is not None:
+            TAS_USER_SETTING_MONOCHROME_CRT_PLATFORM_DISPLAY_ECS_FILTER_TERMS_Mem.addPropertyChangeListener(self.refresh_all)
         self.build()
 
     def build(self):
