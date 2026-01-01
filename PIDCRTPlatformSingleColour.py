@@ -24,6 +24,11 @@
 #
 # <<PID-DISP-NAME: Colour CRT platform display>>
 # <<DESCRIPTION: British Rail 1990s colour CRT monitor showing the next train per platform>>
+#
+# User-configurable settings discovered by TASSetup:
+# <<SETTING DESCRIPTION NUMBER: Colour CRT platform display: Due window (minutes)>>
+# <<SETTING DESCRIPTION STRING: Colour CRT platform display: ECS filter terms>>
+
 # BUILD-ID: CRTPlatformSingleColourV2 2025-12-29
 # BUILD-ID: CRTPlatformSingleColourV3 2025-12-29
 # BUILD-ID: CRTPlatformSingleColourV3_Final 2025-12-29
@@ -150,6 +155,19 @@ CRTSPC_DepartTPMem = TBL.ProvideMemoryBySuffix("PID_DEPARTURE_TP", "")
 CRTSPC_WithInMinMem = TBL.ProvideMemoryBySuffix("PID_CRT_WITHIN_MINUTES", "5")
 CRTSPC_EcsFilterMem = TBL.ProvideMemoryBySuffix("PID_ECS_FILTER_TERMS", "")
 
+
+# TASSetup user-setting memories (friendly labels are unique to this display to avoid clashes).
+TAS_USER_SETTING_COLOUR_CRT_PLATFORM_DISPLAY_DUE_WINDOW_MINUTES_Mem = TBL.ProvideMemoryBySuffix("TAS_USER_SETTING_COLOUR_CRT_PLATFORM_DISPLAY_DUE_WINDOW_MINUTES_", "5")
+# Legacy TASSetup key: WITHIN_MINUTES (shared across displays; retained for compatibility).
+TAS_USER_SETTING_COLOUR_CRT_PLATFORM_DISPLAY_WITHIN_MINUTES_LegacyMem = TBL.ProvideMemoryBySuffix("TAS_USER_SETTING_WITHIN_MINUTES", "")
+TAS_USER_SETTING_COLOUR_CRT_PLATFORM_DISPLAY_ECS_FILTER_TERMS_Mem = TBL.ProvideMemoryBySuffix("TAS_USER_SETTING_COLOUR_CRT_PLATFORM_DISPLAY_ECS_FILTER_TERMS", "ECS;DEPOT;CARRIAGE SIDINGS;CARRIAGE SDGS;SIDING;SIDINGS;C.S.;CS;TMD;TRSMD;UP SIDINGS;DOWN SIDINGS")
+try:
+    if TAS_USER_SETTING_COLOUR_CRT_PLATFORM_DISPLAY_ECS_FILTER_TERMS_Mem is not None:
+        _v = TAS_USER_SETTING_COLOUR_CRT_PLATFORM_DISPLAY_ECS_FILTER_TERMS_Mem.getValue()
+        if _v is None or str(_v).strip() == "":
+            TAS_USER_SETTING_COLOUR_CRT_PLATFORM_DISPLAY_ECS_FILTER_TERMS_Mem.setValue("ECS;DEPOT;CARRIAGE SIDINGS;CARRIAGE SDGS;SIDING;SIDINGS;C.S.;CS;TMD;TRSMD;UP SIDINGS;DOWN SIDINGS")
+except:
+    pass
 # Optional authoritative fast clock
 CRTSPC_Timebase = InstanceManager.getDefault(jmri.Timebase)
 
@@ -322,20 +340,31 @@ CRTSPC_DefaultWithinMinutes = 5
 
 
 def CRTSPC_ReadWithinMinutes():
+    """Read due-window minutes. Preference order:
+    1) TASSetup friendly setting (unique to this display)
+    2) TASSetup legacy setting (WITHIN_MINUTES)
+    3) Legacy runtime memory PID_CRT_WITHIN_MINUTES
+    4) Default
+    0 means infinite (no due-window filtering).
+    """
     try:
-        val = CRTSPC_WithInMinMem.getValue() if CRTSPC_WithInMinMem is not None else None
-        if val is None:
-            return CRTSPC_DefaultWithinMinutes
-        s = str(val).strip()
-        if not s:
-            return CRTSPC_DefaultWithinMinutes
-        x = int(s)
-        if x < 0:
-            return CRTSPC_DefaultWithinMinutes
-        return x
+        for mem in [TAS_USER_SETTING_COLOUR_CRT_PLATFORM_DISPLAY_DUE_WINDOW_MINUTES_Mem, TAS_USER_SETTING_COLOUR_CRT_PLATFORM_DISPLAY_WITHIN_MINUTES_LegacyMem, CRTSPC_WithInMinMem]:
+            try:
+                v = mem.getValue() if mem is not None else None
+            except:
+                v = None
+            s = ("" if v is None else str(v)).strip()
+            if s != "":
+                try:
+                    x = int(float(s))
+                except:
+                    x = CRTSPC_DefaultWithinMinutes
+                if x < 0:
+                    x = CRTSPC_DefaultWithinMinutes
+                return x
+        return CRTSPC_DefaultWithinMinutes
     except:
         return CRTSPC_DefaultWithinMinutes
-
 # ---- On-day timing existence (on-time resilience) ----
 
 def CRTSPC_HasAnyTimingToday(reportingNumber, dayName):
@@ -367,8 +396,15 @@ CRTSPC_DefaultEcsTerms = [
 
 
 def CRTSPC_ReadExtraEcsTerms():
+    """Read extra ECS terms from TASSetup setting or legacy memory (split on ';' or ',')."""
     try:
-        raw = CRTSPC_EcsFilterMem.getValue() if CRTSPC_EcsFilterMem is not None else None
+        raw = None
+        try:
+            raw = TAS_USER_SETTING_COLOUR_CRT_PLATFORM_DISPLAY_ECS_FILTER_TERMS_Mem.getValue() if TAS_USER_SETTING_COLOUR_CRT_PLATFORM_DISPLAY_ECS_FILTER_TERMS_Mem is not None else None
+        except:
+            raw = None
+        if not raw:
+            raw = CRTSPC_EcsFilterMem.getValue() if CRTSPC_EcsFilterMem is not None else None
         if not raw:
             return []
         parts = str(raw).replace(",", ";").split(";")
@@ -380,8 +416,6 @@ def CRTSPC_ReadExtraEcsTerms():
         return out
     except:
         return []
-
-
 def CRTSPC_IsEcsWorking(row):
     rn = ((row.get("Reporting number", "") or "")).strip().upper()
     if rn.startswith("5"):
@@ -994,6 +1028,12 @@ class CRTSPC_PlatformWindow(object):
             CRTSPC_DepartTPMem.addPropertyChangeListener(self._pcl)
         if CRTSPC_WithInMinMem is not None:
             CRTSPC_WithInMinMem.addPropertyChangeListener(self._pcl)
+        if TAS_USER_SETTING_COLOUR_CRT_PLATFORM_DISPLAY_DUE_WINDOW_MINUTES_Mem is not None:
+            TAS_USER_SETTING_COLOUR_CRT_PLATFORM_DISPLAY_DUE_WINDOW_MINUTES_Mem.addPropertyChangeListener(self._pcl)
+        if TAS_USER_SETTING_COLOUR_CRT_PLATFORM_DISPLAY_WITHIN_MINUTES_LegacyMem is not None:
+            TAS_USER_SETTING_COLOUR_CRT_PLATFORM_DISPLAY_WITHIN_MINUTES_LegacyMem.addPropertyChangeListener(self._pcl)
+        if TAS_USER_SETTING_COLOUR_CRT_PLATFORM_DISPLAY_ECS_FILTER_TERMS_Mem is not None:
+            TAS_USER_SETTING_COLOUR_CRT_PLATFORM_DISPLAY_ECS_FILTER_TERMS_Mem.addPropertyChangeListener(self._pcl)
         if CRTSPC_EcsFilterMem is not None:
             CRTSPC_EcsFilterMem.addPropertyChangeListener(self._pcl)
         if CRTSPC_PageSecondsMem is not None:
@@ -1067,6 +1107,12 @@ class CRTSPC_PlatformWindow(object):
             try:
                 if CRTSPC_WithInMinMem is not None:
                     CRTSPC_WithInMinMem.removePropertyChangeListener(pcl)
+                if TAS_USER_SETTING_COLOUR_CRT_PLATFORM_DISPLAY_DUE_WINDOW_MINUTES_Mem is not None:
+                    TAS_USER_SETTING_COLOUR_CRT_PLATFORM_DISPLAY_DUE_WINDOW_MINUTES_Mem.removePropertyChangeListener(pcl)
+                if TAS_USER_SETTING_COLOUR_CRT_PLATFORM_DISPLAY_WITHIN_MINUTES_LegacyMem is not None:
+                    TAS_USER_SETTING_COLOUR_CRT_PLATFORM_DISPLAY_WITHIN_MINUTES_LegacyMem.removePropertyChangeListener(pcl)
+                if TAS_USER_SETTING_COLOUR_CRT_PLATFORM_DISPLAY_ECS_FILTER_TERMS_Mem is not None:
+                    TAS_USER_SETTING_COLOUR_CRT_PLATFORM_DISPLAY_ECS_FILTER_TERMS_Mem.removePropertyChangeListener(pcl)
             except:
                 pass
             try:
@@ -1255,7 +1301,7 @@ class CRTSPC_PlatformWindow(object):
 
             # Due-within-X constraint
             delta = (adjusted - curMin) % (24 * 60)
-            if delta == 0 or (within >= 0 and 0 <= delta <= within):
+            if within == 0 or delta == 0 or (within >= 0 and 0 <= delta <= within):
                 cands.append({
                     "rn": rn,
                     "time": dep,
