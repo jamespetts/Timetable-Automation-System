@@ -874,6 +874,72 @@ def _DrawWoodSurface(g, x, y, w, h):
         yy += step
 
 
+
+def _GetInTrayMetrics(x, y, w, h):
+    # Keep these in one place so the stack panel can place paper inside the tray.
+    pad = 14
+    lipH = 18
+    ix = x + pad
+    iy = y + pad
+    iw = max(10, w - pad * 2)
+    ih = max(10, h - pad * 2)
+    return {
+        'pad': pad,
+        'lipH': lipH,
+        'ix': ix,
+        'iy': iy,
+        'iw': iw,
+        'ih': ih,
+    }
+
+def _DrawInTrayBack(g, x, y, w, h):
+    # Draw the back/sides/bottom well of a simple grey office in-tray.
+    # The front lip is drawn separately so pages can appear inside the tray.
+    try:
+        g.setColor(awt.Color(35, 35, 35))
+        g.fillRoundRect(x + 3, y + 3, w, h, 18, 18)
+    except:
+        pass
+
+    # Outer tray
+    g.setColor(awt.Color(145, 145, 145))
+    g.fillRoundRect(x, y, w, h, 18, 18)
+    g.setColor(awt.Color(95, 95, 95))
+    g.drawRoundRect(x, y, w, h, 18, 18)
+
+    # Inner well
+    m = _GetInTrayMetrics(x, y, w, h)
+    ix = m.get('ix'); iy = m.get('iy'); iw = m.get('iw'); ih = m.get('ih')
+    g.setColor(awt.Color(120, 120, 120))
+    g.fillRoundRect(ix, iy, iw, ih, 14, 14)
+    g.setColor(awt.Color(80, 80, 80))
+    g.drawRoundRect(ix, iy, iw, ih, 14, 14)
+
+def _DrawInTrayFrontLip(g, x, y, w, h):
+    # Draw just the front lip so it can overlay paper.
+    m = _GetInTrayMetrics(x, y, w, h)
+    lipH = int(m.get('lipH', 18))
+    ly = y + h - lipH
+
+    # A subtle shadow just above the lip.
+    try:
+        g.setColor(awt.Color(0, 0, 0, 25))
+        g.fillRect(x + 8, ly - 3, w - 16, 3)
+    except:
+        pass
+
+    g.setColor(awt.Color(160, 160, 160))
+    g.fillRect(x + 6, ly, w - 12, lipH - 2)
+    g.setColor(awt.Color(105, 105, 105))
+    g.drawRect(x + 6, ly, w - 12, lipH - 2)
+
+def _DrawInTray(g, x, y, w, h):
+    # Draw a simple grey office in-tray.
+    # x,y,w,h define the overall tray outer bounds.
+    _DrawInTrayBack(g, x, y, w, h)
+    _DrawInTrayFrontLip(g, x, y, w, h)
+
+
 # ----------------------------
 # Printer panel
 # ----------------------------
@@ -1068,19 +1134,48 @@ class StackPanel(swing.JPanel):
         except:
             pass
 
-        # Compute paper size
-        pw = min(int(w * STACK_PAPER_FRACTION), int(STACK_PAPER_MAX_WIDTH))
-        ph = min(int(h * STACK_PAPER_FRACTION), int(STACK_PAPER_MAX_HEIGHT))
-        pw = max(200, pw)
-        ph = max(200, ph)
-        baseX = (w - pw) // 2
-        baseY = (h - ph) // 2
+
+        # Always show the in-tray surround; pages sit inside it.
+        margin = 18
+        tx = margin
+        ty = margin
+        tw = max(60, int(w) - margin * 2)
+        th = max(60, int(h) - margin * 2)
+
+        # Draw the tray back first.
+        _DrawInTrayBack(g, int(tx), int(ty), int(tw), int(th))
+
+        # Determine the usable inner area for paper (keep clear of the front lip).
+        m = _GetInTrayMetrics(int(tx), int(ty), int(tw), int(th))
+        pad = int(m.get('pad', 14))
+        lipH = int(m.get('lipH', 18))
+        ix = int(m.get('ix', int(tx) + pad))
+        iy = int(m.get('iy', int(ty) + pad))
+        iw = int(m.get('iw', int(tw) - pad * 2))
+        ih = int(m.get('ih', int(th) - pad * 2))
+
+        # Leave a little space at the bottom so the front lip can overlay the paper.
+        innerBottomClear = max(6, lipH - 6)
+        availX = ix + 6
+        availY = iy + 6
+        availW = max(60, iw - 12)
+        availH = max(60, ih - 12 - innerBottomClear)
 
         if n == 0:
-            _DrawWoodSurface(g, baseX, baseY, pw, ph)
-            g.setColor(awt.Color(230, 220, 210))
-            g.setFont(awt.Font('SansSerif', awt.Font.PLAIN, 12))
+            # Empty stack: just draw the front lip and return.
+            _DrawInTrayFrontLip(g, int(tx), int(ty), int(tw), int(th))
             return
+
+        # Compute paper size constrained to the inner tray well.
+        pw = min(int(availW), int(STACK_PAPER_MAX_WIDTH))
+        ph = min(int(availH), int(STACK_PAPER_MAX_HEIGHT))
+        pw = max(200, pw)
+        ph = max(200, ph)
+        pw = min(pw, int(availW))
+        ph = min(ph, int(availH))
+
+        baseX = int(availX + (availW - pw) // 2)
+        baseY = int(availY + (availH - ph) // 2)
 
         idx = self.Owner.StackIndex
         idx = max(0, min(n - 1, idx))
@@ -1105,21 +1200,17 @@ class StackPanel(swing.JPanel):
 
         page = pages[idx]
         txt = page.get('text', '') if isinstance(page, dict) else str(page)
-
         g.setColor(self.InkColor)
         g.setFont(self.Font)
-
         x0 = baseX + 14
         y0 = baseY + 30
         lineH = 18
         maxW = pw - 28
-
         fm = g.getFontMetrics(self.Font)
         cw = fm.charWidth('M')
         if cw <= 0:
             cw = 8
         maxChars = max(10, int(maxW // cw))
-
         y = y0
         for rawLine in str(txt).split('\n'):
             line = rawLine
@@ -1132,6 +1223,10 @@ class StackPanel(swing.JPanel):
             y += lineH
             if y > baseY + ph - 20:
                 break
+
+        # Finally draw the tray front lip over the bottom of the page.
+        _DrawInTrayFrontLip(g, int(tx), int(ty), int(tw), int(th))
+
 
 
 # ----------------------------
@@ -1195,6 +1290,10 @@ class TeleprinterFrame(swing.JFrame):
         footer.setBackground(awt.Color(55, 55, 55))
 
         self.BtnTearOff = swing.JButton('Tear off to stack')
+        try:
+            self.BtnTearOff.setEnabled(False)
+        except:
+            pass
         footer.add(self.BtnTearOff)
 
         self.BtnClearStack = swing.JButton('Clear stack')
@@ -1221,12 +1320,15 @@ class TeleprinterFrame(swing.JFrame):
         self.PrintTimer.start()
 
         self.setVisible(True)
+        self._UpdateButtonStates()
         self.PrinterPanel.repaint()
         self.StackPanel.repaint()
 
+    
     def OnHubChanged(self):
         if self.IsClosed:
             return
+        self._UpdateButtonStates()
         # Keep stack index on newest
         try:
             n = int(getattr(self, 'LastKnownStackCount', 0))
@@ -1237,15 +1339,115 @@ class TeleprinterFrame(swing.JFrame):
         self.PrinterPanel.repaint()
         self.StackPanel.repaint()
 
-    def _SetStatus(self, s):
+    
+    def _UpdateButtonStates(self, pr=None):
+        # Enable Tear off only when a page is finished and fully ejected.
+        # Enable Clear stack only when there are pages in the stack.
+        canTear = False
+        stackCount = None
+
         try:
-            self.LblStatus.setText(str(s))
+            if pr is None:
+                # Try to read current printer state without blocking.
+                got = False
+                try:
+                    got = self.Hub.Lock.tryLock()
+                except:
+                    got = False
+                if got:
+                    try:
+                        pr = self.Hub.Printer
+                        try:
+                            stackCount = len(self.Hub.StackPages)
+                        except:
+                            stackCount = None
+                    finally:
+                        try:
+                            self.Hub.Lock.unlock()
+                        except:
+                            pass
+            else:
+                # Caller provided printer state; still attempt to get stack count.
+                got = False
+                try:
+                    got = self.Hub.Lock.tryLock()
+                except:
+                    got = False
+                if got:
+                    try:
+                        try:
+                            stackCount = len(self.Hub.StackPages)
+                        except:
+                            stackCount = None
+                    finally:
+                        try:
+                            self.Hub.Lock.unlock()
+                        except:
+                            pass
+
+            if pr is not None:
+                canTear = bool(pr.get('done', False)) and bool(pr.get('ejected', False))
+        except:
+            canTear = False
+
+        if stackCount is None:
+            try:
+                stackCount = int(getattr(self, 'LastKnownStackCount', 0))
+            except:
+                stackCount = 0
+
+        canClear = int(stackCount) > 0
+
+        try:
+            self.BtnTearOff.setEnabled(bool(canTear))
+        except:
+            pass
+        try:
+            self.BtnClearStack.setEnabled(bool(canClear))
         except:
             pass
 
     def _ClearStack(self):
         if self.IsClosed:
             return
+
+        # If already empty, do nothing (and keep the button greyed out).
+        got = False
+        try:
+            got = self.Hub.Lock.tryLock()
+        except:
+            got = False
+        if got:
+            try:
+                try:
+                    if len(self.Hub.StackPages) <= 0:
+                        try:
+                            self.LastKnownStackCount = 0
+                        except:
+                            pass
+                        self._UpdateButtonStates()
+                        return
+                except:
+                    pass
+            finally:
+                try:
+                    self.Hub.Lock.unlock()
+                except:
+                    pass
+
+        try:
+            choice = swing.JOptionPane.showConfirmDialog(
+                self,
+                'Clear the teleprinter stack for this JMRI runtime session?\nThis cannot be undone.',
+                'Confirm clear',
+                swing.JOptionPane.OK_CANCEL_OPTION,
+                swing.JOptionPane.WARNING_MESSAGE
+            )
+            if choice != swing.JOptionPane.OK_OPTION:
+                return
+        except:
+            return
+
         # EDT-safe: tryLock only.
         got = False
         try:
@@ -1262,7 +1464,15 @@ class TeleprinterFrame(swing.JFrame):
                 self.Hub.Lock.unlock()
             except:
                 pass
+
+        try:
+            self.LastKnownStackCount = 0
+        except:
+            pass
+
         self.OnHubChanged()
+        self._UpdateButtonStates()
+
 
     def _TearOff(self):
         if self.IsClosed:
@@ -1294,6 +1504,30 @@ class TeleprinterFrame(swing.JFrame):
         if changed:
             self.OnHubChanged()
 
+    def _SetStatus(self, statusText):
+        # Update the footer status label safely on the EDT.
+        try:
+            txt = str(statusText)
+        except:
+            txt = ''
+
+        def _Apply():
+            try:
+                self.LblStatus.setText(txt)
+            except:
+                pass
+
+        try:
+            if SwingUtilities.isEventDispatchThread():
+                _Apply()
+            else:
+                SwingUtilities.invokeLater(RunnableAdapter(_Apply))
+        except:
+            try:
+                _Apply()
+            except:
+                pass
+
     def _OnTick(self, e=None):
         if self.IsClosed:
             return
@@ -1318,8 +1552,8 @@ class TeleprinterFrame(swing.JFrame):
 
             # If printer is empty, start next pending.
             changed = _StartNextPendingIfIdleLocked(self.Hub) or changed
-
             pr = self.Hub.Printer
+            self._UpdateButtonStates(pr)
             if pr is None:
                 self._SetStatus('IDLE')
                 return
