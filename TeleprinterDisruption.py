@@ -11,23 +11,20 @@
 # You should have received a copy of the GNU General Public License along with the Timetable Automation System.
 # If not, see <https://www.gnu.org/licenses/>.
 #
-# Teleprinter-style disruption output (static paper stack) for signallers.
+# Teleprinter-style disruption output (printer + stack) for signallers.
 #
 # <<SIG-DISP-NAME: Teleprinter disruption messages>>
-# <<DESCRIPTION: Simulates a 1960s/1970s teleprinter feed of delays, early running and cancellations, printed as a navigable stack of static pages.>>
+# <<DESCRIPTION: Simulates a 1960s/1970s teleprinter with a live printer on the left and a removable paper stack on the right.>>
 #
 # <<SETTING DESCRIPTION BOOLEAN: Use 24-hour time>>
 #
 # IMPORTANT DESIGN NOTE (DO NOT "CLEAN UP" WITHOUT ASKING JAMES):
 # This script intentionally keeps a single shared runtime "hub" alive for the entire JMRI runtime session.
-# You may open and close the window many times. Closing a window does NOT stop the hub. This is deliberate to
-# prevent resource leaks/conflicts caused by creating multiple polling timers/listeners across repeated runs.
-# Any future code review that expects all resources to be released on window close must NOT remove this without
-# first confirming the requirement with James.
+# You may open and close the window many times. Closing a window does NOT stop the hub.
 #
 # PERFORMANCE NOTE:
-# This UI must paint immediately. Therefore, all polling and any timetable file reading is done OFF the Swing EDT
-# in a background daemon thread. Only UI updates are posted back to the EDT via SwingUtilities.invokeLater().
+# All polling and timetable file reading is done OFF the Swing EDT in a background daemon thread.
+# Swing painting and event handling must never block; EDT code uses tryLock() only.
 #
 # JMRI 5.14, Jython (Python 2.7). ASCII-only.
 
@@ -62,28 +59,32 @@ from jmri.profile import ProfileManager
 # UI sizing/appearance
 # ----------------------------
 
-# The teleprinter sheets are deliberately small. The window is sized so the page fills most of it.
-FRAME_WIDTH = 650
-FRAME_HEIGHT = 480
+FRAME_WIDTH = 980
+FRAME_HEIGHT = 520
 
-# Maximum paper size in pixels (regardless of window size)
-PAPER_MAX_WIDTH = 520
-PAPER_MAX_HEIGHT = 360
+# Left printer viewport and paper
+PRINTER_PAPER_WIDTH = 360
+PRINTER_PAPER_HEIGHT = 430
 
-# Paper size as a fraction of window size (also capped by max values above)
-PAPER_FRACTION = 0.80
+# Right stack paper (narrower)
+STACK_PAPER_MAX_WIDTH = 300
+STACK_PAPER_MAX_HEIGHT = 360
+STACK_PAPER_FRACTION = 0.82
 
 # Faded ink appearance: blend towards paper and apply alpha.
 INK_BLEND_TO_PAPER = 0.35  # 0.0 = raw ink, 1.0 = same as paper
 INK_ALPHA = 190            # 255 = opaque, lower = more faded
 
-# Printing animation. These control how quickly the newest page prints.
-# Typical teleprinters were about 10 characters per second.
-PRINT_TIMER_MS = 100       # tick interval in milliseconds
-PRINT_CHARS_PER_TICK = 1   # characters revealed per tick
+# Printing animation.
+PRINT_TIMER_MS = 35
+PRINT_CHARS_PER_TICK = 1
 
-# Delay between the end of one page printing and the start of the next (milliseconds).
-INTER_MESSAGE_DELAY_MS = 5000
+# Paper movement animation.
+SCROLL_PIXELS_PER_TICK = 2
+LINE_HEIGHT_PX = 20
+
+# After printing the message body, feed these blank lines to eject the page.
+EJECT_BLANK_LINES = 10
 
 
 # ----------------------------
@@ -102,9 +103,16 @@ def _GetOrCreateHub():
         sys.modules[_HUB_MODULE_KEY] = hub
 
         hub.Windows = []
-        hub.Messages = []
-        hub.PendingMessages = []
-        hub.PrintOwnerId = None
+
+        # Stack pages (fully printed, removable).
+        hub.StackPages = []
+
+        # Current printer job/page, or None.
+        hub.Printer = None
+
+        # Pending pages waiting to print.
+        hub.PendingPages = []
+
         hub.TrainState = {}
         hub.LastSeenDisruptions = {}
 
@@ -124,6 +132,9 @@ def _GetOrCreateHub():
         hub.PollThread = None
         hub.PollStop = False
 
+        # Only one window drives printing/promotions.
+        hub.PrintOwnerId = None
+
     return hub
 
 
@@ -135,7 +146,6 @@ _TimeMem = TBL.ProvideMemoryBySuffix('CURRENTTIME', '')
 _DayMem = TBL.ProvideMemoryBySuffix('DAYOFWEEK', '')
 _TimetableMem = TBL.ProvideMemoryBySuffix('CURRENTTIMETABLE', '')
 
-# Per-display setting (seeded here so TASSetup can edit it after first run)
 _SettingUse24hMem = TBL.ProvideMemoryBySuffix('TAS_USER_SETTING_USE_24_HOUR_TIME', 'true')
 
 
@@ -266,7 +276,6 @@ def _TimetablePathFromMemory():
 
 
 def _LoadTimetableIndex(hub, dayName):
-    # Called from background thread.
     path = _TimetablePathFromMemory()
     if not path or not os.path.exists(path):
         hub.TimetablePath = path
@@ -340,7 +349,6 @@ def _GetDestinationFromRow(row):
 
 
 def _GetLayoutEtaScheduledMinutes(row):
-    # ETA at layout location: Arr else Trigger. Fallback Dep for originating services.
     if not row:
         return None
     arr = (row.get('Arr', '') or '').strip()
@@ -357,7 +365,6 @@ def _GetLayoutEtaScheduledMinutes(row):
     if mm is not None:
         return mm
 
-    # Fallback: earliest TP
     best = None
     for k, v in row.items():
         if not k or not v:
@@ -373,7 +380,6 @@ def _GetLayoutEtaScheduledMinutes(row):
 
 
 def _MakeTrainIdentifier(hub, dayName, rn, use24h):
-    # Suppress TASxxx by identifying as time + destination.
     if not TU.IsDefaultReportingNumber(str(rn)):
         return str(rn)
     row = _RowForTrain(hub, dayName, rn)
@@ -512,7 +518,7 @@ def _BuildMessageText(hub, dayName, nowMin, rn, disruptionInt, tpName=None, tpTi
 
 
 # ----------------------------
-# Hub logic
+# Hub logic and queueing
 # ----------------------------
 
 
@@ -543,9 +549,87 @@ def _RateLimitMinutes(etaMin, nowMin):
 def _NotifyWindows(hub):
     for w in list(hub.Windows):
         try:
-            w.OnHubMessagesChanged()
+            w.OnHubChanged()
         except:
-            pass
+            try:
+                w.repaint()
+            except:
+                pass
+
+
+def _NewPrinterState(pageRec):
+    # pageRec contains full text.
+    return {
+        'page': pageRec,
+        'pos': 0,
+        'lines': [],
+        'currentLine': '',
+        'scrollAnim': 0,
+        'ejectRemaining': 0,
+        'done': False,
+        'ejected': False,
+    }
+
+
+def _AutoMovePrinterToStackLocked(hub):
+    # Caller must hold hub.Lock.
+    if hub.Printer is None:
+        return False
+    pr = hub.Printer
+    try:
+        if not pr.get('done', False):
+            return False
+        # Only auto-move once fully ejected.
+        if not pr.get('ejected', False):
+            return False
+    except:
+        return False
+
+    try:
+        page = pr.get('page', None)
+        if page is not None:
+            hub.StackPages.append(page)
+    except:
+        pass
+
+    hub.Printer = None
+    return True
+
+
+def _StartNextPendingIfIdleLocked(hub):
+    # Caller must hold hub.Lock.
+    if hub.Printer is not None:
+        return False
+    if not hub.PendingPages:
+        return False
+    nxt = hub.PendingPages.pop(0)
+    hub.Printer = _NewPrinterState(nxt)
+    return True
+
+
+def _AddIncomingPage(hub, pageRec):
+    # Returns True if the printer state or stack changed.
+    changed = False
+
+    hub.Lock.lock()
+    try:
+        # If printer is holding a finished page and a new page arrives, auto-move finished page to stack.
+        if hub.Printer is not None:
+            changed = _AutoMovePrinterToStackLocked(hub) or changed
+
+        if hub.Printer is None:
+            hub.Printer = _NewPrinterState(pageRec)
+            changed = True
+        else:
+            hub.PendingPages.append(pageRec)
+            changed = True
+    finally:
+        hub.Lock.unlock()
+
+    if changed:
+        SwingUtilities.invokeLater(RunnableAdapter(lambda: _NotifyWindows(hub)))
+
+    return changed
 
 
 def _AddMessage(hub, dayName, nowMin, rn, disruptionInt, tpName=None, tpTimeMin=None):
@@ -556,60 +640,52 @@ def _AddMessage(hub, dayName, nowMin, rn, disruptionInt, tpName=None, tpTimeMin=
         'timeMin': int(nowMin or 0),
         'rn': str(rn),
         'text': txt,
-        'printedChars': 0,
-        'done': False,
-        'doneAtMs': None,
     }
-
-    becameVisible = False
-    hub.Lock.lock()
-    try:
-        if not hasattr(hub, 'PendingMessages'):
-            hub.PendingMessages = []
-        # Hold back new pages while the newest visible page is still printing.
-        if hub.Messages and (not bool(hub.Messages[-1].get('done', False))):
-            hub.PendingMessages.append(rec)
-        else:
-            hub.Messages.append(rec)
-            becameVisible = True
-    finally:
-        hub.Lock.unlock()
-
-    if becameVisible:
-        SwingUtilities.invokeLater(RunnableAdapter(lambda: _NotifyWindows(hub)))
+    _AddIncomingPage(hub, rec)
 
 
-def _CullOldMessages(hub, dayName, nowMin):
+def _CullOldPages(hub, dayName, nowMin):
     nowAbs = _ComputeWeekAbsMinute(dayName, nowMin)
+
     hub.Lock.lock()
     try:
+        # Stack
         kept = []
-        for m in hub.Messages:
+        for m in hub.StackPages:
             try:
                 age = _AgeMinutes(nowAbs, m.get('absWeek', nowAbs))
                 if age < 1440:
                     kept.append(m)
             except:
                 kept.append(m)
-        hub.Messages = kept
+        hub.StackPages = kept
 
-        # Also cull any pending pages
-        if hasattr(hub, 'PendingMessages'):
-            keptP = []
-            for m in hub.PendingMessages:
-                try:
-                    age = _AgeMinutes(nowAbs, m.get('absWeek', nowAbs))
-                    if age < 1440:
-                        keptP.append(m)
-                except:
+        # Pending
+        keptP = []
+        for m in hub.PendingPages:
+            try:
+                age = _AgeMinutes(nowAbs, m.get('absWeek', nowAbs))
+                if age < 1440:
                     keptP.append(m)
-            hub.PendingMessages = keptP
+            except:
+                keptP.append(m)
+        hub.PendingPages = keptP
+
+        # Printer page: if older than 1 day, drop it.
+        if hub.Printer is not None:
+            try:
+                page = hub.Printer.get('page', None)
+                if page is not None:
+                    age = _AgeMinutes(nowAbs, page.get('absWeek', nowAbs))
+                    if age >= 1440:
+                        hub.Printer = None
+            except:
+                pass
     finally:
         hub.Lock.unlock()
 
 
 def _PollOnce(hub):
-    # Runs on background thread.
     dayName = _DayMem.getValue() or ''
     timeStr = _TimeMem.getValue() or ''
     nowMin = _ParseTimeToMinutes(timeStr)
@@ -617,13 +693,12 @@ def _PollOnce(hub):
         return
 
     _LoadTimetableIndex(hub, str(dayName))
-    _CullOldMessages(hub, str(dayName), nowMin)
+    _CullOldPages(hub, str(dayName), nowMin)
 
     if hub.LastTimingDay != str(dayName):
         hub.LastTimingDay = str(dayName)
         hub.LastTimingCountByTP = {}
 
-    # Disruption events
     try:
         keys = list(DR.register.keySet().toArray())
     except:
@@ -640,7 +715,6 @@ def _PollOnce(hub):
         wasSeen = str(rn) in hub.LastSeenDisruptions
         lastVal = hub.LastSeenDisruptions.get(str(rn), None)
 
-        # Cancellation immediate (single message)
         if _IsCancelledValue(curInt):
             if (not st.get('LastPrintedWasCancel', False)) or (lastVal is None) or (not _IsCancelledValue(lastVal)):
                 _AddMessage(hub, str(dayName), nowMin, rn, curInt)
@@ -648,7 +722,6 @@ def _PollOnce(hub):
             hub.LastSeenDisruptions[str(rn)] = curInt
             continue
 
-        # First registration
         if not wasSeen:
             _AddMessage(hub, str(dayName), nowMin, rn, curInt)
             st['LastPrintedAbs'] = _ComputeWeekAbsMinute(dayName, nowMin)
@@ -656,12 +729,10 @@ def _PollOnce(hub):
             hub.LastSeenDisruptions[str(rn)] = curInt
             continue
 
-        # After first TP: ignore churn until TP events
         if st.get('FirstTpSeen', False):
             hub.LastSeenDisruptions[str(rn)] = curInt
             continue
 
-        # Pre-first-TP rate-limited updates
         if lastVal is not None and int(lastVal) == int(curInt):
             hub.LastSeenDisruptions[str(rn)] = curInt
             continue
@@ -687,7 +758,7 @@ def _PollOnce(hub):
 
         hub.LastSeenDisruptions[str(rn)] = curInt
 
-    # Timing point events (incremental scan)
+    # Timing point events
     try:
         tps = TR.listTimingPoints() or []
     except:
@@ -709,7 +780,6 @@ def _PollOnce(hub):
             start = 0
         if start > len(entries):
             start = 0
-
         if start == len(entries):
             continue
 
@@ -730,7 +800,6 @@ def _PollOnce(hub):
             st = _EnsureTrainState(hub, rn)
             st['FirstTpSeen'] = True
 
-            # If cancelled, do NOT emit a TP-based message
             try:
                 cur = getDisruption(rn)
                 curInt = int(cur) if cur is not None else 0
@@ -788,43 +857,180 @@ def _FadeInkColor(ink, paper, blendToPaper, alpha):
         a = max(0, min(255, int(alpha)))
         return awt.Color(r, g, bl, a)
     except:
-        try:
-            return awt.Color(60, 60, 60, max(0, min(255, int(alpha))))
-        except:
-            return ink
+        return ink
 
 
-class PaperStackPanel(swing.JPanel):
+def _DrawWoodSurface(g, x, y, w, h):
+    # Simple table surface.
+    base = awt.Color(90, 60, 35)
+    g.setColor(base)
+    g.fillRect(x, y, w, h)
+    # A few plank lines.
+    g.setColor(awt.Color(70, 45, 25, 120))
+    step = 22
+    yy = y
+    while yy < y + h:
+        g.drawLine(x, yy, x + w, yy)
+        yy += step
+
+
+# ----------------------------
+# Printer panel
+# ----------------------------
+
+
+class PrinterPanel(swing.JPanel):
     def __init__(self, hub, ownerFrame):
         swing.JPanel.__init__(self)
         self.Hub = hub
-        # Claim print ownership if there is no current owner.
-        try:
-            self.Hub.Lock.lock()
-            try:
-                if not hasattr(self.Hub, 'PrintOwnerId'):
-                    self.Hub.PrintOwnerId = None
-                if self.Hub.PrintOwnerId is None:
-                    self.Hub.PrintOwnerId = id(self)
-            finally:
-                self.Hub.Lock.unlock()
-        except:
-            pass
         self.Owner = ownerFrame
-        self.setBackground(awt.Color(60, 60, 60))
+        self.setBackground(awt.Color(45, 45, 45))
         self.setFocusable(True)
 
         self.PaperColor = _RgbStrToColor(_ReadMemStr('TASPAPERCOLOUR', '249,246,238'), awt.Color(249, 246, 238))
-
         baseInk = _RgbStrToColor(_ReadMemStr('TASINKCOLOUR', '40,40,40'), awt.Color(40, 40, 40))
         self.InkColor = _FadeInkColor(baseInk, self.PaperColor, INK_BLEND_TO_PAPER, INK_ALPHA)
 
         self.Font = awt.Font('Monospaced', awt.Font.PLAIN, 16)
 
-    def paintComponent(self, g):
-        # NOTE: In Jython, javax.swing.JPanel.paintComponent is protected and is not exposed
-        # as swing.JPanel.paintComponent on the class object. Do not call super here.
+        # Cache for painting
+        self.CachedPrinter = None
 
+    def paintComponent(self, g):
+        try:
+            g.setRenderingHint(awt.RenderingHints.KEY_TEXT_ANTIALIASING, awt.RenderingHints.VALUE_TEXT_ANTIALIAS_ON)
+            g.setRenderingHint(awt.RenderingHints.KEY_ANTIALIASING, awt.RenderingHints.VALUE_ANTIALIAS_ON)
+        except:
+            pass
+
+        w = self.getWidth()
+        h = self.getHeight()
+        g.setColor(self.getBackground())
+        g.fillRect(0, 0, w, h)
+
+        # Snapshot printer state without blocking EDT.
+        got = False
+        try:
+            got = self.Hub.Lock.tryLock()
+        except:
+            got = False
+
+        if got:
+            try:
+                pr = self.Hub.Printer
+                # Copy minimal fields
+                if pr is None:
+                    self.CachedPrinter = None
+                else:
+                    self.CachedPrinter = {
+                        'page': pr.get('page', None),
+                        'pos': int(pr.get('pos', 0)),
+                        'lines': list(pr.get('lines', [])),
+                        'currentLine': str(pr.get('currentLine', '')),
+                        'scrollAnim': int(pr.get('scrollAnim', 0)),
+                        'done': bool(pr.get('done', False)),
+                        'ejected': bool(pr.get('ejected', False)),
+                    }
+            finally:
+                try:
+                    self.Hub.Lock.unlock()
+                except:
+                    pass
+
+        pr = self.CachedPrinter
+
+        # Printer viewport
+        vpw = min(PRINTER_PAPER_WIDTH + 40, w - 20)
+        vph = min(PRINTER_PAPER_HEIGHT + 40, h - 20)
+        vx = (w - vpw) // 2
+        vy = (h - vph) // 2
+
+        # Surround
+        g.setColor(awt.Color(30, 30, 30))
+        g.fillRoundRect(vx, vy, vpw, vph, 12, 12)
+        g.setColor(awt.Color(15, 15, 15))
+        g.drawRoundRect(vx, vy, vpw, vph, 12, 12)
+
+        px = vx + 20
+        py = vy + 20
+        pw = vpw - 40
+        ph = vph - 40
+
+        g.setColor(self.PaperColor)
+        g.fillRect(px, py, pw, ph)
+        g.setColor(awt.Color(0, 0, 0, 40))
+        g.drawRect(px, py, pw, ph)
+        if pr is None:
+            # No paper in the printer: leave the paper blank and show status in the footer.
+            return
+
+        # Draw printed content with page movement.
+        g.setColor(self.InkColor)
+        g.setFont(self.Font)
+        # Determine how many lines fit.
+        topMargin = 30
+        bottomMargin = 24
+        maxLines = max(1, int((ph - topMargin - bottomMargin) // LINE_HEIGHT_PX))
+
+        lines = pr.get('lines', [])
+        curLine = pr.get('currentLine', '')
+
+        # Build display list: all completed lines + current line
+        displayLines = list(lines)
+        displayLines.append(curLine)
+
+        # Show only last maxLines. Older lines have already fed out of view.
+        if len(displayLines) > maxLines:
+            displayLines = displayLines[-maxLines:]
+
+        # scrollAnim is pixels remaining to feed to the next line.
+        remain = int(pr.get('scrollAnim', 0))
+        movedThisLine = 0
+        try:
+            if remain > 0:
+                movedThisLine = int(LINE_HEIGHT_PX) - int(remain)
+                if movedThisLine < 0:
+                    movedThisLine = 0
+                if movedThisLine > int(LINE_HEIGHT_PX):
+                    movedThisLine = int(LINE_HEIGHT_PX)
+        except:
+            movedThisLine = 0
+
+        # The print head is fixed near the bottom of the viewport; the paper feeds upward.
+        baseLineY = py + ph - bottomMargin - movedThisLine
+
+        # Draw from oldest to newest within displayLines.
+        y = int(baseLineY) - int((len(displayLines) - 1) * LINE_HEIGHT_PX)
+        for ln in displayLines:
+            try:
+                g.drawString(str(ln), px + 12, int(y))
+            except:
+                pass
+            y += int(LINE_HEIGHT_PX)
+
+
+# ----------------------------
+# Stack panel
+# ----------------------------
+
+
+class StackPanel(swing.JPanel):
+    def __init__(self, hub, ownerFrame):
+        swing.JPanel.__init__(self)
+        self.Hub = hub
+        self.Owner = ownerFrame
+        self.setBackground(awt.Color(60, 60, 60))
+        self.setFocusable(True)
+
+        self.PaperColor = _RgbStrToColor(_ReadMemStr('TASPAPERCOLOUR', '249,246,238'), awt.Color(249, 246, 238))
+        baseInk = _RgbStrToColor(_ReadMemStr('TASINKCOLOUR', '40,40,40'), awt.Color(40, 40, 40))
+        self.InkColor = _FadeInkColor(baseInk, self.PaperColor, INK_BLEND_TO_PAPER, INK_ALPHA)
+
+        self.Font = awt.Font('Monospaced', awt.Font.PLAIN, 14)
+
+        self.CachedStack = []
+
+    def paintComponent(self, g):
         try:
             g.setRenderingHint(awt.RenderingHints.KEY_TEXT_ANTIALIASING, awt.RenderingHints.VALUE_TEXT_ANTIALIAS_ON)
             g.setRenderingHint(awt.RenderingHints.KEY_ANTIALIASING, awt.RenderingHints.VALUE_ANTIALIAS_ON)
@@ -834,105 +1040,89 @@ class PaperStackPanel(swing.JPanel):
         w = self.getWidth()
         h = self.getHeight()
 
+        # Table surface if empty.
         g.setColor(self.getBackground())
         g.fillRect(0, 0, w, h)
 
-        self.Hub.Lock.lock()
+        got = False
         try:
-            msgs = list(self.Hub.Messages)
-        finally:
-            self.Hub.Lock.unlock()
+            got = self.Hub.Lock.tryLock()
+        except:
+            got = False
 
-        n = len(msgs)
+        if got:
+            try:
+                self.CachedStack = list(self.Hub.StackPages)
+            finally:
+                try:
+                    self.Hub.Lock.unlock()
+                except:
+                    pass
+
+        pages = self.CachedStack
+        n = len(pages)
+
+        # Keep frame's cached count for navigation.
         try:
-            self.Owner.LastKnownMessageCount = int(n)
+            self.Owner.LastKnownStackCount = int(n)
         except:
             pass
 
-        pw = min(int(w * PAPER_FRACTION), int(PAPER_MAX_WIDTH))
-        ph = min(int(h * PAPER_FRACTION), int(PAPER_MAX_HEIGHT))
-        pw = max(260, pw)
+        # Compute paper size
+        pw = min(int(w * STACK_PAPER_FRACTION), int(STACK_PAPER_MAX_WIDTH))
+        ph = min(int(h * STACK_PAPER_FRACTION), int(STACK_PAPER_MAX_HEIGHT))
+        pw = max(200, pw)
         ph = max(200, ph)
         baseX = (w - pw) // 2
         baseY = (h - ph) // 2
 
         if n == 0:
-            g.setColor(self.PaperColor)
-            g.fillRoundRect(baseX, baseY, pw, ph, 8, 8)
-            g.setColor(self.InkColor)
-            g.setFont(self.Font)
-            g.drawString('NO MESSAGES', baseX + 30, baseY + 60)
+            _DrawWoodSurface(g, baseX, baseY, pw, ph)
+            g.setColor(awt.Color(230, 220, 210))
+            g.setFont(awt.Font('SansSerif', awt.Font.PLAIN, 12))
             return
 
-        idx = self.Owner.PageIndex
+        idx = self.Owner.StackIndex
         idx = max(0, min(n - 1, idx))
-        self.Owner.PageIndex = idx
+        self.Owner.StackIndex = idx
 
         behind = min(5, n - 1)
         for i in range(behind, 0, -1):
             off = i * 3
-            g.setColor(awt.Color(0, 0, 0, 35))
+            g.setColor(awt.Color(0, 0, 0, 30))
             g.fillRoundRect(baseX + off + 3, baseY + off + 3, pw, ph, 8, 8)
             g.setColor(self.PaperColor)
             g.fillRoundRect(baseX + off, baseY + off, pw, ph, 8, 8)
 
-        g.setColor(awt.Color(0, 0, 0, 55))
-        g.fillRoundRect(baseX + 5, baseY + 5, pw, ph, 8, 8)
+        g.setColor(awt.Color(0, 0, 0, 45))
+        g.fillRoundRect(baseX + 4, baseY + 4, pw, ph, 8, 8)
         g.setColor(self.PaperColor)
         g.fillRoundRect(baseX, baseY, pw, ph, 8, 8)
-
-        cx = baseX + pw - 26
-        cy = baseY
-        g.setColor(awt.Color(220, 215, 205))
-        poly = awt.Polygon()
-        poly.addPoint(cx, cy)
-        poly.addPoint(cx + 26, cy)
-        poly.addPoint(cx + 26, cy + 26)
-        g.fillPolygon(poly)
-        g.setColor(awt.Color(180, 175, 165))
-        g.drawPolygon(poly)
 
         g.setColor(awt.Color(240, 240, 240))
         g.setFont(awt.Font('SansSerif', awt.Font.PLAIN, 12))
         g.drawString('%d / %d' % (idx + 1, n), baseX + 10, baseY - 8)
 
-        msg = msgs[idx]
-        text = msg.get('text', '')
-        printed = msg.get('printedChars', 0)
-        done = msg.get('done', False)
-
-        if idx == n - 1 and not done:
-            shown = text[:max(0, int(printed))]
-        else:
-            shown = text
+        page = pages[idx]
+        txt = page.get('text', '') if isinstance(page, dict) else str(page)
 
         g.setColor(self.InkColor)
         g.setFont(self.Font)
 
-        x0 = baseX + 26
-        y0 = baseY + 46
-        lineH = 20
-        maxW = pw - 52
+        x0 = baseX + 14
+        y0 = baseY + 30
+        lineH = 18
+        maxW = pw - 28
 
         fm = g.getFontMetrics(self.Font)
         cw = fm.charWidth('M')
         if cw <= 0:
-            cw = 9
+            cw = 8
         maxChars = max(10, int(maxW // cw))
 
         y = y0
-        for lineIndex, rawLine in enumerate(shown.split('\n')):
+        for rawLine in str(txt).split('\n'):
             line = rawLine
-            if lineIndex in (0, 1):
-                if len(line) <= maxChars:
-                    try:
-                        tw = fm.stringWidth(line)
-                        x = baseX + (pw - tw) // 2
-                    except:
-                        x = x0
-                    g.drawString(line, x, y)
-                    y += lineH
-                    continue
             while len(line) > maxChars:
                 part = line[:maxChars]
                 g.drawString(part, x0, y)
@@ -940,36 +1130,37 @@ class PaperStackPanel(swing.JPanel):
                 line = line[maxChars:]
             g.drawString(line, x0, y)
             y += lineH
-            if y > baseY + ph - 30:
+            if y > baseY + ph - 20:
                 break
+
+
+# ----------------------------
+# Main frame
+# ----------------------------
 
 
 class TeleprinterFrame(swing.JFrame):
     def __init__(self, hub):
         swing.JFrame.__init__(self, 'Teleprinter session')
         self.Hub = hub
-        # Claim print ownership if there is no current owner.
+        self.IsClosed = False
+
+        self.StackIndex = 0
+        self.LastKnownStackCount = 0
+
+        # Claim print ownership if none.
         try:
-            self.Hub.Lock.lock()
+            hub.Lock.lock()
             try:
-                if not hasattr(self.Hub, 'PrintOwnerId'):
-                    self.Hub.PrintOwnerId = None
-                if self.Hub.PrintOwnerId is None:
-                    self.Hub.PrintOwnerId = id(self)
+                if hub.PrintOwnerId is None:
+                    hub.PrintOwnerId = id(self)
             finally:
-                self.Hub.Lock.unlock()
+                hub.Lock.unlock()
         except:
             pass
-        self.PageIndex = 0
-        self.LastKnownMessageCount = 0
-        self.IsClosed = False
 
         self.setDefaultCloseOperation(swing.JFrame.DISPOSE_ON_CLOSE)
         self.setSize(int(FRAME_WIDTH), int(FRAME_HEIGHT))
-        try:
-            self.setMinimumSize(awt.Dimension(int(FRAME_WIDTH), int(FRAME_HEIGHT)))
-        except:
-            pass
 
         try:
             from TASIcon import SetFrameClockIcon
@@ -977,161 +1168,240 @@ class TeleprinterFrame(swing.JFrame):
         except:
             pass
 
-        self.StackPanel = PaperStackPanel(hub, self)
+        # Left container: printer
+        self.PrinterPanel = PrinterPanel(hub, self)
+        left = swing.JPanel()
+        left.setLayout(awt.BorderLayout())
+        left.add(self.PrinterPanel, awt.BorderLayout.CENTER)
+
+        # Right container: stack
+        self.StackPanel = StackPanel(hub, self)
+        right = swing.JPanel()
+        right.setLayout(awt.BorderLayout())
+        right.add(self.StackPanel, awt.BorderLayout.CENTER)
+
+        split = swing.JSplitPane(swing.JSplitPane.HORIZONTAL_SPLIT, left, right)
+        split.setResizeWeight(0.50)
+        try:
+            split.setDividerLocation(500)
+        except:
+            pass
+
         self.getContentPane().setLayout(awt.BorderLayout())
-        self.getContentPane().add(self.StackPanel, awt.BorderLayout.CENTER)
+        self.getContentPane().add(split, awt.BorderLayout.CENTER)
 
         footer = swing.JPanel()
-        footer.setLayout(awt.FlowLayout(awt.FlowLayout.CENTER, 12, 6))
-        footer.setBackground(awt.Color(60, 60, 60))
+        footer.setLayout(awt.FlowLayout(awt.FlowLayout.CENTER, 10, 6))
+        footer.setBackground(awt.Color(55, 55, 55))
 
-        self.LblHelp = swing.JLabel('Arrows/Scroll: navigate   |   Click left/right: navigate   |   Clear: clear stack')
-        self.LblHelp.setForeground(awt.Color(230, 230, 230))
-        footer.add(self.LblHelp)
+        self.BtnTearOff = swing.JButton('Tear off to stack')
+        footer.add(self.BtnTearOff)
 
-        self.BtnClear = swing.JButton('Clear')
-        footer.add(self.BtnClear)
+        self.BtnClearStack = swing.JButton('Clear stack')
+        footer.add(self.BtnClearStack)
+
+        self.LblStatus = swing.JLabel('')
+        self.LblStatus.setForeground(awt.Color(230, 230, 230))
+        footer.add(self.LblStatus)
 
         self.getContentPane().add(footer, awt.BorderLayout.SOUTH)
 
-        self.PrintTimer = Timer(int(PRINT_TIMER_MS), self._OnPrintTick)
-        self.PrintTimer.setRepeats(True)
-        self.PrintTimer.start()
+        self.BtnTearOff.addActionListener(lambda e: self._TearOff())
+        self.BtnClearStack.addActionListener(lambda e: self._ClearStack())
 
+        # Stack navigation listeners (no hub lock usage)
         self.addKeyListener(self._KeyListener())
         self.StackPanel.addMouseWheelListener(self._WheelListener())
         self.StackPanel.addMouseListener(self._ClickListener())
-        self.BtnClear.addActionListener(lambda e: self._DoClear())
 
         self.addWindowListener(self._WindowCloser())
 
+        self.PrintTimer = Timer(int(PRINT_TIMER_MS), self._OnTick)
+        self.PrintTimer.setRepeats(True)
+        self.PrintTimer.start()
+
         self.setVisible(True)
-        self.StackPanel.requestFocusInWindow()
+        self.PrinterPanel.repaint()
         self.StackPanel.repaint()
 
-    def _DoClear(self):
-        try:
-            choice = swing.JOptionPane.showConfirmDialog(
-                self,
-                'Clear the teleprinter stack for this JMRI runtime session?\nThis does not affect the disruption register.',
-                'Confirm clear',
-                swing.JOptionPane.OK_CANCEL_OPTION,
-                swing.JOptionPane.WARNING_MESSAGE
-            )
-            if choice != swing.JOptionPane.OK_OPTION:
-                return
-        except:
-            return
-
-        self.Hub.Lock.lock()
-        try:
-            self.Hub.Messages = []
-            if hasattr(self.Hub, 'PendingMessages'):
-                self.Hub.PendingMessages = []
-        finally:
-            self.Hub.Lock.unlock()
-
-        self.PageIndex = 0
-        self.LastKnownMessageCount = 0
-        self.OnHubMessagesChanged()
-
-    def OnHubMessagesChanged(self):
+    def OnHubChanged(self):
         if self.IsClosed:
             return
+        # Keep stack index on newest
         try:
-            self.Hub.Lock.lock()
-            try:
-                n = len(self.Hub.Messages)
-            finally:
-                self.Hub.Lock.unlock()
-            try:
-                self.LastKnownMessageCount = int(n)
-            except:
-                pass
-            self.PageIndex = max(0, n - 1)
+            n = int(getattr(self, 'LastKnownStackCount', 0))
+            if n > 0:
+                self.StackIndex = max(0, n - 1)
         except:
             pass
+        self.PrinterPanel.repaint()
         self.StackPanel.repaint()
-    def _OnPrintTick(self, e=None):
 
+    def _SetStatus(self, s):
+        try:
+            self.LblStatus.setText(str(s))
+        except:
+            pass
+
+    def _ClearStack(self):
+        if self.IsClosed:
+            return
+        # EDT-safe: tryLock only.
+        got = False
+        try:
+            got = self.Hub.Lock.tryLock()
+        except:
+            got = False
+        if not got:
+            return
+        try:
+            self.Hub.StackPages = []
+            self.StackIndex = 0
+        finally:
+            try:
+                self.Hub.Lock.unlock()
+            except:
+                pass
+        self.OnHubChanged()
+
+    def _TearOff(self):
+        if self.IsClosed:
+            return
+        got = False
+        try:
+            got = self.Hub.Lock.tryLock()
+        except:
+            got = False
+        if not got:
+            return
+        changed = False
+        try:
+            if self.Hub.Printer is not None:
+                pr = self.Hub.Printer
+                if bool(pr.get('done', False)) and bool(pr.get('ejected', False)):
+                    page = pr.get('page', None)
+                    if page is not None:
+                        self.Hub.StackPages.append(page)
+                        changed = True
+                    self.Hub.Printer = None
+                    # Start next pending if any
+                    changed = _StartNextPendingIfIdleLocked(self.Hub) or changed
+        finally:
+            try:
+                self.Hub.Lock.unlock()
+            except:
+                pass
+        if changed:
+            self.OnHubChanged()
+
+    def _OnTick(self, e=None):
         if self.IsClosed:
             return
 
-        promoted = False
-
-        self.Hub.Lock.lock()
+        # Only the owner window advances printing.
+        got = False
         try:
-            # If there is no owner, claim ownership.
-            if not hasattr(self.Hub, 'PrintOwnerId'):
-                self.Hub.PrintOwnerId = None
+            got = self.Hub.Lock.tryLock()
+        except:
+            got = False
+        if not got:
+            # Still repaint for smooth UI.
+            self.PrinterPanel.repaint()
+            return
+
+        changed = False
+        try:
             if self.Hub.PrintOwnerId is None:
                 self.Hub.PrintOwnerId = id(self)
-            # Only the owner advances printing and releases pending pages.
             if self.Hub.PrintOwnerId != id(self):
                 return
 
-            if not hasattr(self.Hub, 'PendingMessages'):
-                self.Hub.PendingMessages = []
+            # If printer is empty, start next pending.
+            changed = _StartNextPendingIfIdleLocked(self.Hub) or changed
 
-            msgs = self.Hub.Messages
-            if not msgs:
+            pr = self.Hub.Printer
+            if pr is None:
+                self._SetStatus('IDLE')
                 return
 
-            msg = msgs[-1]
+            # If page is done and ejected, enable tear-off.
+            if bool(pr.get('done', False)) and bool(pr.get('ejected', False)):
+                self._SetStatus('READY')
+            else:
+                self._SetStatus('PRINTING')
 
-            nowMs = 0
-            try:
-                nowMs = long(System.currentTimeMillis())
-            except:
-                try:
-                    nowMs = int(System.currentTimeMillis())
-                except:
-                    nowMs = 0
+            # If printing finished and there are pending pages, auto tear-off and start next.
+            if bool(pr.get('done', False)) and bool(pr.get('ejected', False)) and self.Hub.PendingPages:
+                changed = _AutoMovePrinterToStackLocked(self.Hub) or changed
+                changed = _StartNextPendingIfIdleLocked(self.Hub) or changed
+                return
 
-            # If this page is already done, enforce the inter-message delay before promoting the next pending page.
-            if msg.get('done', False):
-                doneAt = msg.get('doneAtMs', None)
-                if doneAt is None:
-                    msg['doneAtMs'] = nowMs
-                    return
-                try:
-                    if int(nowMs) - int(doneAt) < int(INTER_MESSAGE_DELAY_MS):
+            # Animate paper movement if needed.
+            scroll = int(pr.get('scrollAnim', 0))
+            if scroll > 0:
+                scroll = max(0, scroll - int(SCROLL_PIXELS_PER_TICK))
+                pr['scrollAnim'] = scroll
+                return
+
+            # If already done, handle ejection lines.
+            if bool(pr.get('done', False)):
+                if not bool(pr.get('ejected', False)):
+                    rem = int(pr.get('ejectRemaining', 0))
+                    if rem <= 0:
+                        pr['ejected'] = True
                         return
-                except:
-                    return
-                if self.Hub.PendingMessages:
-                    nxt = self.Hub.PendingMessages.pop(0)
-                    nxt['printedChars'] = 0
-                    nxt['done'] = False
-                    nxt['doneAtMs'] = None
-                    msgs.append(nxt)
-                    promoted = True
+                    # Feed a blank line: this moves paper.
+                    pr['lines'].append('')
+                    pr['scrollAnim'] = int(LINE_HEIGHT_PX)
+                    pr['ejectRemaining'] = rem - 1
                 return
 
-            full = msg.get('text', '')
-            cur = int(msg.get('printedChars', 0))
-            cur += int(PRINT_CHARS_PER_TICK)
-            if cur >= len(full):
-                cur = len(full)
-                msg['done'] = True
-                msg['doneAtMs'] = nowMs
-            msg['printedChars'] = cur
+            # Print characters from page text.
+            page = pr.get('page', None)
+            if page is None:
+                pr['done'] = True
+                pr['ejectRemaining'] = int(EJECT_BLANK_LINES)
+                return
 
-            # Do NOT promote immediately on the same tick; wait for the inter-message delay.
-        except:
+            txt = page.get('text', '')
+            pos = int(pr.get('pos', 0))
+
+            # Print one character per tick.
+            if pos >= len(txt):
+                pr['done'] = True
+                pr['ejectRemaining'] = int(EJECT_BLANK_LINES)
+                return
+
+            ch = txt[pos]
+            pr['pos'] = pos + 1
+
+            if ch == '\n':
+                # Carriage return: finalize current line and move paper.
+                try:
+                    pr['lines'].append(pr.get('currentLine', ''))
+                except:
+                    pass
+                pr['currentLine'] = ''
+                pr['scrollAnim'] = int(LINE_HEIGHT_PX)
+                return
+
+            # Skip '\r' if any.
+            if ch == '\r':
+                return
+
+            cur = pr.get('currentLine', '')
+            pr['currentLine'] = str(cur) + str(ch)
+        finally:
             try:
-                if msgs:
-                    msgs[-1]['done'] = True
+                self.Hub.Lock.unlock()
             except:
                 pass
-        finally:
-            self.Hub.Lock.unlock()
 
-        if promoted:
-            self.OnHubMessagesChanged()
+        if changed:
+            self.OnHubChanged()
         else:
+            self.PrinterPanel.repaint()
             self.StackPanel.repaint()
-
 
     class _KeyListener(event.KeyAdapter):
         def keyPressed(self, e):
@@ -1142,20 +1412,16 @@ class TeleprinterFrame(swing.JFrame):
                 return
             if code in (event.KeyEvent.VK_RIGHT, event.KeyEvent.VK_DOWN):
                 try:
-                    frame.Hub.Lock.lock()
-                    try:
-                        n = len(frame.Hub.Messages)
-                    finally:
-                        frame.Hub.Lock.unlock()
-                    if frame.PageIndex < n - 1:
-                        frame.PageIndex += 1
+                    n = int(getattr(frame, 'LastKnownStackCount', 0))
+                    if frame.StackIndex < n - 1:
+                        frame.StackIndex += 1
                         frame.StackPanel.repaint()
                 except:
                     pass
             elif code in (event.KeyEvent.VK_LEFT, event.KeyEvent.VK_UP):
                 try:
-                    if frame.PageIndex > 0:
-                        frame.PageIndex -= 1
+                    if frame.StackIndex > 0:
+                        frame.StackIndex -= 1
                         frame.StackPanel.repaint()
                 except:
                     pass
@@ -1169,20 +1435,16 @@ class TeleprinterFrame(swing.JFrame):
                 return
             if rot > 0:
                 try:
-                    if frame.PageIndex > 0:
-                        frame.PageIndex -= 1
+                    if frame.StackIndex > 0:
+                        frame.StackIndex -= 1
                         frame.StackPanel.repaint()
                 except:
                     pass
             elif rot < 0:
                 try:
-                    frame.Hub.Lock.lock()
-                    try:
-                        n = len(frame.Hub.Messages)
-                    finally:
-                        frame.Hub.Lock.unlock()
-                    if frame.PageIndex < n - 1:
-                        frame.PageIndex += 1
+                    n = int(getattr(frame, 'LastKnownStackCount', 0))
+                    if frame.StackIndex < n - 1:
+                        frame.StackIndex += 1
                         frame.StackPanel.repaint()
                 except:
                     pass
@@ -1197,20 +1459,16 @@ class TeleprinterFrame(swing.JFrame):
                 return
             if x < w * 0.25:
                 try:
-                    if frame.PageIndex > 0:
-                        frame.PageIndex -= 1
+                    if frame.StackIndex > 0:
+                        frame.StackIndex -= 1
                         frame.StackPanel.repaint()
                 except:
                     pass
             elif x > w * 0.75:
                 try:
-                    frame.Hub.Lock.lock()
-                    try:
-                        n = len(frame.Hub.Messages)
-                    finally:
-                        frame.Hub.Lock.unlock()
-                    if frame.PageIndex < n - 1:
-                        frame.PageIndex += 1
+                    n = int(getattr(frame, 'LastKnownStackCount', 0))
+                    if frame.StackIndex < n - 1:
+                        frame.StackIndex += 1
                         frame.StackPanel.repaint()
                 except:
                     pass
@@ -1231,21 +1489,13 @@ class TeleprinterFrame(swing.JFrame):
         if self.IsClosed:
             return
         self.IsClosed = True
-        # Release print ownership if this window owned it.
-        try:
-            self.Hub.Lock.lock()
-            try:
-                if hasattr(self.Hub, 'PrintOwnerId') and self.Hub.PrintOwnerId == id(self):
-                    self.Hub.PrintOwnerId = None
-            finally:
-                self.Hub.Lock.unlock()
-        except:
-            pass
+
         try:
             if self.PrintTimer is not None:
                 self.PrintTimer.stop()
         except:
             pass
+
         try:
             if self in self.Hub.Windows:
                 self.Hub.Windows.remove(self)
