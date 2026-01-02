@@ -565,6 +565,7 @@ def _NewPrinterState(pageRec):
         'lines': [],
         'currentLine': '',
         'scrollAnim': 0,
+        'feedTotal': 0,
         'ejectRemaining': 0,
         'done': False,
         'ejected': False,
@@ -994,6 +995,7 @@ class PrinterPanel(swing.JPanel):
                         'lines': list(pr.get('lines', [])),
                         'currentLine': str(pr.get('currentLine', '')),
                         'scrollAnim': int(pr.get('scrollAnim', 0)),
+                        'feedTotal': int(pr.get('feedTotal', 0)),
                         'done': bool(pr.get('done', False)),
                         'ejected': bool(pr.get('ejected', False)),
                     }
@@ -1022,36 +1024,34 @@ class PrinterPanel(swing.JPanel):
         pw = vpw - 40
         ph = vph - 40
 
-        g.setColor(self.PaperColor)
-        g.fillRect(px, py, pw, ph)
+        # Paper viewport background: match the dark surround so paper feed is visible at the edges.
+        # The paper itself moves during line feeds (scrollAnim). Text is drawn relative to the moving paper.
+        backColor = awt.Color(30, 30, 30)
+        try:
+            g.setColor(backColor)
+            g.fillRect(px, py, pw, ph)
+        except:
+            pass
+
         g.setColor(awt.Color(0, 0, 0, 40))
-        g.drawRect(px, py, pw, ph)
+        try:
+            g.drawRect(px, py, pw, ph)
+        except:
+            pass
+
         if pr is None:
-            # No paper in the printer: leave the paper blank and show status in the footer.
+            # No paper in the printer: show only the dark backing and border.
             return
 
-        # Draw printed content with page movement.
-        g.setColor(self.InkColor)
-        g.setFont(self.Font)
-        # Determine how many lines fit.
-        topMargin = 30
-        bottomMargin = 24
-        maxLines = max(1, int((ph - topMargin - bottomMargin) // LINE_HEIGHT_PX))
-
-        lines = pr.get('lines', [])
-        curLine = pr.get('currentLine', '')
-
-        # Build display list: all completed lines + current line
-        displayLines = list(lines)
-        displayLines.append(curLine)
-
-        # Show only last maxLines. Older lines have already fed out of view.
-        if len(displayLines) > maxLines:
-            displayLines = displayLines[-maxLines:]
-
-        # scrollAnim is pixels remaining to feed to the next line.
-        remain = int(pr.get('scrollAnim', 0))
+        # Determine paper feed movement for the current line feed animation.
+        remain = 0
         movedThisLine = 0
+        totalOffset = 0
+        try:
+            remain = int(pr.get('scrollAnim', 0))
+        except:
+            remain = 0
+
         try:
             if remain > 0:
                 movedThisLine = int(LINE_HEIGHT_PX) - int(remain)
@@ -1062,17 +1062,120 @@ class PrinterPanel(swing.JPanel):
         except:
             movedThisLine = 0
 
-        # The print head is fixed near the bottom of the viewport; the paper feeds upward.
-        baseLineY = py + ph - bottomMargin - movedThisLine
+        feedTotal = 0
+        try:
+            feedTotal = int(pr.get('feedTotal', 0))
+        except:
+            feedTotal = 0
+        try:
+            totalOffset = int(feedTotal) + int(movedThisLine)
+        except:
+            totalOffset = int(movedThisLine)
+
+
+        # Clip to the paper viewport so paper and text cannot draw outside the frame.
+        oldClip = None
+        try:
+            oldClip = g.getClip()
+        except:
+            oldClip = None
+        try:
+            g.setClip(int(px), int(py), int(pw), int(ph))
+        except:
+            pass
+
+        # Draw the moving paper (slightly inset) so the dark backing is visible and makes feed motion obvious.
+        inset = 2
+        try:
+            paperX = int(px) + int(inset)
+            paperW = int(pw) - int(inset) * 2
+            # Paper emerges into an empty tray: the bottom stays fixed, the top moves up as paper feeds.
+            paperLen = max(0, 60 + int(totalOffset))
+            paperBottom = int(py) + int(ph) - int(inset)
+            paperY = int(paperBottom) - int(paperLen)
+            paperH = int(paperLen)
+        except:
+            paperX = int(px)
+            paperY = int(py)
+            paperW = int(pw)
+            paperH = int(ph)
+
+        try:
+            g.setColor(self.PaperColor)
+            g.fillRect(int(paperX), int(paperY), int(paperW), int(paperH))
+        except:
+            pass
+
+        try:
+            g.setColor(awt.Color(0, 0, 0, 25))
+            g.drawRect(int(paperX), int(paperY), int(paperW), int(paperH))
+        except:
+            pass
+
+        # Draw printed content; the print head is fixed in the viewport, and paper movement is reflected by movedThisLine.
+        g.setColor(self.InkColor)
+        g.setFont(self.Font)
+
+        # Determine how many lines fit.
+        topMargin = 30
+        bottomMargin = 24
+        try:
+            maxLines = max(1, int((ph - topMargin - bottomMargin) // LINE_HEIGHT_PX))
+        except:
+            maxLines = 1
+
+        try:
+            lines = pr.get('lines', [])
+        except:
+            lines = []
+        try:
+            curLine = pr.get('currentLine', '')
+        except:
+            curLine = ''
+
+        # Build display list: all completed lines + current line
+        # Build display list. When a line feed animation is in progress (remain > 0),
+        # the last completed line should be treated as the current line at the print head.
+        # This avoids an overshoot-and-bounce effect caused by applying both the permanent
+        # line advance (lines already appended) and the animated advance simultaneously.
+        displayLines = []
+        try:
+            if int(remain) > 0 and len(lines) > 0:
+                displayLines = list(lines[:-1])
+                displayLines.append(str(lines[-1]))
+            else:
+                displayLines = list(lines)
+                displayLines.append(curLine)
+        except:
+            displayLines = list(lines)
+            displayLines.append(curLine)
+
+        # Show only last maxLines. Older lines have already fed out of view.
+        if len(displayLines) > maxLines:
+            displayLines = displayLines[-maxLines:]
+
+        # The print head is fixed near the bottom of the viewport; the paper feeds upward during movedThisLine.
+        baseLineY = int(py + ph - bottomMargin - movedThisLine)
 
         # Draw from oldest to newest within displayLines.
         y = int(baseLineY) - int((len(displayLines) - 1) * LINE_HEIGHT_PX)
         for ln in displayLines:
             try:
-                g.drawString(str(ln), px + 12, int(y))
+                g.drawString(str(ln), int(px + 12), int(y))
             except:
                 pass
             y += int(LINE_HEIGHT_PX)
+
+        # Restore clip.
+        try:
+            if oldClip is not None:
+                g.setClip(oldClip)
+            else:
+                g.setClip(None)
+        except:
+            pass
+
+
 
 
 # ----------------------------
@@ -1323,23 +1426,45 @@ class TeleprinterFrame(swing.JFrame):
         self._UpdateButtonStates()
         self.PrinterPanel.repaint()
         self.StackPanel.repaint()
-
-    
     def OnHubChanged(self):
         if self.IsClosed:
             return
         self._UpdateButtonStates()
         # Keep stack index on newest
+        n = None
+        got = False
         try:
-            n = int(getattr(self, 'LastKnownStackCount', 0))
-            if n > 0:
-                self.StackIndex = max(0, n - 1)
+            got = self.Hub.Lock.tryLock()
+        except:
+            got = False
+        if got:
+            try:
+                try:
+                    n = len(self.Hub.StackPages)
+                except:
+                    n = None
+            finally:
+                try:
+                    self.Hub.Lock.unlock()
+                except:
+                    pass
+        if n is None:
+            try:
+                n = int(getattr(self, 'LastKnownStackCount', 0))
+            except:
+                n = 0
+        try:
+            self.LastKnownStackCount = int(n)
+        except:
+            pass
+        try:
+            if int(n) > 0:
+                self.StackIndex = max(0, int(n) - 1)
         except:
             pass
         self.PrinterPanel.repaint()
         self.StackPanel.repaint()
 
-    
     def _UpdateButtonStates(self, pr=None):
         # Enable Tear off only when a page is finished and fully ejected.
         # Enable Clear stack only when there are pages in the stack.
@@ -1553,6 +1678,28 @@ class TeleprinterFrame(swing.JFrame):
             # If printer is empty, start next pending.
             changed = _StartNextPendingIfIdleLocked(self.Hub) or changed
             pr = self.Hub.Printer
+            # Update render caches while holding the hub lock.
+            # This avoids visible jitter caused by tryLock() snapshotting inside paintComponent.
+            try:
+                if pr is None:
+                    self.PrinterPanel.CachedPrinter = None
+                else:
+                    self.PrinterPanel.CachedPrinter = {
+                        'page': pr.get('page', None),
+                        'pos': int(pr.get('pos', 0)),
+                        'lines': list(pr.get('lines', [])),
+                        'currentLine': str(pr.get('currentLine', '')),
+                        'scrollAnim': int(pr.get('scrollAnim', 0)),
+                        'feedTotal': int(pr.get('feedTotal', 0)),
+                        'done': bool(pr.get('done', False)),
+                        'ejected': bool(pr.get('ejected', False)),
+                    }
+            except:
+                pass
+            try:
+                self.StackPanel.CachedStack = list(self.Hub.StackPages)
+            except:
+                pass
             self._UpdateButtonStates(pr)
             if pr is None:
                 self._SetStatus('IDLE')
@@ -1573,8 +1720,29 @@ class TeleprinterFrame(swing.JFrame):
             # Animate paper movement if needed.
             scroll = int(pr.get('scrollAnim', 0))
             if scroll > 0:
+                oldScroll = scroll
                 scroll = max(0, scroll - int(SCROLL_PIXELS_PER_TICK))
                 pr['scrollAnim'] = scroll
+                
+                # Commit the completed line feed so the paper does not snap back when scrollAnim reaches 0.
+                if oldScroll > 0 and scroll == 0:
+                    try:
+                        pr['feedTotal'] = int(pr.get('feedTotal', 0)) + int(LINE_HEIGHT_PX)
+                    except:
+                        try:
+                            pr['feedTotal'] = int(LINE_HEIGHT_PX)
+                        except:
+                            pass
+                
+                # Request a repaint for smooth feed animation.
+                try:
+                    self.PrinterPanel.repaint()
+                except:
+                    pass
+                try:
+                    self.StackPanel.repaint()
+                except:
+                    pass
                 return
 
             # If already done, handle ejection lines.
