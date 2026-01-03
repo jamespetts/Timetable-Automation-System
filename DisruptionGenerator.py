@@ -359,7 +359,7 @@ def _isDelayedStart(at, nowMins):
 # TP extraction & classification
 # -------------------------------------------------------------------------------------------------
 # NOTE: use OR, not a newline, between Arr and Dep
-_TP_PATTERN = re.compile(r"^TP(?:Arr|Dep)\s+(.+)$", re.IGNORECASE)
+_TP_PATTERN = re.compile(r'^TP(\d*)(Arr|Dep)\s+(.+)$', re.IGNORECASE)
 
 def _build_tp_events(row):
     events_raw = []
@@ -369,11 +369,11 @@ def _build_tp_events(row):
         m = _TP_PATTERN.match(str(k).strip())
         if not m:
             continue
-        tpName = m.group(1).strip()
+        tpName = m.group(3).strip()
         sched = parseTimeToMinutes(v)
         if sched is None:
             continue
-        kind = "Arr" if str(k).lower().startswith("tparr") else "Dep"
+        kind = (m.group(2) or "").strip().title()
         blocks = TR.getBlocks(tpName)
         isVirtual = (blocks is None) or (isinstance(blocks, list) and len(blocks) == 0)
         events_raw.append({"name": tpName, "kind": kind, "sched": sched, "isVirtual": isVirtual})

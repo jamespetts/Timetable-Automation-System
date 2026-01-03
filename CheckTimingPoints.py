@@ -77,13 +77,13 @@ def sync_timing_points_from_timetable(verbose=True):
                 reader = csv.DictReader(f, delimiter="\t")
                 headers = reader.fieldnames or []
                 # Pattern: TPArr <name> / TPDep <name> (case-insensitive)
-                pat = re.compile(r"^TP(?:Arr|Dep)\s+(.+)$", re.IGNORECASE)
+                pat = re.compile(r'^TP(\d*)(Arr|Dep)\s+(.+)$', re.IGNORECASE)
                 for h in headers:
                     if not h:
                         continue
                     m = pat.match(h.strip())
                     if m:
-                        tp_name = m.group(1).strip()
+                        tp_name = m.group(3).strip()
                         if tp_name:
                             timetable_tp_case[tp_name.lower()] = tp_name
         except Exception as e:

@@ -23,6 +23,7 @@ import java.awt.event as event
 import jmri
 import os
 import csv
+import re
 import TASBeanLookup as TBL
 from java.text import SimpleDateFormat
 from jmri.profile import ProfileManager
@@ -54,6 +55,7 @@ TRJA_BaseTPName = (TRJA_Profile.getName() or "").strip()
 
 # ------ Day/Time helpers ------
 TRJA_DaysOfWeek = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+TRJA_TPKeyPat = re.compile(r'^TP(\d*)(Arr|Dep)\s+(.+)$', re.IGNORECASE)
 def TRJA_GetNextDay(day):
     try:
         idx = TRJA_DaysOfWeek.index(day)
@@ -130,9 +132,10 @@ def TRJA_GetLastScheduledTP(row):
         latestMin = mmDep; latestName = TRJA_BaseTPName
     for key, val in row.items():
         if not key or not val: continue
-        kl = key.strip().lower()
-        if kl.startswith("tparr ") or kl.startswith("tpdep "):
-            tpName = key[6:].strip()
+        ks = ('' if key is None else str(key)).strip()
+        m = TRJA_TPKeyPat.match(ks)
+        if m:
+            tpName = (m.group(3) or '').strip()
             mm = TRJA_ParseTimeToMinutes(val)
             if mm is not None and (latestMin is None or mm > latestMin):
                 latestMin = mm; latestName = tpName
@@ -216,11 +219,12 @@ def TRJA_ComputeOverdueReport(row, reportingNumber, nowDay, nowMinutes):
         if not k or not v:
             continue
         ks = (str(k).strip()).lower()
-        if ks.startswith("tparr ") or ks.startswith("tpdep "):
-            tpName = k[6:].strip()
+        m = TRJA_TPKeyPat.match(str(k).strip())
+        if m:
+            tpName = (m.group(3) or '').strip()
             mm = _p(v)
             if mm is not None and tpName:
-                kind = "Arr" if ks.startswith("tparr ") else "Dep"
+                kind = (m.group(2) or '').strip().title()
                 events.append((tpName, kind, mm))
 
     # Consider only scheduled times already past "now"

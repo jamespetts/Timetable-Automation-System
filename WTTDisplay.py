@@ -18,6 +18,7 @@
 
 import os
 import csv
+import re
 import jmri
 from jmri import InstanceManager
 from jmri.util import JmriJFrame
@@ -158,9 +159,11 @@ class VerticalLabel(JLabel):
         self.setHorizontalAlignment(SwingConstants.CENTER)
         self.setVerticalAlignment(SwingConstants.CENTER)
         self.setOpaque(True)
+
     def getPreferredSize(self):
         d = JLabel.getPreferredSize(self)
         return Dimension(int(d.height), int(d.width))
+
     def paintComponent(self, g):
         g2 = g.create()
         try:
@@ -226,6 +229,7 @@ class WTTCellRenderer(DefaultTableCellRenderer):
         self.repRow = -1  # dynamic index; -1 when hidden
         self.setFont(BASE_FONT)
         self.setOpaque(True)
+
     def getTableCellRendererComponent(self, table, value, isSelected, hasFocus, row, column):
         comp = super(WTTCellRenderer, self).getTableCellRendererComponent(
             table, value, isSelected, hasFocus, row, column)
@@ -380,6 +384,8 @@ TP_NAMES = []
 TP_ORDER_BY_DIR = {}  # direction -> (above_list, below_list)
 HAS_TRIGGER_COL = False
 
+TP_GROUP_OF = {}  # tpName -> group number (int)
+
 def LoadServicesMaster(csv_path):
     """
     Returns list of rows: dict with keys:
@@ -388,7 +394,8 @@ def LoadServicesMaster(csv_path):
     global HAS_TRIGGER_COL
     services = []
     if not os.path.exists(csv_path):
-        print("Timetable file not found: %s" % csv_path); return services
+        print("Timetable file not found: %s" % csv_path)
+        return services
     # Detect delimiter
     try:
         with open(csv_path, "r") as fh:
@@ -404,64 +411,87 @@ def LoadServicesMaster(csv_path):
         idx_tp_dep = {}
         trigger_idx = None
         for row in reader:
-            if not row or (len(("".join(row)).strip()) == 0): continue
+            if (not row) or (len(("".join(row)).strip()) == 0):
+                continue
             if header is None:
                 header = [h.strip() for h in row]
                 def find_col(names):
                     hl = [h.lower() for h in header]
                     for cand in names:
                         cl = cand.lower()
-                        if cl in hl: return hl.index(cl)
+                        if cl in hl:
+                            return hl.index(cl)
                     return None
-                idx["rep"]  = find_col(("Reporting number","reporting number"))
-                idx["dir"]  = find_col(("Direction","direction"))
-                idx["note"] = find_col(("Notes","notes","Note","note"))
-                idx["arr"]  = find_col(("Arr","arr"))
-                idx["dep"]  = find_col(("Dep","dep"))
-                trigger_idx = find_col(("Trigger","trigger"))
+                idx["rep"]    = find_col(("Reporting number", "reporting number"))
+                idx["dir"]    = find_col(("Direction", "direction"))
+                idx["note"]   = find_col(("Notes", "notes", "Note", "note"))
+                idx["arr"]    = find_col(("Arr", "arr"))
+                idx["dep"]    = find_col(("Dep", "dep"))
+                trigger_idx    = find_col(("Trigger", "trigger"))
                 HAS_TRIGGER_COL = (trigger_idx is not None)
-                idx["origin"] = find_col(("Origin","origin"))
-                idx["dest"]   = find_col(("Destination","destination"))
-                idx["plat"]   = find_col(("Platform","platform"))
-                idx["cls"]    = find_col(("Class","class"))
-                idx["load"]   = find_col(("Timing load","Timing Load","timing load","timing Load"))
+                idx["origin"] = find_col(("Origin", "origin"))
+                idx["dest"]   = find_col(("Destination", "destination"))
+                idx["plat"]   = find_col(("Platform", "platform"))
+                idx["cls"]    = find_col(("Class", "class"))
+                idx["load"]   = find_col(("Timing load", "Timing Load", "timing load", "timing Load"))
                 # TP columns
                 TP_NAMES[:] = []
                 seen_tp = set()
-                for i, h in enumerate(header):
-                    h2 = h.strip().lower()
-                    if h2.startswith("tparr "):
-                        name = header[i][6:].strip()
-                        idx_tp_arr[name] = i
-                        if name not in seen_tp: TP_NAMES.append(name); seen_tp.add(name)
-                    elif h2.startswith("tpdep "):
-                        name = header[i][6:].strip()
-                        idx_tp_dep[name] = i
-                        if name not in seen_tp: TP_NAMES.append(name); seen_tp.add(name)
+                TP_GROUP_OF.clear()
+                # Header forms supported (case-insensitive):
+                #   TPArr <name> / TPDep <name>   -> group 0
+                #   TP0Arr <name> / TP0Dep <name> -> group 0
+                #   TP1Arr <name> / TP1Dep <name> -> group 1, etc.
+                tp_pat = re.compile(r"^tp(\d*)(arr|dep)\s+(.+)$", re.IGNORECASE)
+                for ci, h in enumerate(header):
+                    hs = (h or "").strip()
+                    if not hs:
+                        continue
+                    m2 = tp_pat.match(hs)
+                    if not m2:
+                        continue
+                    gnum_txt = (m2.group(1) or "").strip()
+                    kind = (m2.group(2) or "").strip().lower()
+                    name = (m2.group(3) or "").strip()
+                    if not name:
+                        continue
+                    try:
+                        gnum = int(gnum_txt) if (gnum_txt != "") else 0
+                    except:
+                        gnum = 0
+                    if name in TP_GROUP_OF and TP_GROUP_OF.get(name) != gnum:
+                        try:
+                            print("[WTTDisplay] Warning: TP name %s appears in multiple groups (%s and %s); using %s" % (name, TP_GROUP_OF.get(name), gnum, TP_GROUP_OF.get(name)))
+                        except:
+                            pass
+                    else:
+                        TP_GROUP_OF[name] = gnum
+                    if kind == "arr":
+                        idx_tp_arr[name] = ci
+                    else:
+                        idx_tp_dep[name] = ci
+                    if name not in seen_tp:
+                        TP_NAMES.append(name)
+                        seen_tp.add(name)
                 for d in DAYS_ORDER:
                     idx[d] = find_col((d, d.lower()))
                 continue
-
             def safe(idxname):
                 i = idx.get(idxname)
                 return row[i].strip() if (i is not None and i < len(row)) else ""
-
             days = {}
             for d in DAYS_ORDER:
                 di = idx.get(d)
                 flag = row[di].strip().upper() if (di is not None and di < len(row)) else ""
-                days[d] = (flag in ("TRUE","T","1","Y","YES"))
-
-            dir_norm  = (safe("dir").strip().upper() if safe("dir") else "")
+                days[d] = (flag in ("TRUE", "T", "1", "Y", "YES"))
+            dir_norm = (safe("dir").strip().upper() if safe("dir") else "")
             note_text = safe("note")
             trig = row[trigger_idx].strip() if (HAS_TRIGGER_COL and trigger_idx < len(row)) else ""
-
             tp_map = {}
             for name in TP_NAMES:
-                a = row[idx_tp_arr[name]].strip() if name in idx_tp_arr and idx_tp_arr[name] < len(row) else ""
-                d = row[idx_tp_dep[name]].strip() if name in idx_tp_dep and idx_tp_dep[name] < len(row) else ""
+                a = row[idx_tp_arr[name]].strip() if (name in idx_tp_arr and idx_tp_arr[name] < len(row)) else ""
+                d = row[idx_tp_dep[name]].strip() if (name in idx_tp_dep and idx_tp_dep[name] < len(row)) else ""
                 tp_map[name] = {"arr": a, "dep": d}
-
             services.append({
                 "rep": safe("rep"), "arr": safe("arr"), "dep": safe("dep"),
                 "origin": safe("origin"), "dest": safe("dest"),
@@ -472,28 +502,37 @@ def LoadServicesMaster(csv_path):
     return services
 
 # ---------------- Pages & headers ----------------
+def _DirectionPriority(d):
+    if d == 'DOWN':
+        return 0
+    if d == 'UP':
+        return 1
+    if d in ('EAST','EASTBOUND'):
+        return 10
+    if d in ('WEST','WESTBOUND'):
+        return 11
+    if d in ('NORTH','NORTHBOUND'):
+        return 20
+    if d in ('SOUTH','SOUTHBOUND'):
+        return 21
+    return 100
+
 def DeriveDirectionOrder(services):
     first_index = {}
     has_unspecified = False
     for i, svc in enumerate(services):
-        d = (svc.get("dir","") or "").strip().upper()
+        d = (svc.get('dir','') or '').strip().upper()
         if not d:
-            has_unspecified = True; continue
+            has_unspecified = True
+            continue
         if d not in first_index:
             first_index[d] = i
     dirs = list(first_index.keys())
-    def priority(d):
-        if d == "DOWN": return 0
-        if d == "UP": return 1
-        if d in ("EAST","EASTBOUND"): return 10
-        if d in ("WEST","WESTBOUND"): return 11
-        if d in ("NORTH","NORTHBOUND"): return 20
-        if d in ("SOUTH","SOUTHBOUND"): return 21
-        return 100
-    dirs.sort(key=lambda d: (priority(d), first_index[d]))
+    dirs.sort(key=lambda dd: (_DirectionPriority(dd), first_index[dd]))
     return dirs, has_unspecified
 
 def DayGroupsFromMode(mode):
+
     if mode == "SEVEN_DAYS":
         return [("MONDAYS", ["Monday"]), ("TUESDAYS", ["Tuesday"]), ("WEDNESDAYS",["Wednesday"]),
                 ("THURSDAYS", ["Thursday"]), ("FRIDAYS", ["Friday"]), ("SATURDAYS",["Saturday"]), ("SUNDAYS", ["Sunday"])]
@@ -767,13 +806,8 @@ def _TypicalTimeForTp(svc, name):
     m = svc.get("tp",{}).get(name, {"arr":"", "dep":""})
     return _ParseMinutes(m.get("dep","")) or _ParseMinutes(m.get("arr",""))
 
-def _ComputeTpOrder(items, names):
-    """
-    Compute median (tp_time - default_time) per TP across the items,
-    then sort:
-    - 'above' -> values < 0, ascending (most negative first)
-    - 'below' -> values >= 0, ascending (closest to default first)
-    """
+def _ComputeTpOffsetMedians(items, names):
+    # Return dict: tpName -> median(tp_time - default_time) across items.
     diffs = {}
     for nm in names:
         arr = []
@@ -785,9 +819,132 @@ def _ComputeTpOrder(items, names):
         if arr:
             arr.sort()
             diffs[nm] = arr[len(arr)//2]
-    above = sorted([n for n in names if diffs.get(n, 0) < 0], key=lambda n: diffs.get(n, 0))
-    below = sorted([n for n in names if diffs.get(n, 0) >= 0], key=lambda n: diffs.get(n, 0))
-    return (above, below)
+        else:
+            diffs[nm] = 0
+    return diffs
+
+def _ComputeGroupEndpointMean(items, endpointName):
+    # Compute mean(tp_time - default_time) for the endpointName across items that have both times.
+    vals = []
+    for svc in items:
+        td = _TypicalTimeForDefault(svc)
+        tt = _TypicalTimeForTp(svc, endpointName)
+        if td is not None and tt is not None:
+            vals.append(float(tt - td))
+    if not vals:
+        return None
+    return sum(vals) / float(len(vals))
+
+def _TpRangeFor(diffs, nlist):
+    if not nlist:
+        return (0, 0)
+    offs = [diffs.get(n, 0) for n in nlist]
+    return (min(offs), max(offs))
+
+def _TpSplitAndInsert(diffs, clusters_in, insert_cluster, anchor):
+    if not clusters_in:
+        return [insert_cluster]
+    for idx, cl in enumerate(clusters_in):
+        if int(cl.get('group', 0)) != 0:
+            continue
+        nlist = cl.get('names', [])
+        if not nlist:
+            continue
+        offs = [diffs.get(n, 0) for n in nlist]
+        seg_min = offs[0]
+        seg_max = offs[-1]
+        if anchor <= seg_min:
+            return clusters_in[:idx] + [insert_cluster] + clusters_in[idx:]
+        if anchor > seg_max:
+            continue
+        split_ix = -1
+        for j, off in enumerate(offs):
+            if off <= anchor:
+                split_ix = j
+            else:
+                break
+        if split_ix < 0:
+            return clusters_in[:idx] + [insert_cluster] + clusters_in[idx:]
+        pre = nlist[:split_ix+1]
+        post = nlist[split_ix+1:]
+        out = clusters_in[:idx]
+        if pre:
+            out.append({'group': 0, 'names': pre})
+        out.append(insert_cluster)
+        if post:
+            out.append({'group': 0, 'names': post})
+        out.extend(clusters_in[idx+1:])
+        return out
+    return clusters_in + [insert_cluster]
+
+def _BuildOrderedNamesForCategory(items, names, diffs, groupOf, category):
+    # category is 'above' or 'below'. Returns ordered clusters: [{'group':g,'names':[...]}]
+    if category == 'above':
+        cat_names = [n for n in names if diffs.get(n, 0) < 0]
+    else:
+        cat_names = [n for n in names if diffs.get(n, 0) >= 0]
+
+    by_group = {}
+    for n in cat_names:
+        g = int(groupOf.get(n, 0) or 0)
+        by_group.setdefault(g, []).append(n)
+
+    for g in by_group.keys():
+        by_group[g].sort(key=lambda nm: diffs.get(nm, 0))
+
+    nonzero = [g for g in by_group.keys() if g != 0]
+    group_order = []
+    for g in nonzero:
+        nlist = by_group.get(g, [])
+        if not nlist:
+            continue
+        endpoint = nlist[0] if category == 'above' else nlist[-1]
+        mean_val = _ComputeGroupEndpointMean(items, endpoint)
+        if mean_val is None:
+            mean_val = float(diffs.get(endpoint, 0))
+        group_order.append((mean_val, g))
+    group_order.sort(key=lambda t: t[0])
+
+    trunk = by_group.get(0, [])
+    clusters = [{'group': 0, 'names': trunk[:]}] if trunk else []
+
+    for _, g in group_order:
+        nlist = by_group.get(g, [])
+        if not nlist:
+            continue
+        ins = {'group': g, 'names': nlist[:]}
+        rmin, rmax = _TpRangeFor(diffs, nlist)
+        anchor = rmin if category == 'below' else rmax
+        if trunk:
+            clusters = _TpSplitAndInsert(diffs, clusters, ins, anchor)
+        else:
+            clusters.append(ins)
+
+    coalesced = []
+    for cl in clusters:
+        if not cl.get('names'):
+            continue
+        if coalesced and int(coalesced[-1].get('group', 0)) == int(cl.get('group', 0)):
+            coalesced[-1]['names'].extend(cl.get('names'))
+        else:
+            coalesced.append({'group': int(cl.get('group', 0)), 'names': cl.get('names')[:]})
+    return coalesced
+
+def _ComputeTpOrderGrouped(items, names):
+    diffs = _ComputeTpOffsetMedians(items, names)
+    above_clusters = _BuildOrderedNamesForCategory(items, names, diffs, TP_GROUP_OF, 'above')
+    below_clusters = _BuildOrderedNamesForCategory(items, names, diffs, TP_GROUP_OF, 'below')
+    above = []
+    for cl in above_clusters:
+        above.extend(cl.get('names', []))
+    below = []
+    for cl in below_clusters:
+        below.extend(cl.get('names', []))
+    return {'above': above, 'below': below, 'aboveClusters': above_clusters, 'belowClusters': below_clusters, 'diffs': diffs}
+
+def _ComputeTpOrder(items, names):
+    info = _ComputeTpOrderGrouped(items, names)
+    return (info.get('above', []), info.get('below', []))
 
 def _BuildTpOrderIndexByDirection(services_master):
     global TP_ORDER_BY_DIR
@@ -799,54 +956,120 @@ def _BuildTpOrderIndexByDirection(services_master):
             items = [s for s in services_master if (s.get("dir","") or "").strip() == ""]
         else:
             items = [s for s in services_master if (s.get("dir","") or "").strip().upper() == d]
-        TP_ORDER_BY_DIR[d] = _ComputeTpOrder(items, TP_NAMES)
+        TP_ORDER_BY_DIR[d] = _ComputeTpOrderGrouped(items, TP_NAMES)
 
 def _BuildTimingRowsForPage(page, showRep):
     """
     Returns:
     rows, timeRows(set), blockStarts(set), blockEnds(set), nameRows(set), above, below, baseRowsCount
     """
-    items = page["items"]
-    dkey = page.get("direction")
+    items = page['items']
+    dkey = page.get('direction')
     dkey = (str(dkey).upper() if dkey else None)
 
-    if dkey and dkey in TP_ORDER_BY_DIR:
-        above, below = TP_ORDER_BY_DIR.get(dkey, ([], TP_NAMES[:]))
-    else:
-        if dkey: above, below = _ComputeTpOrder(items, TP_NAMES)
-        else:    above, below = ([], TP_NAMES[:])
-
     rows = _blank_rows_for_start(showRep)
-    timeRows, blockStarts, blockEnds, nameRows = [], set(), set(), set()
-    def _AddBlockStart(r): blockStarts.add(r)
-    def _AddBlockEnd(r):   blockEnds.add(r)
+    timeRows = []
+    blockStarts = set()
+    blockEnds = set()
+    nameRows = set()
     baseRowsCount = 2 + (1 if showRep else 0)
 
+    # Determine TP ordering (group-aware)
+    if dkey and dkey in TP_ORDER_BY_DIR:
+        orderInfo = TP_ORDER_BY_DIR.get(dkey)
+    else:
+        orderInfo = _ComputeTpOrderGrouped(items, TP_NAMES)
+
+    above = orderInfo.get('above', [])
+    below = orderInfo.get('below', [])
+    aboveClusters = orderInfo.get('aboveClusters', [])
+    belowClusters = orderInfo.get('belowClusters', [])
+
     if HAS_TRIGGER_COL:
-        rows.append(["", ""]); r_trig = len(rows)-1
-        timeRows.append(r_trig); _AddBlockStart(r_trig); _AddBlockEnd(r_trig)
+        rows.append(['', ''])
+        r_trig = len(rows) - 1
+        timeRows.append(r_trig)
+        blockStarts.add(r_trig)
+        blockEnds.add(r_trig)
 
-    for nm in above:
-        rows.append([nm, "arr."]); r0 = len(rows)-1
-        rows.append(["", "dep./pass"]); r1 = len(rows)-1
-        timeRows.extend([r0, r1]); _AddBlockStart(r0); _AddBlockEnd(r1)
-        nameRows.add(r0)
+    # Above clusters (each cluster is one visual block)
+    for cl in aboveClusters:
+        nlist = cl.get('names', [])
+        if not nlist:
+            continue
+        startRow = None
+        endRow = None
+        for nm in nlist:
+            rows.append([nm, 'arr.'])
+            r0 = len(rows) - 1
+            rows.append(['', 'dep./pass'])
+            r1 = len(rows) - 1
+            timeRows.extend([r0, r1])
+            nameRows.add(r0)
+            if startRow is None:
+                startRow = r0
+            endRow = r1
+        if startRow is not None:
+            blockStarts.add(startRow)
+        if endRow is not None:
+            blockEnds.add(endRow)
 
-    rows.append([LAYOUT_NAME, "arr."]); r0 = len(rows)-1
-    rows.append(["", "dep./pass"]); r1 = len(rows)-1
-    rows.append(["", "plat."]);     r2 = len(rows)-1
-    timeRows.extend([r0, r1]); _AddBlockStart(r0); _AddBlockEnd(r2)
+    # Main timing point (layout profile name): ALWAYS rules around it
+    rows.append([LAYOUT_NAME, 'arr.'])
+    r0 = len(rows) - 1
+    rows.append(['', 'dep./pass'])
+    r1 = len(rows) - 1
+    rows.append(['', 'plat.'])
+    r2 = len(rows) - 1
+    timeRows.extend([r0, r1])
     nameRows.add(r0)
+    blockStarts.add(r0)
+    blockEnds.add(r2)
 
-    for nm in below:
-        rows.append([nm, "arr."]); r0 = len(rows)-1
-        rows.append(["", "dep./pass"]); r1 = len(rows)-1
-        timeRows.extend([r0, r1]); _AddBlockStart(r0); _AddBlockEnd(r1)
-        nameRows.add(r0)
+    # Force a rule between last above block and the layout block
+    try:
+        if aboveClusters and r0 > 0:
+            blockEnds.add(r0 - 1)
+    except:
+        pass
+
+    # Below clusters
+    firstBelowRow = None
+    for cl in belowClusters:
+        nlist = cl.get('names', [])
+        if not nlist:
+            continue
+        if firstBelowRow is None:
+            firstBelowRow = len(rows)
+        startRow = None
+        endRow = None
+        for nm in nlist:
+            rows.append([nm, 'arr.'])
+            rr0 = len(rows) - 1
+            rows.append(['', 'dep./pass'])
+            rr1 = len(rows) - 1
+            timeRows.extend([rr0, rr1])
+            nameRows.add(rr0)
+            if startRow is None:
+                startRow = rr0
+            endRow = rr1
+        if startRow is not None:
+            blockStarts.add(startRow)
+        if endRow is not None:
+            blockEnds.add(endRow)
+
+    # Force a rule between layout block and first below block
+    try:
+        if firstBelowRow is not None:
+            blockEnds.add(r2)
+            blockStarts.add(firstBelowRow)
+    except:
+        pass
 
     return rows, set(timeRows), blockStarts, blockEnds, nameRows, above, below, baseRowsCount
 
 def _FitFrameSnug():
+
     try:
         table_w = table.getPreferredSize().width
         w_cushion = 10
@@ -922,10 +1145,13 @@ def ApplyPage(page, SHOW_REP_ROW, REP_ROW_INDEX):
     maxCols = model.getColumnCount() - DATA_START_COL
     dkey = page.get("direction"); dkey = (str(dkey).upper() if dkey else None)
     if dkey and dkey in TP_ORDER_BY_DIR:
-        above_fixed, below_fixed = TP_ORDER_BY_DIR.get(dkey, ([], TP_NAMES[:]))
+        oi = TP_ORDER_BY_DIR.get(dkey) or {}
+        above_fixed = oi.get('above', [])
+        below_fixed = oi.get('below', [])
     else:
-        if dkey: above_fixed, below_fixed = _ComputeTpOrder(page["items"], TP_NAMES)
-        else:    above_fixed, below_fixed = ([], TP_NAMES[:])
+        oi = _ComputeTpOrderGrouped(page["items"], TP_NAMES)
+        above_fixed = oi.get('above', [])
+        below_fixed = oi.get('below', [])
 
     for i in range(min(len(items), maxCols)):
         svc = items[i]

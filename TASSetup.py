@@ -3480,13 +3480,13 @@ class TASSetupFrame(jmri.util.JmriJFrame):
                     reader = csv.DictReader(f, delimiter="\t")
                     headers = reader.fieldnames or []   
                     # Match "TPArr <name>" or "TPDep <name>" (case-insensitive), tolerate extra spaces
-                    pat = re.compile(r'^TP(?:Arr|Dep)\s+(.+)$', re.IGNORECASE)
+                    pat = re.compile(r'^TP(\d*)(Arr|Dep)\s+(.+)$', re.IGNORECASE)
                     for h in headers:
                         if not h:
                             continue
                         m = pat.match(str(h).strip())
                         if m:
-                            nm = (m.group(1) or "").strip()
+                            nm = (m.group(3) or "").strip()
                             if nm != "":
                                 out.add(nm)
             except Exception as ex:

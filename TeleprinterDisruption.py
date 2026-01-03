@@ -18,7 +18,7 @@
 #
 # <<SETTING DESCRIPTION BOOLEAN: Use 24-hour time>>
 #
-# IMPORTANT DESIGN NOTE (DO NOT "CLEAN UP" WITHOUT ASKING JAMES):
+# IMPORTANT DESIGN NOTE (DO NOT "CLEAN UP" WITHOUT CHECKING):
 # This script intentionally keeps a single shared runtime "hub" alive for the entire JMRI runtime session.
 # You may open and close the window many times. Closing a window does NOT stop the hub.
 #
@@ -180,6 +180,45 @@ def _ReadMemBool(suffix, defaultValue=False):
 # ----------------------------
 
 _DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+# Timing point header support: accept TPArr/TPDep and TP<digits>Arr/TP<digits>Dep.
+_TP_KEY_PAT = re.compile(r'^TP(\d*)(Arr|Dep)\s+(.+)$', re.IGNORECASE)
+
+def _FindTpCellValue(row, tpName, arrdep):
+    # Return the raw timetable cell value for a TP name and ARR/DEP selector.
+    # Supports both legacy headers (TPArr X / TPDep X) and grouped headers (TP1Arr X / TP1Dep X, etc).
+    if not row or not tpName or not arrdep:
+        return ''
+    wantName = str(tpName).strip()
+    if wantName == '':
+        return ''
+    wantKind = str(arrdep).strip().upper()
+    if wantKind not in ('ARR', 'DEP'):
+        return ''
+    # Fast path: legacy exact key.
+    try:
+        key = ('TPArr ' if wantKind == 'ARR' else 'TPDep ') + wantName
+        v = row.get(key, None)
+        if v is not None and str(v).strip() != '':
+            return str(v)
+    except:
+        pass
+    # Scan headers for grouped form.
+    try:
+        for k, v in row.items():
+            if not k:
+                continue
+            ks = str(k).strip()
+            m = _TP_KEY_PAT.match(ks)
+            if not m:
+                continue
+            kind = (m.group(2) or '').strip().upper()
+            name = (m.group(3) or '').strip()
+            if kind == wantKind and name.lower() == wantName.lower():
+                return '' if v is None else str(v)
+    except:
+        pass
+    return ''
+
 
 
 def _DayIndex(dayName):
@@ -354,7 +393,6 @@ def _GetLayoutEtaScheduledMinutes(row):
     arr = (row.get('Arr', '') or '').strip()
     trig = (row.get('Trigger', '') or '').strip()
     dep = (row.get('Dep', '') or '').strip()
-
     mm = _ParseTimeToMinutes(arr) if arr else None
     if mm is not None:
         return mm
@@ -364,19 +402,21 @@ def _GetLayoutEtaScheduledMinutes(row):
     mm = _ParseTimeToMinutes(dep) if dep else None
     if mm is not None:
         return mm
-
     best = None
     for k, v in row.items():
         if not k or not v:
             continue
-        ks = str(k).strip().lower()
-        if ks.startswith('tparr ') or ks.startswith('tpdep '):
-            t = _ParseTimeToMinutes(v)
-            if t is None:
-                continue
-            if best is None or t < best:
-                best = t
+        ks = str(k).strip()
+        m = _TP_KEY_PAT.match(ks)
+        if not m:
+            continue
+        t = _ParseTimeToMinutes(v)
+        if t is None:
+            continue
+        if best is None or t < best:
+            best = t
     return best
+
 
 
 def _MakeTrainIdentifier(hub, dayName, rn, use24h):
@@ -403,26 +443,16 @@ def _MakeTrainIdentifier(hub, dayName, rn, use24h):
 def _InferArrDepForTP(row, tpName, actualMin):
     if not row or not tpName:
         return 'DEP'
-    keyArr = 'TPArr ' + str(tpName)
-    keyDep = 'TPDep ' + str(tpName)
-    a = None
-    d = None
-    try:
-        va = (row.get(keyArr, '') or '').strip()
-        vd = (row.get(keyDep, '') or '').strip()
-        a = _ParseTimeToMinutes(va) if va else None
-        d = _ParseTimeToMinutes(vd) if vd else None
-    except:
-        a = None
-        d = None
-
+    va = _FindTpCellValue(row, tpName, 'ARR')
+    vd = _FindTpCellValue(row, tpName, 'DEP')
+    a = _ParseTimeToMinutes(va) if va else None
+    d = _ParseTimeToMinutes(vd) if vd else None
     if a is None and d is None:
         return 'DEP'
     if a is not None and d is None:
         return 'ARR'
     if d is not None and a is None:
         return 'DEP'
-
     try:
         da = abs(int(actualMin) - int(a))
         dd = abs(int(actualMin) - int(d))
@@ -430,17 +460,19 @@ def _InferArrDepForTP(row, tpName, actualMin):
     except:
         return 'DEP'
 
-
 def _GetScheduledMinuteForTP(row, tpName, arrdep):
     if not row or not tpName or not arrdep:
         return None
-    key = ('TPArr ' if arrdep == 'ARR' else 'TPDep ') + str(tpName)
+    kind = str(arrdep).strip().upper()
+    if kind == 'ARR':
+        raw = _FindTpCellValue(row, tpName, 'ARR')
+    else:
+        raw = _FindTpCellValue(row, tpName, 'DEP')
     try:
-        v = (row.get(key, '') or '').strip()
+        v = (raw or '').strip()
         return _ParseTimeToMinutes(v) if v else None
     except:
         return None
-
 
 def _StatusFromDelta(deltaMin):
     if deltaMin is None:
