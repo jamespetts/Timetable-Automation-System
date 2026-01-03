@@ -807,8 +807,11 @@ def _TypicalTimeForTp(svc, name):
     return _ParseMinutes(m.get("dep","")) or _ParseMinutes(m.get("arr",""))
 
 def _ComputeTpOffsetMedians(items, names):
-    # Return dict: tpName -> median(tp_time - default_time) across items.
+    # Return (diffs, counts):
+    # diffs: tpName -> median(tp_time - default_time) across items (0 when none)
+    # counts: tpName -> number of samples contributing to the median
     diffs = {}
+    counts = {}
     for nm in names:
         arr = []
         for svc in items:
@@ -819,9 +822,11 @@ def _ComputeTpOffsetMedians(items, names):
         if arr:
             arr.sort()
             diffs[nm] = arr[len(arr)//2]
+            counts[nm] = len(arr)
         else:
             diffs[nm] = 0
-    return diffs
+            counts[nm] = 0
+    return (diffs, counts)
 
 def _ComputeGroupEndpointMean(items, endpointName):
     # Compute mean(tp_time - default_time) for the endpointName across items that have both times.
@@ -931,7 +936,44 @@ def _BuildOrderedNamesForCategory(items, names, diffs, groupOf, category):
     return coalesced
 
 def _ComputeTpOrderGrouped(items, names):
-    diffs = _ComputeTpOffsetMedians(items, names)
+    diffs, counts = _ComputeTpOffsetMedians(items, names)
+    return _ComputeTpOrderGroupedFromDiffs(items, names, diffs, counts)
+
+def _OppositeDirectionKey(d, available):
+    # Return the opposite direction key where known; fall back to pairing when only two directions exist.
+    try:
+        dd = (str(d or '').strip().upper())
+    except:
+        dd = ''
+    if dd == '':
+        return None
+    pair = {
+        'UP': 'DOWN', 'DOWN': 'UP',
+        'NORTH': 'SOUTH', 'SOUTH': 'NORTH',
+        'NORTHBOUND': 'SOUTHBOUND', 'SOUTHBOUND': 'NORTHBOUND',
+        'EAST': 'WEST', 'WEST': 'EAST',
+        'EASTBOUND': 'WESTBOUND', 'WESTBOUND': 'EASTBOUND',
+        'INBOUND': 'OUTBOUND', 'OUTBOUND': 'INBOUND',
+        'INNER RAIL': 'OUTER RAIL', 'OUTER RAIL': 'INNER RAIL',
+        'CLOCKWISE': 'ANTICLOCKWISE', 'ANTICLOCKWISE': 'CLOCKWISE'
+    }
+    if dd in pair:
+        od = pair.get(dd)
+        if od in (available or []):
+            return od
+    # Fallback: if exactly two non-empty, non-UNSPECIFIED directions are present, pair them.
+    try:
+        av = [x for x in (available or []) if x and str(x).upper() != 'UNSPECIFIED']
+        avu = [str(x).strip().upper() for x in av if str(x).strip() != '']
+        avu = list(dict.fromkeys(avu))
+        if len(avu) == 2 and dd in avu:
+            return avu[0] if avu[1] == dd else avu[1]
+    except:
+        pass
+    return None
+
+def _ComputeTpOrderGroupedFromDiffs(items, names, diffs, counts, inferredFrom=None):
+    # Build TP ordering using an existing diffs map. counts is the original sample count map.
     above_clusters = _BuildOrderedNamesForCategory(items, names, diffs, TP_GROUP_OF, 'above')
     below_clusters = _BuildOrderedNamesForCategory(items, names, diffs, TP_GROUP_OF, 'below')
     above = []
@@ -940,7 +982,20 @@ def _ComputeTpOrderGrouped(items, names):
     below = []
     for cl in below_clusters:
         below.extend(cl.get('names', []))
-    return {'above': above, 'below': below, 'aboveClusters': above_clusters, 'belowClusters': below_clusters, 'diffs': diffs}
+    out = {
+        'above': above,
+        'below': below,
+        'aboveClusters': above_clusters,
+        'belowClusters': below_clusters,
+        'diffs': diffs,
+        'counts': counts
+    }
+    if inferredFrom is not None:
+        try:
+            out['inferredFrom'] = str(inferredFrom)
+        except:
+            out['inferredFrom'] = inferredFrom
+    return out
 
 def _ComputeTpOrder(items, names):
     info = _ComputeTpOrderGrouped(items, names)
@@ -950,14 +1005,62 @@ def _BuildTpOrderIndexByDirection(services_master):
     global TP_ORDER_BY_DIR
     TP_ORDER_BY_DIR = {}
     dirs, has_unspecified = DeriveDirectionOrder(services_master)
-    dir_keys = dirs[:] + (["UNSPECIFIED"] if has_unspecified else [])
+    dir_keys = dirs[:] + (['UNSPECIFIED'] if has_unspecified else [])
+    itemsByDir = {}
+    rawByDir = {}
     for d in dir_keys:
-        if d == "UNSPECIFIED":
-            items = [s for s in services_master if (s.get("dir","") or "").strip() == ""]
+        if d == 'UNSPECIFIED':
+            items = [s for s in services_master if (s.get('dir','') or '').strip() == '']
         else:
-            items = [s for s in services_master if (s.get("dir","") or "").strip().upper() == d]
-        TP_ORDER_BY_DIR[d] = _ComputeTpOrderGrouped(items, TP_NAMES)
-
+            items = [s for s in services_master if (s.get('dir','') or '').strip().upper() == d]
+        itemsByDir[d] = items
+        rawByDir[d] = _ComputeTpOrderGrouped(items, TP_NAMES)
+    # Edge case: if a direction has no timetable TP data for some names,
+    # infer their relative ordering from the opposite direction's known offsets.
+    for d in dir_keys:
+        if d == 'UNSPECIFIED':
+            continue
+        od = _OppositeDirectionKey(d, dir_keys)
+        if not od or od == d:
+            continue
+        if od not in rawByDir:
+            continue
+        info = rawByDir.get(d) or {}
+        oinfo = rawByDir.get(od) or {}
+        diffs = info.get('diffs', {}) or {}
+        counts = info.get('counts', {}) or {}
+        odiffs = oinfo.get('diffs', {}) or {}
+        ocounts = oinfo.get('counts', {}) or {}
+        # Copy to avoid mutating shared dicts
+        try:
+            ndiffs = dict(diffs)
+        except:
+            ndiffs = {}
+            for k in diffs.keys():
+                ndiffs[k] = diffs.get(k)
+        changed = False
+        for nm in TP_NAMES:
+            try:
+                c = int(counts.get(nm, 0) or 0)
+            except:
+                c = 0
+            if c > 0:
+                continue
+            try:
+                oc = int(ocounts.get(nm, 0) or 0)
+            except:
+                oc = 0
+            if oc <= 0:
+                continue
+            # Infer sign by opposite direction: offsets relative to base TP invert.
+            try:
+                ndiffs[nm] = -int(odiffs.get(nm, 0) or 0)
+                changed = True
+            except:
+                pass
+        if changed:
+            rawByDir[d] = _ComputeTpOrderGroupedFromDiffs(itemsByDir.get(d, []), TP_NAMES, ndiffs, counts, inferredFrom=od)
+    TP_ORDER_BY_DIR = rawByDir
 def _BuildTimingRowsForPage(page, showRep):
     """
     Returns:
