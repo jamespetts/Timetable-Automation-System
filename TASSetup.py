@@ -253,6 +253,8 @@ IMWTT_TimeSeparator   = "WTT_TIME_SEPARATOR"     # str: single character (":" or
 IMWTT_TpNameDotLeaders = "WTT_TP_NAME_DOT_LEADERS"  # bool: true/false (dot leaders after TP names)
 IMWTT_EcsLabel        = "WTT_ECS_LABEL"         # str: e.g., "ECS"
 IMWTT_EcsMatch        = "WTT_ECS_DEST_MATCH"    # str: comma-separated tokens (lowercased)
+IMWTT_TimingLoadLabel = "WTT_TIMING_LOAD_LABEL" # str: label for timing load and alternate column header
+IMWTT_RepNoLabel = "WTT_REP_NO_LABEL" # str: label for reporting number row in WTT display
 IMWTT_DirectionSplit  = "WTT_DIRECTION_SPLIT"     # bool: true/false
 IMWTT_OdHeaderVertical = "WTT_OD_HEADER_VERTICAL" # bool: true/false (unchecked=horizontal default)
 
@@ -2641,6 +2643,42 @@ class TASSetupFrame(jmri.util.JmriJFrame):
         txtEcs.addFocusListener(EcsLost())
         rowEcsLabel.add(lblEcs); rowEcsLabel.add(Box.createHorizontalStrut(8)); rowEcsLabel.add(txtEcs)
         root.add(rowEcsLabel, gbc)
+        # (4b) Timing load label (display text and optional alternative timetable column header)
+        gbc.gridy += 1
+        rowTlLabel = Box.createHorizontalBox()
+        lblTlLabel = JLabel("Timing load label (and optional column header):")
+        ApplyTheme(lblTlLabel)
+        txtTlLabel = JTextField(16)
+        txtTlLabel.setText(TBL.SafeGetOrCreateMemoryValue(IMWTT_TimingLoadLabel, "Timing load"))
+        def ApplyTlLabel():
+            s = (txtTlLabel.getText() or "").strip()
+            # Blank means use the default 'Timing load'
+            TBL.SafeSetMemoryValue(IMWTT_TimingLoadLabel, s)
+        txtTlLabel.addActionListener(lambda e: ApplyTlLabel())
+        class TlLabelLost(FocusAdapter):
+            def focusLost(self, e): ApplyTlLabel()
+        txtTlLabel.addFocusListener(TlLabelLost())
+        rowTlLabel.add(lblTlLabel); rowTlLabel.add(Box.createHorizontalStrut(8)); rowTlLabel.add(txtTlLabel)
+        root.add(rowTlLabel, gbc)
+        gbc.gridy += 1
+        root.add(MakeWrappedLabel("If your timetable CSV uses this exact text as a column header, it will be used instead of 'Timing load'.", widthPx=560, lineHeight=1.20, bold=False), gbc)
+        # (4c) Reporting number row label (WTT display only; does not affect the timetable CSV)
+        gbc.gridy += 1
+        rowRepLabel = Box.createHorizontalBox()
+        lblRepLabel = JLabel("Reporting number row label:")
+        ApplyTheme(lblRepLabel)
+        txtRepLabel = JTextField(16)
+        txtRepLabel.setText(TBL.SafeGetOrCreateMemoryValue(IMWTT_RepNoLabel, "Rep. no."))
+        def ApplyRepLabel():
+            s = (txtRepLabel.getText() or "").strip()
+            # Blank means use the default 'Rep. no.'
+            TBL.SafeSetMemoryValue(IMWTT_RepNoLabel, s)
+        txtRepLabel.addActionListener(lambda e: ApplyRepLabel())
+        class RepLabelLost(FocusAdapter):
+            def focusLost(self, e): ApplyRepLabel()
+        txtRepLabel.addFocusListener(RepLabelLost())
+        rowRepLabel.add(lblRepLabel); rowRepLabel.add(Box.createHorizontalStrut(8)); rowRepLabel.add(txtRepLabel)
+        root.add(rowRepLabel, gbc)
 
         # (5) _ECS_DEST_MATCH - multi-line tokens (one per line). Stored lowercased, comma-separated.
         gbc.gridy += 1

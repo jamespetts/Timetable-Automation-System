@@ -84,6 +84,8 @@ PAGE_MODE = _ReadMemStr("WTT_PAGE_MODE", "WEEKDAYS_SAT_SUN")
 TIME_24H = _ReadMemBool("WTT_TIME_24H", True)
 TIME_SEPARATOR = _ReadMemStr("WTT_TIME_SEPARATOR", " ")[:1]  # single char
 ECS_LABEL = _ReadMemStr("WTT_ECS_LABEL", "ECS")
+TIMING_LOAD_LABEL = _ReadMemStr("WTT_TIMING_LOAD_LABEL", "Timing load")
+REP_NO_LABEL = _ReadMemStr("WTT_REP_NO_LABEL", "Rep. no.")
 
 # Parse comma-separated tokens (lowercased, trimmed) into a set
 _ecs_raw = _ReadMemStr("WTT_ECS_DEST_MATCH", "empty to depot,empty,ety.,ecs")
@@ -373,7 +375,7 @@ def _blank_rows_for_start(showRep):
         ["", ""] + emptyData   # class / load (title set later)
     ]
     if showRep:
-        base.append(["Rep. no.", ""] + emptyData)
+        base.append([REP_NO_LABEL, ""] + emptyData)
     return base
 
 model = DefaultTableModel(_blank_rows_for_start(True), columns)  # temp; rebuilt after CSV
@@ -497,7 +499,15 @@ def LoadServicesMaster(csv_path):
                 idx["dest"]   = find_col(("Destination", "destination"))
                 idx["plat"]   = find_col(("Platform", "platform"))
                 idx["cls"]    = find_col(("Class", "class"))
-                idx["load"]   = find_col(("Timing load", "Timing Load", "timing load", "timing Load"))
+                # Timing load column: accept standard name and optional user override label
+                loadNames = ["Timing load", "Timing Load", "timing load", "timing Load"]
+                try:
+                    tll = (TIMING_LOAD_LABEL or "").strip()
+                    if tll != "":
+                        loadNames.append(tll)
+                except:
+                    pass
+                idx["load"]   = find_col(tuple(loadNames))
                 # TP columns
                 TP_NAMES[:] = []
                 seen_tp = set()
@@ -887,9 +897,10 @@ TOP_ROW_TITLE = ""
 
 def SetTopRowHeading():
     global TOP_ROW_TITLE
-    if _columns_present.get("cls") and _columns_present.get("load"): TOP_ROW_TITLE = "Class / Timing load"
+    TimingLoadLabel = (TIMING_LOAD_LABEL or "Timing load")
+    if _columns_present.get("cls") and _columns_present.get("load"): TOP_ROW_TITLE = "Class / " + TimingLoadLabel
     elif _columns_present.get("cls"): TOP_ROW_TITLE = "Class"
-    elif _columns_present.get("load"): TOP_ROW_TITLE = "Timing load"
+    elif _columns_present.get("load"): TOP_ROW_TITLE = TimingLoadLabel
     else: TOP_ROW_TITLE = ""
     try: model.setValueAt(TOP_ROW_TITLE, ROW_TOP_BOLD, 0)
     except: pass
