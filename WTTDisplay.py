@@ -684,25 +684,56 @@ def HtmlEscape(s):
 
 def _IsEcsDest(dest): return (dest or "").strip().lower() in _ECS_DEST_MATCH
 
-def _OdPhrase(origin, dest, layout_name):
+def _DestHasTimingPointTimeForDest(svc, dest):
+    # Return True if this service has a timing point whose name matches dest
+    # (case-insensitive) and that timing point has any time entered (Arr or Dep).
+    try:
+        d = (dest or "").strip().lower()
+        if d == "":
+            return False
+        tpmap = (svc.get('tp', {}) or {})
+        for k in tpmap.keys():
+            kn = (k or "").strip().lower()
+            if kn == d:
+                m = tpmap.get(k) or {}
+                a = (m.get('arr', '') or '').strip()
+                p = (m.get('dep', '') or '').strip()
+                return (a != '') or (p != '')
+        return False
+    except:
+        return False
+
+def _OdPhrase(origin, dest, layout_name, svc=None):
     o = (origin or "").strip(); d = (dest or "").strip()
     ln = (layout_name or "").strip().lower()
     ol = o.lower(); dl = d.lower()
     if _IsEcsDest(d): return ECS_LABEL
     if o and d:
-        if dl == ln and ol != ln: return "From " + o
-        if ol == ln and dl != ln: return "To " + d
+        if dl == ln and ol != ln:
+            if svc is not None and _DestHasTimingPointTimeForDest(svc, o):
+                return ""
+            return "From " + o
+        if ol == ln and dl != ln:
+            if svc is not None and _DestHasTimingPointTimeForDest(svc, d):
+                return ""
+            return "To " + d
         if ol == ln and dl == ln: return ""
         return o + " to " + d
     elif o:
-        return "" if ol == ln else ("From " + o)
+        if ol == ln: return ""
+        if svc is not None and _DestHasTimingPointTimeForDest(svc, o):
+            return ""
+        return "From " + o
     elif d:
-        return "" if dl == ln else ("To " + d)
+        if dl == ln: return ""
+        if svc is not None and _DestHasTimingPointTimeForDest(svc, d):
+            return ""
+        return "To " + d
     else:
         return ""
 
-def MakeWrappedHeaderHtml(origin, dest, px_width, layout_name):
-    phrase = _OdPhrase(origin, dest, layout_name)
+def MakeWrappedHeaderHtml(origin, dest, px_width, layout_name, svc=None):
+    phrase = _OdPhrase(origin, dest, layout_name, svc)
     if phrase:
         return "<html><div style='width:%dpx; text-align:center;'>%s</div></html>" % (px_width, HtmlEscape(phrase))
     return ""
@@ -1484,7 +1515,7 @@ def ApplyPage(page, SHOW_REP_ROW, REP_ROW_INDEX):
         wrap_px  = max(20, colWidth - 12)
         if i - DATA_START_COL < len(items):
             svc = items[i - DATA_START_COL]
-            hdr = MakeWrappedHeaderHtml(svc.get("origin",""), svc.get("dest",""), wrap_px, LAYOUT_NAME)
+            hdr = MakeWrappedHeaderHtml(svc.get("origin",""), svc.get("dest",""), wrap_px, LAYOUT_NAME, svc)
         else:
             hdr = ""
         table.getColumnModel().getColumn(i).setHeaderValue(hdr)
