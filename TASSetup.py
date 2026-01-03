@@ -250,6 +250,7 @@ IMSignallerDisplayList = "SIGNALLERDISPLAYLIST"
 IMWTT_PageMode        = "WTT_PAGE_MODE"          # str: "WEEKDAYS_SAT_SUN" / "SEVEN_DAYS" / "MONSAT_PLUS_SUN" / "ALL_WEEK"
 IMWTT_Time24          = "WTT_TIME_24H"          # bool: true/false
 IMWTT_TimeSeparator   = "WTT_TIME_SEPARATOR"     # str: single character (":" or " " or ".")
+IMWTT_TpNameDotLeaders = "WTT_TP_NAME_DOT_LEADERS"  # bool: true/false (dot leaders after TP names)
 IMWTT_EcsLabel        = "WTT_ECS_LABEL"         # str: e.g., "ECS"
 IMWTT_EcsMatch        = "WTT_ECS_DEST_MATCH"    # str: comma-separated tokens (lowercased)
 IMWTT_DirectionSplit  = "WTT_DIRECTION_SPLIT"     # bool: true/false
@@ -2612,6 +2613,18 @@ class TASSetupFrame(jmri.util.JmriJFrame):
         txtSep.addFocusListener(SepLost())
         rowSep.add(lblSep); rowSep.add(Box.createHorizontalStrut(8)); rowSep.add(txtSep)
         root.add(rowSep, gbc)
+
+        # (4) TP name dot leaders - checkbox
+        gbc.gridy += 1
+        rowDots = Box.createHorizontalBox()
+        chkDots = JCheckBox("Show dot leaders after timing point names")
+        chkDots.setOpaque(False)
+        chkDots.setSelected(GetMemoryBool(IMWTT_TpNameDotLeaders, False))
+        def ApplyTpDots(e=None):
+            SetMemoryBool(IMWTT_TpNameDotLeaders, chkDots.isSelected())
+        chkDots.addActionListener(ApplyTpDots)
+        rowDots.add(chkDots)
+        root.add(rowDots, gbc)
 
         # (4) ECS_LABEL - single-line text field
         gbc.gridy += 1

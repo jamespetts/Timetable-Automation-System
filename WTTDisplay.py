@@ -94,6 +94,9 @@ DIRECTION_SPLIT = _ReadMemBool("WTT_DIRECTION_SPLIT", True)
 # Header orientation for origin/destination columns (default: horizontal)
 # Set IMWTT_OD_HEADER_VERTICAL = "true" in TASSetup to enable vertical headers.
 OD_HEADER_VERTICAL = _ReadMemBool("WTT_OD_HEADER_VERTICAL", False)
+# Dot leaders after timing point names (spaced leaders like real WTTs)
+WTT_TP_NAME_DOT_LEADERS = _ReadMemBool("WTT_TP_NAME_DOT_LEADERS", False)
+
 
 # ---------------- Styles ----------------
 # Paper colour from IMTASPAPERCOLOUR (default "249,246,238")
@@ -279,6 +282,61 @@ class WTTCellRenderer(DefaultTableCellRenderer):
             comp.setBorder(BorderFactory.createCompoundBorder(outer, pad))
         else:
             comp.setBorder(outer)
+        # TP name dot leaders: fill the remainder of the name cell with "." without clipping or wrapping.
+        try:
+            if WTT_TP_NAME_DOT_LEADERS and column == int(self.rowHeaderCol):
+                # Name rows are the timing-point header rows: col 1 is "arr." and col 0 has the name.
+                v0 = "" if value is None else str(value)
+                if v0.strip() != "":
+                    v1 = None
+                    try:
+                        v1 = table.getValueAt(row, 1)
+                    except:
+                        v1 = None
+                    if ("" if v1 is None else str(v1)).strip() == "arr.":
+                        colW = 0
+                        try:
+                            colW = table.getColumnModel().getColumn(column).getWidth()
+                        except:
+                            colW = comp.getWidth() if hasattr(comp, "getWidth") else 0
+                        ins = None
+                        try:
+                            ins = comp.getInsets()
+                        except:
+                            ins = None
+                        avail = int(colW)
+                        if ins is not None:
+                            try:
+                                avail = avail - int(ins.left) - int(ins.right)
+                            except:
+                                pass
+                        # Safety margin for borders/AA differences
+                        avail = avail - 2
+                        if avail < 4:
+                            avail = 4
+                        fm = comp.getFontMetrics(comp.getFont())
+                        base = v0.rstrip()
+                        baseW = fm.stringWidth(base)
+                        dotW = fm.stringWidth(" .")
+                        if dotW <= 0:
+                            dotW = 1
+                        dots = 0
+                        if baseW < avail:
+                            try:
+                                dots = int((avail - baseW) // dotW)
+                            except:
+                                dots = 0
+                            if dots < 0:
+                                dots = 0
+                            # Adjust down if needed
+                            while dots > 0 and fm.stringWidth(base + (" ." * dots)) > avail:
+                                dots -= 1
+                            # Adjust up if possible (1-2 steps typically)
+                            while fm.stringWidth(base + (" ." * (dots + 1))) <= avail:
+                                dots += 1
+                        comp.setText(base + (" ." * dots))
+        except:
+            pass
         return comp
 
 class ZebraTable(JTable):
@@ -996,7 +1054,6 @@ def _ComputeTpOrderGroupedFromDiffs(items, names, diffs, counts, inferredFrom=No
         except:
             out['inferredFrom'] = inferredFrom
     return out
-
 def _ComputeTpOrder(items, names):
     info = _ComputeTpOrderGrouped(items, names)
     return (info.get('above', []), info.get('below', []))
