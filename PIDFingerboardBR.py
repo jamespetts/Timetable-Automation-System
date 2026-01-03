@@ -35,7 +35,7 @@
 import javax.swing as swing
 import java.awt as awt
 from java.awt import Color, Font, RenderingHints, BasicStroke, Dimension
-from java.awt.geom import RoundRectangle2D
+from java.awt.geom import RoundRectangle2D, Area
 from javax.swing import Timer
 import jmri
 from jmri import InstanceManager
@@ -531,23 +531,27 @@ def BR_TitleCase(s):
 def BR_ComposeCallingPattern(model):
     if not model:
         return ""
-
     callingRaw = (model.get("calling") or "").strip()
     destRaw = (model.get("dest") or "").strip()
-
     items = []
+    lastCallingRaw = None
     if callingRaw:
         for part in callingRaw.split(","):
             t = part.strip()
             if t:
                 items.append(BR_TitleCase(t))
-
+                lastCallingRaw = t
     dest = BR_TitleCase(destRaw)
     if dest:
-        items.append(dest)
-
+        # Avoid printing the destination twice if it is already the last item in the calling pattern.
+        try:
+            def _Norm(s):
+                return " ".join(str(s).strip().split()).lower()
+            if lastCallingRaw is None or _Norm(lastCallingRaw) != _Norm(destRaw):
+                items.append(dest)
+        except:
+            items.append(dest)
     return ", ".join(items)
-
 # -------------------- DRAWING PANEL --------------------
 
 class BR_FingerBoardPanel(swing.JPanel):
@@ -776,12 +780,71 @@ class BR_FingerBoardPanel(swing.JPanel):
 
             # White "Next train" box
             boxShape = RoundRectangle2D.Float(boxX, boxY, boxW, boxH, BR_BoxCorner, BR_BoxCorner)
+            boardShape = RoundRectangle2D.Float(boardX, boardY, boardW, boardH, BR_BoardCorner, BR_BoardCorner)
+            # Directional drop shadow for the entire sign (no internal shadows).
+            try:
+                signArea = Area(boxShape)
+                signArea.add(Area(boardShape))
+                baseTx = None
+                try:
+                    baseTx = g2.getTransform()
+                    steps = 10
+                    maxAlpha = 55
+                    # Shadow falls down and right, fading with distance.
+                    for s in range(1, steps + 1):
+                        frac = float(steps + 1 - s) / float(steps + 1)
+                        alpha = int(maxAlpha * (frac * frac))
+                        if alpha <= 0:
+                            continue
+                        ox = s
+                        oy = s
+                        g2.setColor(Color(0, 0, 0, alpha))
+                        # A little softening: a couple of near-by offsets, still down/right.
+                        offs = [(ox, oy), (ox + 1, oy), (ox, oy + 1)]
+                        for dx, dy in offs:
+                            g2.setTransform(baseTx)
+                            g2.translate(dx, dy)
+                            g2.fill(signArea)
+                except:
+                    pass
+                try:
+                    if baseTx is not None:
+                        g2.setTransform(baseTx)
+                except:
+                    pass
+            except:
+                pass
+
             g2.setColor(BR_White)
             g2.fill(boxShape)
-            self.drawCenteredMultiline(g2, "Next\nTrain", boxX, boxY, boxW, boxH)
+            # Small platform label at the top of the Next Train box.
+            try:
+                headerText = "Platform " + str(self.platform)
+                headerPadTop = 10
+                headerGap = 6
+                headerMaxW = int(boxW * 0.90)
+                headerBest = Font(BR_TypefaceDark, Font.PLAIN, 12)
+                for size in range(20, 9, -1):
+                    f = Font(BR_TypefaceDark, Font.PLAIN, size)
+                    hfm = g2.getFontMetrics(f)
+                    if hfm.stringWidth(headerText) <= headerMaxW:
+                        headerBest = f
+                        break
+                g2.setFont(headerBest)
+                g2.setColor(BR_Black)
+                hfm = g2.getFontMetrics(headerBest)
+                hx = boxX + int((boxW - hfm.stringWidth(headerText)) / 2)
+                hy = boxY + headerPadTop + hfm.getAscent()
+                g2.drawString(headerText, hx, hy)
+                headerAreaH = headerPadTop + hfm.getAscent() + hfm.getDescent() + headerGap
+                if headerAreaH < boxH - 20:
+                    self.drawCenteredMultiline(g2, "Next\nTrain", boxX, boxY + headerAreaH, boxW, boxH - headerAreaH)
+                else:
+                    self.drawCenteredMultiline(g2, "Next\nTrain", boxX, boxY, boxW, boxH)
+            except:
+                self.drawCenteredMultiline(g2, "Next\nTrain", boxX, boxY, boxW, boxH)
 
             # Black board
-            boardShape = RoundRectangle2D.Float(boardX, boardY, boardW, boardH, BR_BoardCorner, BR_BoardCorner)
             g2.setColor(BR_Black)
             g2.fill(boardShape)
 
