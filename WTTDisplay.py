@@ -576,20 +576,73 @@ def LoadServicesMaster(csv_path):
     return services
 
 # ---------------- Pages & headers ----------------
+# ---------------- Direction normalization & pairing ----------------
+def _NormDirectionKey(s):
+    # Normalize direction strings for comparisons (upper, collapse spaces).
+    try:
+        t = ("" if s is None else str(s)).strip().upper()
+    except:
+        t = ""
+    if t == "":
+        return ""
+    try:
+        t = re.sub(r"\s+", " ", t)
+    except:
+        pass
+    return t
+
+# Canonical direction pairings in priority order (first pair = highest priority).
+# NOTE: Priority is derived from this list order; there is no separate priority map with its own literals.
+DIRECTION_PAIRINGS = [
+    ("DOWN", "UP"),
+    ("WEST", "EAST"),
+    ("WESTBOUND", "EASTBOUND"),
+    ("SOUTH", "NORTH"),
+    ("SOUTHBOUND", "NORTHBOUND"),
+    ("OUTBOUND", "INBOUND"),
+    ("INNER RAIL", "OUTER RAIL"),
+    ("ANTICLOCKWISE", "CLOCKWISE"),
+]
+
+def _BuildDirectionPairMap(pairings):
+    m = {}
+    try:
+        for a, b in (pairings or []):
+            aa = _NormDirectionKey(a)
+            bb = _NormDirectionKey(b)
+            if aa != "" and bb != "":
+                m[aa] = bb
+                m[bb] = aa
+    except:
+        pass
+    return m
+
+def _BuildDirectionPriorityMapFromPairings(pairings):
+    # Priority is derived solely from the order of DIRECTION_PAIRINGS.
+    # Earlier pairs get lower numbers (sorted earlier). Within a pair, the first entry sorts before the second.
+    m = {}
+    try:
+        for i, ab in enumerate(pairings or []):
+            try:
+                a, b = ab
+            except:
+                continue
+            aa = _NormDirectionKey(a)
+            bb = _NormDirectionKey(b)
+            if aa != "":
+                m[aa] = int(i) * 2
+            if bb != "":
+                m[bb] = int(i) * 2 + 1
+    except:
+        pass
+    return m
+
+DIRECTION_PAIR_MAP = _BuildDirectionPairMap(DIRECTION_PAIRINGS)
+DIRECTION_PRIORITY_MAP = _BuildDirectionPriorityMapFromPairings(DIRECTION_PAIRINGS)
+
 def _DirectionPriority(d):
-    if d == 'DOWN':
-        return 0
-    if d == 'UP':
-        return 1
-    if d in ('EAST','EASTBOUND'):
-        return 10
-    if d in ('WEST','WESTBOUND'):
-        return 11
-    if d in ('NORTH','NORTHBOUND'):
-        return 20
-    if d in ('SOUTH','SOUTHBOUND'):
-        return 21
-    return 100
+    dd = _NormDirectionKey(d)
+    return int(DIRECTION_PRIORITY_MAP.get(dd, 1000000))
 
 def DeriveDirectionOrder(services):
     first_index = {}
@@ -1047,30 +1100,19 @@ def _ComputeTpOrderGrouped(items, names):
 
 def _OppositeDirectionKey(d, available):
     # Return the opposite direction key where known; fall back to pairing when only two directions exist.
-    try:
-        dd = (str(d or '').strip().upper())
-    except:
-        dd = ''
+    dd = _NormDirectionKey(d)
     if dd == '':
         return None
-    pair = {
-        'UP': 'DOWN', 'DOWN': 'UP',
-        'NORTH': 'SOUTH', 'SOUTH': 'NORTH',
-        'NORTHBOUND': 'SOUTHBOUND', 'SOUTHBOUND': 'NORTHBOUND',
-        'EAST': 'WEST', 'WEST': 'EAST',
-        'EASTBOUND': 'WESTBOUND', 'WESTBOUND': 'EASTBOUND',
-        'INBOUND': 'OUTBOUND', 'OUTBOUND': 'INBOUND',
-        'INNER RAIL': 'OUTER RAIL', 'OUTER RAIL': 'INNER RAIL',
-        'CLOCKWISE': 'ANTICLOCKWISE', 'ANTICLOCKWISE': 'CLOCKWISE'
-    }
-    if dd in pair:
-        od = pair.get(dd)
-        if od in (available or []):
+    try:
+        od = DIRECTION_PAIR_MAP.get(dd, None)
+        if od is not None and od in (available or []):
             return od
+    except:
+        pass
     # Fallback: if exactly two non-empty, non-UNSPECIFIED directions are present, pair them.
     try:
-        av = [x for x in (available or []) if x and str(x).upper() != 'UNSPECIFIED']
-        avu = [str(x).strip().upper() for x in av if str(x).strip() != '']
+        av = [x for x in (available or []) if x and _NormDirectionKey(x) != 'UNSPECIFIED']
+        avu = [_NormDirectionKey(x) for x in av if _NormDirectionKey(x) != '']
         avu = list(dict.fromkeys(avu))
         if len(avu) == 2 and dd in avu:
             return avu[0] if avu[1] == dd else avu[1]
