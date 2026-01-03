@@ -238,6 +238,7 @@ class WTTCellRenderer(DefaultTableCellRenderer):
             table, value, isSelected, hasFocus, row, column)
         if column in (0, 1): comp.setHorizontalAlignment(SwingConstants.LEFT)
         else: comp.setHorizontalAlignment(SwingConstants.CENTER)
+        didDots = False
 
         if (row in self.fillDotsRows) and (column >= self.dataStartCol):
             txt = "" if value is None else str(value)
@@ -245,6 +246,7 @@ class WTTCellRenderer(DefaultTableCellRenderer):
                 try: idx = self._dotsRowsOrder.index(row)
                 except: idx = 0
                 comp.setText(DOTS_A if (idx % 2 == 0) else DOTS_B)
+                didDots = True
         comp.setFont(BOLD_FONT if (row in self.boldRows) else BASE_FONT)
 
         if self.codesRow is not None and row == self.codesRow and column >= self.dataStartCol:
@@ -259,6 +261,9 @@ class WTTCellRenderer(DefaultTableCellRenderer):
                 elif style == "ITALIC": comp.setFont(ITALIC_FONT)
         except:
             pass
+
+        if didDots:
+            comp.setFont(BASE_FONT)
 
         if not isSelected:
             comp.setBackground(ROW_A if (row % 2 == 0) else ROW_B)
@@ -293,7 +298,8 @@ class WTTCellRenderer(DefaultTableCellRenderer):
                         v1 = table.getValueAt(row, 1)
                     except:
                         v1 = None
-                    if ("" if v1 is None else str(v1)).strip() == "arr.":
+                    v1s = ("" if v1 is None else str(v1)).strip()
+                    if (row in self.fillDotsRows) and (v1s == "arr." or v1s == "dep./pass" or v1s == ""):
                         colW = 0
                         try:
                             colW = table.getColumnModel().getColumn(column).getWidth()
@@ -1118,6 +1124,33 @@ def _BuildTpOrderIndexByDirection(services_master):
         if changed:
             rawByDir[d] = _ComputeTpOrderGroupedFromDiffs(itemsByDir.get(d, []), TP_NAMES, ndiffs, counts, inferredFrom=od)
     TP_ORDER_BY_DIR = rawByDir
+def _ShouldCollapseTpArrRow(items, tpName):
+    # Return True if the Arr row for this timing point can be omitted on this page.
+    #
+    # Rules:
+    # (1) If there are no Arr entries at all for this TP across the displayed services, collapse.
+    # (2) If every service that has an Arr entry also has a Dep entry at the same minute, collapse.
+    #     (If any service has Arr without Dep, or Arr != Dep, do NOT collapse.)
+    anyArr = False
+    for svc in (items or []):
+        m = (svc.get('tp', {}) or {}).get(tpName, {'arr':'', 'dep':''})
+        a = (m.get('arr','') or '').strip()
+        d = (m.get('dep','') or '').strip()
+        if a != '':
+            anyArr = True
+            if d == '':
+                return False
+            am = _ParseMinutes(a)
+            dm = _ParseMinutes(d)
+            if am is None or dm is None:
+                return False
+            if int(am) != int(dm):
+                return False
+    if not anyArr:
+        return True
+    return True
+
+
 def _BuildTimingRowsForPage(page, showRep):
     """
     Returns:
@@ -1160,12 +1193,24 @@ def _BuildTimingRowsForPage(page, showRep):
         startRow = None
         endRow = None
         for nm in nlist:
-            rows.append([nm, 'arr.'])
-            r0 = len(rows) - 1
-            rows.append(['', 'dep./pass'])
-            r1 = len(rows) - 1
-            timeRows.extend([r0, r1])
-            nameRows.add(r0)
+            collapseArr = False
+            try:
+                collapseArr = _ShouldCollapseTpArrRow(items, nm)
+            except:
+                collapseArr = False
+            if collapseArr:
+                rows.append([nm, ''])
+                r0 = len(rows) - 1
+                timeRows.append(r0)
+                nameRows.add(r0)
+                r1 = r0
+            else:
+                rows.append([nm, 'arr.'])
+                r0 = len(rows) - 1
+                rows.append(['', 'dep./pass'])
+                r1 = len(rows) - 1
+                timeRows.extend([r0, r1])
+                nameRows.add(r0)
             if startRow is None:
                 startRow = r0
             endRow = r1
@@ -1204,12 +1249,24 @@ def _BuildTimingRowsForPage(page, showRep):
         startRow = None
         endRow = None
         for nm in nlist:
-            rows.append([nm, 'arr.'])
-            rr0 = len(rows) - 1
-            rows.append(['', 'dep./pass'])
-            rr1 = len(rows) - 1
-            timeRows.extend([rr0, rr1])
-            nameRows.add(rr0)
+            collapseArr = False
+            try:
+                collapseArr = _ShouldCollapseTpArrRow(items, nm)
+            except:
+                collapseArr = False
+            if collapseArr:
+                rows.append([nm, ''])
+                rr0 = len(rows) - 1
+                timeRows.append(rr0)
+                nameRows.add(rr0)
+                rr1 = rr0
+            else:
+                rows.append([nm, 'arr.'])
+                rr0 = len(rows) - 1
+                rows.append(['', 'dep./pass'])
+                rr1 = len(rows) - 1
+                timeRows.extend([rr0, rr1])
+                nameRows.add(rr0)
             if startRow is None:
                 startRow = rr0
             endRow = rr1
@@ -1304,14 +1361,25 @@ def ApplyPage(page, SHOW_REP_ROW, REP_ROW_INDEX):
 
     maxCols = model.getColumnCount() - DATA_START_COL
     dkey = page.get("direction"); dkey = (str(dkey).upper() if dkey else None)
+
     if dkey and dkey in TP_ORDER_BY_DIR:
         oi = TP_ORDER_BY_DIR.get(dkey) or {}
-        above_fixed = oi.get('above', [])
-        below_fixed = oi.get('below', [])
     else:
-        oi = _ComputeTpOrderGrouped(page["items"], TP_NAMES)
-        above_fixed = oi.get('above', [])
-        below_fixed = oi.get('below', [])
+        oi = _ComputeTpOrderGrouped(items, TP_NAMES)
+
+    above_fixed = oi.get('above', [])
+    below_fixed = oi.get('below', [])
+
+    # Determine whether each TP Arr row can be collapsed for this page
+    tpCollapse = {}
+    try:
+        for nm in list(above_fixed) + list(below_fixed):
+            try:
+                tpCollapse[nm] = _ShouldCollapseTpArrRow(items, nm)
+            except:
+                tpCollapse[nm] = False
+    except:
+        tpCollapse = {}
 
     for i in range(min(len(items), maxCols)):
         svc = items[i]
@@ -1355,16 +1423,29 @@ def ApplyPage(page, SHOW_REP_ROW, REP_ROW_INDEX):
             r += 1
 
         def _FillTpBlock(tpname, r_in, col_index):
-            amap    = svc.get("tp",{}).get(tpname, {"arr":"", "dep":""})
-            arr_raw = amap.get("arr",""); dep_raw = amap.get("dep","")
-            arr_fmt = FormatTime(arr_raw); dep_fmt = FormatTime(dep_raw)
-            model.setValueAt(arr_fmt, r_in,   col_index)
+            amap = svc.get('tp', {}).get(tpname, {'arr':'', 'dep':''})
+            arr_raw = (amap.get('arr','') or '').strip()
+            dep_raw = (amap.get('dep','') or '').strip()
+            arr_fmt = FormatTime(arr_raw)
+            dep_fmt = FormatTime(dep_raw)
+            collapseArr = False
+            try:
+                collapseArr = bool(tpCollapse.get(tpname, False))
+            except:
+                collapseArr = False
+            if collapseArr:
+                show_raw = dep_raw if dep_raw != '' else arr_raw
+                show_fmt = dep_fmt if dep_raw != '' else arr_fmt
+                model.setValueAt(show_fmt, r_in, col_index)
+                style = 'BOLD' if (arr_raw.strip() != '') else 'ITALIC'
+                cellRenderer.styleByCell[(r_in, col_index)] = style
+                return r_in + 1
+            model.setValueAt(arr_fmt, r_in, col_index)
             model.setValueAt(dep_fmt, r_in+1, col_index)
-            style = "BOLD" if (arr_raw.strip() != "") else "ITALIC"
-            cellRenderer.styleByCell[(r_in,   col_index)] = style
+            style = 'BOLD' if (arr_raw.strip() != '') else 'ITALIC'
+            cellRenderer.styleByCell[(r_in, col_index)] = style
             cellRenderer.styleByCell[(r_in+1, col_index)] = style
             return r_in + 2
-
         for nm in above_fixed: r = _FillTpBlock(nm, r, DATA_START_COL + i)
 
         arr_raw  = svc.get("arr","")
