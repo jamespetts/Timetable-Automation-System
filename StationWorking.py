@@ -563,7 +563,7 @@ class WrapCellRenderer(JTextArea, TableCellRenderer):
         except:
             pass
         top = 0
-        self.setBorder(BorderFactory.createCompoundBorder(BorderFactory.createMatteBorder(top, MINOR_RULE_THICK, MINOR_RULE_THICK, MINOR_RULE_THICK, RULE), BorderFactory.createEmptyBorder(5, 3, 5, 3)))
+        self.setBorder(BorderFactory.createCompoundBorder(BorderFactory.createMatteBorder(top, MINOR_RULE_THICK, MINOR_RULE_THICK, MINOR_RULE_THICK, RULE), BorderFactory.createEmptyBorder(13, 3, 13, 3)))
         return self
 
 
@@ -614,7 +614,7 @@ class SWBCellRenderer(DefaultTableCellRenderer):
             comp.setHorizontalAlignment(SwingConstants.LEFT)
         comp.setVerticalAlignment(SwingConstants.TOP)
         top = 0
-        comp.setBorder(BorderFactory.createCompoundBorder(BorderFactory.createMatteBorder(top, MINOR_RULE_THICK, MINOR_RULE_THICK, MINOR_RULE_THICK, RULE), BorderFactory.createEmptyBorder(5, 3, 5, 3)))
+        comp.setBorder(BorderFactory.createCompoundBorder(BorderFactory.createMatteBorder(top, MINOR_RULE_THICK, MINOR_RULE_THICK, MINOR_RULE_THICK, RULE), BorderFactory.createEmptyBorder(13, 3, 13, 3)))
         return comp
 
 
@@ -643,7 +643,7 @@ class HeaderCellRenderer(DefaultTableCellRenderer):
         # Match body line weight/colour; add small horizontal padding.
         try:
             b = BorderFactory.createMatteBorder(MINOR_RULE_THICK, MINOR_RULE_THICK, MINOR_RULE_THICK, MINOR_RULE_THICK, RULE)
-            comp.setBorder(BorderFactory.createCompoundBorder(b, BorderFactory.createEmptyBorder(5, 3, 5, 3)))
+            comp.setBorder(BorderFactory.createCompoundBorder(b, BorderFactory.createEmptyBorder(13, 3, 13, 3)))
         except:
             pass
         return comp
@@ -681,7 +681,7 @@ class DepCellRenderer(JTextArea, TableCellRenderer):
             pass
         top = 0
         try:
-            self.setBorder(BorderFactory.createCompoundBorder(BorderFactory.createMatteBorder(top, MINOR_RULE_THICK, MINOR_RULE_THICK, MINOR_RULE_THICK, RULE), BorderFactory.createEmptyBorder(5, 3, 5, 3)))
+            self.setBorder(BorderFactory.createCompoundBorder(BorderFactory.createMatteBorder(top, MINOR_RULE_THICK, MINOR_RULE_THICK, MINOR_RULE_THICK, RULE), BorderFactory.createEmptyBorder(13, 3, 13, 3)))
         except:
             pass
         return self
@@ -708,8 +708,8 @@ class SWBJTable(JTable):
                 comp.setSize(Dimension(colW, 100000))
                 prefH = comp.getPreferredSize().height
                 if prefH is None:
-                    prefH = 36
-                prefH = max(36, int(prefH))
+                    prefH = 52
+                prefH = max(52, int(prefH))
                 curH = self.getRowHeight(row)
                 if curH < prefH:
                     self.setRowHeight(row, prefH)
@@ -720,7 +720,7 @@ class SWBJTable(JTable):
 
 _table = SWBJTable(_tableModel)
 _table.setFont(BASE_FONT)
-_table.setRowHeight(36)
+_table.setRowHeight(52)
 _table.setShowGrid(False)
 _table.setIntercellSpacing(Dimension(0, 0))
 _table.setAutoResizeMode(JTable.AUTO_RESIZE_LAST_COLUMN)
@@ -1156,11 +1156,11 @@ def _AdjustAllRowHeights():
         if rmCol < 0 and depCol < 0:
             return
 
-        baseH = 36
+        baseH = 52
         try:
             baseH = int(_table.getRowHeight())
         except:
-            baseH = 36
+            baseH = 52
 
         rmW = None
         depW = None
@@ -1282,7 +1282,7 @@ def _RebuildTableForCurrentPage():
         pass
 
     try:
-        _table.setRowHeight(36)
+        _table.setRowHeight(52)
     except:
         pass
 
