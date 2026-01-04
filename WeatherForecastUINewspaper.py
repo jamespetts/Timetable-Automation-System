@@ -385,6 +385,17 @@ class OldFlowLine(JPanel):
         )
         self.ep.setText(html)
         _apply_fixed_html_width(self.ep, self._wrap)
+        try:
+            ps = self.ep.getPreferredSize()
+            # Prevent BoxLayout from stretching lines vertically; keep gaps realistic.
+            self.ep.setMinimumSize(ps)
+            self.ep.setPreferredSize(ps)
+            self.ep.setMaximumSize(ps)
+            self.setMinimumSize(ps)
+            self.setPreferredSize(ps)
+            self.setMaximumSize(ps)
+        except Exception:
+            pass
 
 # ------------------------------ ADS ------------------------------
 def _get_str(name, default):
@@ -629,7 +640,7 @@ class OldAd(JPanel):
         # Borders (double rule with padding)
         inner = BorderFactory.createCompoundBorder(
             BorderFactory.createLineBorder(OLD_RULE,1),
-            EmptyBorder(14,16,14,16)
+            EmptyBorder(10,12,10,12)
         )
         dbl = BorderFactory.createCompoundBorder(BorderFactory.createLineBorder(OLD_TEXT,2), inner)
         self.setBorder(dbl)
@@ -648,15 +659,15 @@ class OldAd(JPanel):
             )
 
         html = (
-            "<html><div style='font-family: serif; color: rgb(24,24,24); text-align:center; line-height:1.25;'>"
-            "<div style='color: rgb(70,70,70); font-size: 13px; font-weight:bold;'>ADVERTISEMENT</div>"
-            "<div style='font-size: 24px; font-weight:bold; margin-top: 3px;'>{brand}</div>"
-            "<div style='font-size: 20px; font-weight:bold; margin-top: 2px;'>{l1}</div>"
+            "<html><div style='font-family: serif; color: rgb(24,24,24); text-align:center; line-height:1.15;'>"
+            "<div style='color: rgb(70,70,70); font-size: 11px; font-weight:bold;'>ADVERTISEMENT</div>"
+            "<div style='font-size: 16px; font-weight:bold; margin-top: 1px;'>{brand}</div>"
+            "<div style='font-size: 16px; font-weight:bold; margin-top: 1px;'>{l1}</div>"
             "{rule1}"
-            "<div style='font-size: 18px; margin-top: 2px;'>{l2}</div>"
-            "<div style='font-size: 18px; font-weight:bold; margin-top: 2px;'>{cta}</div>"
+            "<div style='font-size: 12px; margin-top: 1px;'>{l2}</div>"
+            "<div style='font-size: 12px; font-weight:bold; margin-top: 1px;'>{cta}</div>"
             "{rule2}"
-            "<div style='font-size: 14px; color: rgb(60,60,60);'>{strap}</div>"
+            "<div style='font-size: 12px; color: rgb(60,60,60);'>{strap}</div>"
             "</div></html>"
         ).format(
             brand=_html_escape(b.upper()),
@@ -676,6 +687,14 @@ class OldAd(JPanel):
 
         # Constrain width for wrapping; let height grow to fit (prevents clipping)
         _apply_fixed_html_width(self.ep, WRAP_W_OLD_AD)
+        try:
+            ps = self.ep.getPreferredSize()
+            # Keep advert from dominating and avoid layout stretching/clipping.
+            self.ep.setMinimumSize(ps)
+            self.ep.setPreferredSize(ps)
+            self.ep.setMaximumSize(ps)
+        except Exception:
+            pass
         self.add(self.ep, BorderLayout.CENTER)
 
         # Keep your original sizing
