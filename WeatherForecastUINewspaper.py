@@ -716,13 +716,13 @@ class OldAd(JPanel):
             ).format(mt=mt, mb=mb, hr=hr_col)
 
         html = (
-            "<html><div style='font-family: serif; color: rgb(24,24,24); text-align:center; line-height:1.12;'>"
-            "<div style='font-size: 17px; font-weight:bold; margin-top: 1px;'>{brand}</div>"
-            "<div style='font-size: 17px; font-weight:bold; margin-top: 1px;'>{l1}</div>"
+            "<html><div style='font-family: serif; color: rgb(24,24,24); text-align:center; line-height:1.28;'>"
+            "<div style='font-size: 17px; font-weight:bold; margin-top: 2px;'>{brand}</div>"
+            "<div style='font-size: 17px; font-weight:bold; margin-top: 3px;'>{l1}</div>"
             "{rule1}"
-            "<div style='font-size: 13px; margin-top: 1px;'>{l2}</div>"
-            "<div style='font-size: 13px; font-weight:bold; margin-top: 1px;'>{cta}</div>"
-                        "<div style='font-size: 12px; color: rgb(60,60,60);'>{strap}</div>"
+            "<div style='font-size: 13px; margin-top: 12px;'>{l2}</div>"
+            "<div style='font-size: 13px; font-weight:bold; margin-top: 10px;'>{cta}</div>"
+                        "<div style='font-size: 12px; color: rgb(60,60,60); margin-top: 12px;'>{strap}</div>"
             "</div></html>"
         ).format(
             brand=_html_escape(b.upper()),
@@ -768,11 +768,11 @@ class SmallOldAd(JPanel):
         self.ep = JEditorPane()
         self.ep.setContentType("text/html"); self.ep.setEditable(False); self.ep.setOpaque(False)
         html = (
-            "<html><div style='font-family: serif; font-size: 12px; color: rgb(24,24,24); text-align:center;'>"
-            "<div style='font-weight:bold;'>{b}</div>"
-            "<div style='font-weight:bold;'>{l1}</div>"
-            "<div>{l2}</div>"
-            "<div>{cta}</div>"
+            "<html><div style='font-family: serif; font-size: 12px; color: rgb(24,24,24); text-align:center; line-height:1.28;'>"
+            "<div style='font-weight:bold; margin-top: 0px;'>{b}</div>"
+            "<div style='font-weight:bold; margin-top: 6px;'>{l1}</div>"
+            "<div style='margin-top: 8px;'>{l2}</div>"
+            "<div style='margin-top: 8px;'>{cta}</div>"
             "</div></html>"
         ).format(b=_html_escape(b), l1=_html_escape(l1), l2=_html_escape(l2), cta=_html_escape(cta))
         self.ep.setText(html)
