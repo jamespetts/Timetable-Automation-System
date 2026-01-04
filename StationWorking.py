@@ -520,12 +520,14 @@ btnPrev = JButton("<")
 btnNext = JButton(">")
 btnSnap = JButton("Snap")
 chkFollow = JCheckBox("Auto-follow", False)
-for b in (btnPrev, btnNext, btnSnap, chkFollow):
+chkHighlight = JCheckBox("Highlight current", True)
+for b in (btnPrev, btnNext, btnSnap, chkFollow, chkHighlight):
     b.setFont(BASE_FONT)
 controlsPanel.add(btnPrev)
 controlsPanel.add(btnNext)
 controlsPanel.add(btnSnap)
 controlsPanel.add(chkFollow)
+controlsPanel.add(chkHighlight)
 
 statusLabel = JLabel("")
 statusLabel.setFont(BASE_FONT)
@@ -563,7 +565,7 @@ class WrapCellRenderer(JTextArea, TableCellRenderer):
         except:
             pass
         top = 0
-        self.setBorder(BorderFactory.createCompoundBorder(BorderFactory.createMatteBorder(top, MINOR_RULE_THICK, MINOR_RULE_THICK, MINOR_RULE_THICK, RULE), BorderFactory.createEmptyBorder(13, 3, 13, 3)))
+        self.setBorder(BorderFactory.createCompoundBorder(BorderFactory.createMatteBorder(top, MINOR_RULE_THICK, MINOR_RULE_THICK, MINOR_RULE_THICK, RULE), BorderFactory.createEmptyBorder(5, 3, 5, 3)))
         return self
 
 
@@ -614,7 +616,7 @@ class SWBCellRenderer(DefaultTableCellRenderer):
             comp.setHorizontalAlignment(SwingConstants.LEFT)
         comp.setVerticalAlignment(SwingConstants.TOP)
         top = 0
-        comp.setBorder(BorderFactory.createCompoundBorder(BorderFactory.createMatteBorder(top, MINOR_RULE_THICK, MINOR_RULE_THICK, MINOR_RULE_THICK, RULE), BorderFactory.createEmptyBorder(13, 3, 13, 3)))
+        comp.setBorder(BorderFactory.createCompoundBorder(BorderFactory.createMatteBorder(top, MINOR_RULE_THICK, MINOR_RULE_THICK, MINOR_RULE_THICK, RULE), BorderFactory.createEmptyBorder(5, 3, 5, 3)))
         return comp
 
 
@@ -643,7 +645,7 @@ class HeaderCellRenderer(DefaultTableCellRenderer):
         # Match body line weight/colour; add small horizontal padding.
         try:
             b = BorderFactory.createMatteBorder(MINOR_RULE_THICK, MINOR_RULE_THICK, MINOR_RULE_THICK, MINOR_RULE_THICK, RULE)
-            comp.setBorder(BorderFactory.createCompoundBorder(b, BorderFactory.createEmptyBorder(13, 3, 13, 3)))
+            comp.setBorder(BorderFactory.createCompoundBorder(b, BorderFactory.createEmptyBorder(5, 3, 5, 3)))
         except:
             pass
         return comp
@@ -681,7 +683,7 @@ class DepCellRenderer(JTextArea, TableCellRenderer):
             pass
         top = 0
         try:
-            self.setBorder(BorderFactory.createCompoundBorder(BorderFactory.createMatteBorder(top, MINOR_RULE_THICK, MINOR_RULE_THICK, MINOR_RULE_THICK, RULE), BorderFactory.createEmptyBorder(13, 3, 13, 3)))
+            self.setBorder(BorderFactory.createCompoundBorder(BorderFactory.createMatteBorder(top, MINOR_RULE_THICK, MINOR_RULE_THICK, MINOR_RULE_THICK, RULE), BorderFactory.createEmptyBorder(5, 3, 5, 3)))
         except:
             pass
         return self
@@ -708,8 +710,8 @@ class SWBJTable(JTable):
                 comp.setSize(Dimension(colW, 100000))
                 prefH = comp.getPreferredSize().height
                 if prefH is None:
-                    prefH = 52
-                prefH = max(52, int(prefH))
+                    prefH = 36
+                prefH = max(36, int(prefH))
                 curH = self.getRowHeight(row)
                 if curH < prefH:
                     self.setRowHeight(row, prefH)
@@ -720,7 +722,7 @@ class SWBJTable(JTable):
 
 _table = SWBJTable(_tableModel)
 _table.setFont(BASE_FONT)
-_table.setRowHeight(52)
+_table.setRowHeight(36)
 _table.setShowGrid(False)
 _table.setIntercellSpacing(Dimension(0, 0))
 _table.setAutoResizeMode(JTable.AUTO_RESIZE_LAST_COLUMN)
@@ -1156,11 +1158,11 @@ def _AdjustAllRowHeights():
         if rmCol < 0 and depCol < 0:
             return
 
-        baseH = 52
+        baseH = 36
         try:
             baseH = int(_table.getRowHeight())
         except:
-            baseH = 52
+            baseH = 36
 
         rmW = None
         depW = None
@@ -1282,7 +1284,7 @@ def _RebuildTableForCurrentPage():
         pass
 
     try:
-        _table.setRowHeight(52)
+        _table.setRowHeight(36)
     except:
         pass
 
@@ -1292,8 +1294,8 @@ def _RebuildTableForCurrentPage():
 
 
 def _UpdateHighlightAndMaybeFollow(doFollow):
-    # Do not highlight services for the wrong day-group: only highlight if the current layout day
-    # is included in the currently displayed page's day list.
+    # Highlight the current working only when enabled. Do not highlight if the current layout day
+    # is not included in the displayed page's day list.
     try:
         page = _state["pages"][_state["pageIndex"]] if _state["pages"] else None
         pageDays = []
@@ -1302,7 +1304,24 @@ def _UpdateHighlightAndMaybeFollow(doFollow):
         except:
             pageDays = []
 
+        # If the page is not for the current day-group, never highlight.
         if (not pageDays) or (_state["currentDay"] not in pageDays):
+            _swbRenderer.HighlightModelRow = -1
+            _wrapRenderer.Base.HighlightModelRow = -1
+            try:
+                _table.repaint()
+            except:
+                pass
+            return
+
+        # Determine the current row index only if we need it (highlight and/or follow).
+        wantHighlight = True
+        try:
+            wantHighlight = bool(chkHighlight.isSelected())
+        except:
+            wantHighlight = True
+
+        if (not wantHighlight) and (not doFollow):
             _swbRenderer.HighlightModelRow = -1
             _wrapRenderer.Base.HighlightModelRow = -1
             try:
@@ -1315,17 +1334,23 @@ def _UpdateHighlightAndMaybeFollow(doFollow):
         nowMin = _ParseMinutes(_state["currentTime"])
         items = page.get("items", []) if page else []
         rowIndex = _ChooseCurrentModelRow(items, dayName, nowMin)
-        _swbRenderer.HighlightModelRow = rowIndex
-        _wrapRenderer.Base.HighlightModelRow = rowIndex
+
+        if wantHighlight:
+            _swbRenderer.HighlightModelRow = rowIndex
+            _wrapRenderer.Base.HighlightModelRow = rowIndex
+        else:
+            _swbRenderer.HighlightModelRow = -1
+            _wrapRenderer.Base.HighlightModelRow = -1
+
         try:
             _table.repaint()
         except:
             pass
+
         if rowIndex >= 0 and doFollow:
             _EnsureRowVisible(rowIndex, center=True)
     except:
         pass
-
 
 def _SnapToCurrent():
     try:
@@ -1370,6 +1395,12 @@ def _OnSnap(event=None):
 btnNext.actionPerformed = NextPage
 btnPrev.actionPerformed = PrevPage
 btnSnap.actionPerformed = _OnSnap
+
+def _OnHighlightToggle(event=None):
+    # Toggle highlight of the current working without affecting paging/follow behaviour.
+    _UpdateHighlightAndMaybeFollow(chkFollow.isSelected())
+chkHighlight.actionPerformed = _OnHighlightToggle
+
 
 
 class _Action(AbstractAction):
@@ -1434,7 +1465,7 @@ try:
     controlsPanel.addMouseWheelListener(_wheelPager)
 except:
     pass
-for _c in (btnPrev, btnNext, btnSnap, chkFollow, statusLabel):
+for _c in (btnPrev, btnNext, btnSnap, chkFollow, chkHighlight, statusLabel):
     try:
         _c.addMouseWheelListener(_wheelPager)
     except:
