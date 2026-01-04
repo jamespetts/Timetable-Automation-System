@@ -15,7 +15,7 @@
 import jmri, java, csv, random
 from java.awt import Color, Font, BasicStroke, RenderingHints, Dimension, GridLayout, BorderLayout
 from java.awt.geom import Area, Ellipse2D, RoundRectangle2D
-from javax.swing import JPanel, JLabel, BoxLayout, BorderFactory, JTextArea, JEditorPane
+from javax.swing import JPanel, JLabel, BoxLayout, BorderFactory, JTextArea, JEditorPane, JScrollPane, ScrollPaneConstants
 from javax.swing.border import EmptyBorder
 import TASBeanLookup as TBL
 
@@ -147,6 +147,10 @@ def _dow_idx(name):
 def _dow_name_from_abs_minute(abs_min):
     return DAYS[int((abs_min // 1440) % 7)]
 
+def _fmt_hhmm(mins_of_day):
+    hh = int((mins_of_day % 1440) // 60)
+    mm = int(mins_of_day % 60)
+    return "%02d:%02d" % (hh, mm)
 # ------------------------------ HELPERS ------------------------------
 def _abs_now(timebase, dow_mem):
     t = timebase.getTime()
@@ -257,6 +261,55 @@ def glueH():
     return p
 
 # ------------------------------ Masthead ------------------------------
+def _build_suntimes_panel(style_old, sunRiseStr, sunSetStr):
+ # Build a small sunrise/sunset line to appear below the last forecast.
+ if sunRiseStr is None or sunSetStr is None: return None
+ p = JPanel(); p.setOpaque(False)
+ p.setLayout(BoxLayout(p, BoxLayout.Y_AXIS))
+ rule_col = OLD_RULE if style_old else MOD_RULE
+ txt_col = OLD_SUBTEXT if style_old else MOD_SUBTEXT
+ p.add(RuleLine(rule_col, 1))
+ p.add(_gapV(2))
+ row = JPanel(); row.setOpaque(False)
+ row.setLayout(BoxLayout(row, BoxLayout.X_AXIS))
+ label = JLabel("Sunrise " + str(sunRiseStr) + "   Sunset " + str(sunSetStr))
+ label.setForeground(txt_col)
+ label.setFont(Font("Serif" if style_old else "SansSerif", Font.PLAIN, 12))
+ row.add(glueH()); row.add(label); row.add(glueH())
+ p.add(row)
+ return p
+
+def _build_suntimes_box(style_old, sunRiseStr, sunSetStr):
+    # Compact sunrise/sunset block to sit inside a forecast column (ASCII only).
+    if sunRiseStr is None or sunSetStr is None: return None
+    p = JPanel(); p.setOpaque(False)
+    rule_col = OLD_RULE if style_old else MOD_RULE
+    txt_col = OLD_TEXT if style_old else MOD_TEXT
+    sub_col = OLD_SUBTEXT if style_old else MOD_SUBTEXT
+    p.setBorder(BorderFactory.createCompoundBorder(
+        BorderFactory.createLineBorder(rule_col, 1),
+        EmptyBorder(6,8,6,8)
+    ))
+    p.setLayout(BoxLayout(p, BoxLayout.Y_AXIS))
+    h = JLabel("SUN")
+    h.setForeground(sub_col)
+    h.setFont(Font("Serif" if style_old else "SansSerif", Font.BOLD, 10))
+    h.setAlignmentX(0.5)
+    p.add(h)
+    p.add(_gapV(2))
+    l1 = JLabel("Sunrise " + str(sunRiseStr))
+    l1.setForeground(txt_col)
+    l1.setFont(Font("Serif" if style_old else "SansSerif", Font.BOLD, 12))
+    l1.setAlignmentX(0.5)
+    p.add(l1)
+    p.add(_gapV(1))
+    l2 = JLabel("Sunset  " + str(sunSetStr))
+    l2.setForeground(txt_col)
+    l2.setFont(Font("Serif" if style_old else "SansSerif", Font.BOLD, 12))
+    l2.setAlignmentX(0.5)
+    p.add(l2)
+    return p
+
 class RuleLine(JPanel):
     def __init__(self, color, pixels=2):
         JPanel.__init__(self); self.setOpaque(False)
@@ -620,6 +673,11 @@ class ModernAd(JPanel):
             lbl.setFont(Font("SansSerif", style, int(size)))
             lbl.setHorizontalAlignment(JLabel.CENTER)
             return lbl
+        adv = JLabel("Advertisement")
+        adv.setForeground(MOD_SUBTEXT)
+        adv.setFont(Font("SansSerif", Font.BOLD, 11))
+        adv.setHorizontalAlignment(JLabel.CENTER)
+        self.add(adv)
         self.add(L(b, 18, True))
         self.add(L(l1, 16, True))
         self.add(L(l2, 14, False))
@@ -631,51 +689,48 @@ class OldAd(JPanel):
     - All text centre-aligned (HTML).
     - Two separator rules (above body and above footer).
     - Always shows a footer strap.
-    - Fixed wrap width; height expands -> no clipping.
+    - Fixed wrap width.
+
+    Note: The advert is intended to fit the forecast column height. If the
+    rendered advert is taller, it will be vertically clipped by the caller
+    (preferred/max height set externally).
     """
     def __init__(self, ad_tuple):
         JPanel.__init__(self); self.setOpaque(False)
         b,l1,l2,cta = tuple(_ascii_only(x) for x in ad_tuple)
 
-        # Borders (double rule with padding)
-        inner = BorderFactory.createCompoundBorder(
-            BorderFactory.createLineBorder(OLD_RULE,1),
-            EmptyBorder(10,12,10,12)
-        )
-        dbl = BorderFactory.createCompoundBorder(BorderFactory.createLineBorder(OLD_TEXT,2), inner)
-        self.setBorder(dbl)
-        self.setLayout(BorderLayout())  # single HTML component in CENTER
+        # Border (single rule) with padding
+        self.setBorder(BorderFactory.createCompoundBorder(
+            BorderFactory.createLineBorder(OLD_RULE, 2),
+            EmptyBorder(8, 10, 8, 10)
+        ))
+        self.setLayout(BorderLayout())
 
-        # CHANGED: rule color to black
         hr_col = "rgb(0,0,0)"
-
-        # Footer strap (always present)
         strap = _old_ad_footer_strap()
 
-        # Use a div as a 1px rule to ensure consistent rendering in JEditorPane.
-        def rule_div(mtop=6, mbot=6):
-            return "<div style='height:1px; background:{hr}; margin:{mt}px 0 {mb}px 0;'></div>".format(
-                hr=hr_col, mt=int(mtop), mb=int(mbot)
-            )
+        def sep_div(mtop=6, mbot=6):
+            mt = int(mtop); mb = int(mbot)
+            return (
+                "<div style='margin:{mt}px 0 {mb}px 0; border-top:1px solid {hr}; height:0;'></div>"
+            ).format(mt=mt, mb=mb, hr=hr_col)
 
         html = (
-            "<html><div style='font-family: serif; color: rgb(24,24,24); text-align:center; line-height:1.15;'>"
-            "<div style='color: rgb(70,70,70); font-size: 11px; font-weight:bold;'>ADVERTISEMENT</div>"
-            "<div style='font-size: 16px; font-weight:bold; margin-top: 1px;'>{brand}</div>"
-            "<div style='font-size: 16px; font-weight:bold; margin-top: 1px;'>{l1}</div>"
+            "<html><div style='font-family: serif; color: rgb(24,24,24); text-align:center; line-height:1.12;'>"
+            "<div style='font-size: 17px; font-weight:bold; margin-top: 1px;'>{brand}</div>"
+            "<div style='font-size: 17px; font-weight:bold; margin-top: 1px;'>{l1}</div>"
             "{rule1}"
-            "<div style='font-size: 12px; margin-top: 1px;'>{l2}</div>"
-            "<div style='font-size: 12px; font-weight:bold; margin-top: 1px;'>{cta}</div>"
-            "{rule2}"
-            "<div style='font-size: 12px; color: rgb(60,60,60);'>{strap}</div>"
+            "<div style='font-size: 13px; margin-top: 1px;'>{l2}</div>"
+            "<div style='font-size: 13px; font-weight:bold; margin-top: 1px;'>{cta}</div>"
+                        "<div style='font-size: 12px; color: rgb(60,60,60);'>{strap}</div>"
             "</div></html>"
         ).format(
             brand=_html_escape(b.upper()),
             l1=_html_escape(l1),
             l2=_html_escape(l2) if (l2 and l2.strip()) else " ",
             cta=_html_escape(cta) if (cta and cta.strip()) else " ",
-            rule1=rule_div(8, 8),
-            rule2=rule_div(10, 6),
+            rule1=sep_div(6, 6),
+            rule2="",
             strap=_html_escape(strap)
         )
 
@@ -685,22 +740,21 @@ class OldAd(JPanel):
         self.ep.setOpaque(False)
         self.ep.setText(html)
 
-        # Constrain width for wrapping; let height grow to fit (prevents clipping)
+        # Constrain width for wrapping
         _apply_fixed_html_width(self.ep, WRAP_W_OLD_AD)
         try:
             ps = self.ep.getPreferredSize()
-            # Keep advert from dominating and avoid layout stretching/clipping.
             self.ep.setMinimumSize(ps)
             self.ep.setPreferredSize(ps)
             self.ep.setMaximumSize(ps)
         except Exception:
             pass
+
         self.add(self.ep, BorderLayout.CENTER)
 
-        # Keep your original sizing
+        # Width hint (height is set by caller)
         self.setPreferredSize(Dimension(WRAP_W_OLD_AD + 50, 10))
         self.setMaximumSize(Dimension(WRAP_W_OLD_AD + 80, 100000))
-
 class SmallOldAd(JPanel):
     """Compact, era-style advert to drop inside a column (fills missing space neatly)."""
     def __init__(self, ad_tuple):
@@ -715,7 +769,6 @@ class SmallOldAd(JPanel):
         self.ep.setContentType("text/html"); self.ep.setEditable(False); self.ep.setOpaque(False)
         html = (
             "<html><div style='font-family: serif; font-size: 12px; color: rgb(24,24,24); text-align:center;'>"
-            "<div style='color: rgb(70,70,70); font-size: 10px; font-weight:bold;'>ADVERTISEMENT</div>"
             "<div style='font-weight:bold;'>{b}</div>"
             "<div style='font-weight:bold;'>{l1}</div>"
             "<div>{l2}</div>"
@@ -736,6 +789,8 @@ class WeatherForecastNewspaper(jmri.jmrit.automat.AbstractAutomaton):
         try: style = str(NEWS_STYLE.getValue() or 'modern').lower()
         except Exception: style = 'modern'
         old_style = (style == 'old')
+        oldBigAd = None
+        oldLeftPanel = None
         try:
             d = int(NEWS_DAYS.getValue() or 3); d = 2 if d < 2 else (3 if d > 3 else d)
         except Exception:
@@ -744,7 +799,17 @@ class WeatherForecastNewspaper(jmri.jmrit.automat.AbstractAutomaton):
 
         # Publication stamp
         abs_now = _abs_now(self.timebase, DOW_MEM)
-        pub_day = _dow_name_from_abs_minute(abs_now); pub_half = "AM" if (abs_now % 1440) < 12*60 else "PM"
+        pub_day = _dow_name_from_abs_minute(abs_now)
+        pub_half = "AM" if (abs_now % 1440) < 12*60 else "PM"
+        sunRiseStr = None
+        sunSetStr = None
+        try:
+            stPub = self.sunTimes.get(pub_day, FALLBACK_SUN[pub_day])
+            sunRiseStr = _fmt_hhmm(stPub['sunrise'])
+            sunSetStr = _fmt_hhmm(stPub['sunset'])
+        except Exception:
+            pass
+        pub_label = "%s %s" % (pub_day, pub_half)
 
         # Forecast snapshot
         pts = _read_points_once()
@@ -784,10 +849,14 @@ class WeatherForecastNewspaper(jmri.jmrit.automat.AbstractAutomaton):
 
         if old_style:
             # Masthead (title centered over columns via spacer)
-            cp.add(Masthead(True, title, "%s %s" % (pub_day, pub_half), include_title=False))
+            cp.add(Masthead(True, title, pub_label, include_title=False))
 
             # ===== OLD BODY: header centered over columns + two text columns + (EAST) large ad =====
             body = JPanel(); body.setOpaque(False); body.setLayout(BorderLayout())
+
+            leftPanel = JPanel(); leftPanel.setOpaque(False); leftPanel.setLayout(BorderLayout())
+            oldLeftPanel = leftPanel
+            body.add(leftPanel, BorderLayout.CENTER)
 
             # Header row centered over columns, with fixed spacer at EAST equal to advert width
             hdr = JPanel(); hdr.setOpaque(False); hdr.setLayout(BorderLayout())
@@ -795,11 +864,8 @@ class WeatherForecastNewspaper(jmri.jmrit.automat.AbstractAutomaton):
             title.setForeground(OLD_TEXT); title.setFont(Font("Serif", Font.BOLD, 30))
             title.setHorizontalAlignment(JLabel.CENTER)
             hdr.add(title, BorderLayout.CENTER)
-            spacer = JPanel(); spacer.setOpaque(False)
-            spacer.setPreferredSize(Dimension(AD_SIDEBAR_W, 1))
-            hdr.add(spacer, BorderLayout.EAST)
             hdr.setBorder(EmptyBorder(0, PAGE_H_MARGIN, 0, PAGE_H_MARGIN))
-            body.add(hdr, BorderLayout.NORTH)
+            leftPanel.add(hdr, BorderLayout.NORTH)
 
             # Build sequential half-day lines; day names UPPERCASE
             items = []
@@ -858,21 +924,30 @@ class WeatherForecastNewspaper(jmri.jmrit.automat.AbstractAutomaton):
                         if len(right_list) > 0:
                             right_col.add(_gapV(ROW_GAP))
                         right_col.add(SmallOldAd(small_ad))
-                cols.add(right_col)
 
-            body.add(cols, BorderLayout.CENTER)
+                        # Place sunrise/sunset in the empty space under the left forecast column (opposite the small advert).
+                        sunBox = _build_suntimes_box(True, sunRiseStr, sunSetStr)
+                        if sunBox is not None:
+                            try:
+                                left_col.add(_gapV(ROW_GAP))
+                                left_col.add(sunBox)
+                            except Exception:
+                                pass
+                cols.add(right_col)
+            leftPanel.add(cols, BorderLayout.CENTER)
 
             # EAST: Large advert
             ad_list = _ads_from_memory(True)
             if len(ad_list) > 0:
                 big_ad = OldAd(_EDITION_RNG.choice(ad_list))
-                body.add(big_ad, BorderLayout.EAST)
+                oldBigAd = big_ad
+            body.add(big_ad, BorderLayout.EAST)
 
             cp.add(body)
 
         else:
             # ===== MODERN =====
-            cp.add(Masthead(False, title, "%s %s" % (pub_day, pub_half), include_title=True))
+            cp.add(Masthead(False, title, pub_label, include_title=True))
             actual_cols = max(1, sum(1 for k,_ in decisions if k != 'skip'))
             row = JPanel(); row.setOpaque(False)
             row.setBorder(EmptyBorder(2, PAGE_H_MARGIN, 2, PAGE_H_MARGIN))
@@ -896,6 +971,9 @@ class WeatherForecastNewspaper(jmri.jmrit.automat.AbstractAutomaton):
                     col.add(p)
                 row.add(col)
             cp.add(row)
+            stPanel = _build_suntimes_panel(False, sunRiseStr, sunSetStr)
+            if stPanel is not None:
+                cp.add(stPanel)
 
             # Footer ads
             adsM = _ads_from_memory(False)
@@ -911,6 +989,19 @@ class WeatherForecastNewspaper(jmri.jmrit.automat.AbstractAutomaton):
         # Pack and adjust window sizes
         self.frame.pack()  
         
+        # Post-pack: constrain old advert height to left panel height to avoid forcing window taller.
+        if old_style and (oldBigAd is not None) and (oldLeftPanel is not None):
+            try:
+                hLp = oldLeftPanel.getPreferredSize().height
+                if hLp is not None and int(hLp) > 0:
+                    wAd = int(WRAP_W_OLD_AD + 50)
+                    dim = Dimension(wAd, int(hLp))
+                    oldBigAd.setMinimumSize(dim)
+                    oldBigAd.setPreferredSize(dim)
+                    oldBigAd.setMaximumSize(dim)
+                    self.frame.pack()
+            except Exception:
+                pass
         # Set window icon using TASIcon utility
         try:
             from TASIcon import SetFrameClockIcon
