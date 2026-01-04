@@ -459,7 +459,7 @@ class CoverPanel(JPanel):
         dlg.setVisible(True)
 
     def IsTimeWarpAllowed(self):
-        s = TBL.SafeGetOrCreateMemoryValue("ALLOWTIMEWARP", "").strip().lower()
+        s = str(TBL.SafeGetOrCreateMemoryValue("ALLOWTIMEWARP", "")).strip().lower()
         return s in ("true", "yes", "1", "on", "enabled")
 
     def UpdateTimeWarpEnabled(self):
@@ -475,8 +475,8 @@ class CoverPanel(JPanel):
     def OnWeatherForecast(self):
         # Decide which UI to run based on Memories, and handle disabled generator.
         wxEnabled = _IsStartUpScriptEnabled("WeatherGenerator.py")  # from Start-Up list  [1]
-        uiChoice  = TBL.SafeGetOrCreateMemoryValue("WX_UI", "Newspaper").strip()
-        cloudStr  = TBL.SafeGetOrCreateMemoryValue("CLOUDCOVERPCT", "0").strip()
+        uiChoice  = str(TBL.SafeGetOrCreateMemoryValue("WX_UI", "Newspaper")).strip()
+        cloudStr  = str(TBL.SafeGetOrCreateMemoryValue("CLOUDCOVERPCT", "0")).strip()
         try:
             cloud = int(float(cloudStr))
         except:
