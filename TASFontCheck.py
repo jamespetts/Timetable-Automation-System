@@ -137,6 +137,19 @@ def _ProfileJythonDir():
     except:
         return None
 
+
+def _ProfileDir():
+    # Profile root directory.
+    try:
+        return FileUtil.getExternalFilename("profile:")
+    except:
+        try:
+            p = jmri.profile.ProfileManager.getDefault().getActiveProfile()
+            if p is not None:
+                return str(p.getPath().toString())
+        except:
+            pass
+    return None
 def _ShouldSkipFile(fileName):
     try:
         fn = str(fileName or "")
@@ -214,6 +227,43 @@ def _ReadMemStrSuffix(suffix, default=""):
     except:
         return default
 
+
+
+def _HasInstalledDigital7MonoFamily():
+    # Return True if a Digital-7 mono family appears installed.
+    try:
+        fams = _AvailableFontFamilies()
+        lookup = {}
+        for f in fams:
+            try:
+                lookup[str(f).strip().lower()] = str(f)
+            except:
+                pass
+        for nm in ["digital-7 mono", "digital 7 mono", "digital-7", "digital 7"]:
+            if nm in lookup:
+                return True
+        for f in fams:
+            try:
+                l = str(f).lower()
+            except:
+                l = ""
+            if ("digital" in l) and ("mono" in l):
+                return True
+    except:
+        pass
+    return False
+
+def _FileExistsAny(paths):
+    try:
+        for p in (paths or []):
+            try:
+                if p and os.path.exists(p):
+                    return True
+            except:
+                pass
+    except:
+        pass
+    return False
 # ---------------------------
 # Strip docstrings (triple-quoted) and full-line comments.
 # No regex used.
@@ -509,7 +559,7 @@ def _ExtractPickFamilyCandidateLists(codeText):
 # ---------------------------
 
 class FontRequirement(object):
-    def __init__(self, key, title, candidates, scripts, acceptable=None, fallbackOnly=None, configured=None):
+    def __init__(self, key, title, candidates, scripts, acceptable=None, fallbackOnly=None, configured=None, fileCandidates=None, fileLabel=None):
         self.Key = key
         self.Title = title
         self.Candidates = list(candidates or [])
@@ -517,6 +567,8 @@ class FontRequirement(object):
         self.Acceptable = list(acceptable or [])
         self.FallbackOnly = list(fallbackOnly or [])
         self.Configured = configured  # optional string describing configured value source
+        self.FileCandidates = list(fileCandidates or [])
+        self.FileLabel = fileLabel
 
 class FontCheckResult(object):
     def __init__(self, req):
@@ -539,6 +591,8 @@ def BuildRequirementsFromProfileScripts():
     prefsByFile = {}
     ctorFontsByFile = {}
     pickListsByFile = {}
+    # Track scripts that use Digital-7 (mono) via direct TTF loading (e.g. NSEClock.py).
+    digital7Scripts = set()
 
     # Track scripts referencing a configurable font memory.
     memFontScripts = set()
@@ -550,6 +604,11 @@ def BuildRequirementsFromProfileScripts():
     for fn, full in scripts:
         txt = _ReadText(full)
         code = _StripDocstringsAndFullLineComments(txt)
+        try:
+            if "digital-7 (mono).ttf" in str(code).lower():
+                digital7Scripts.add(fn)
+        except:
+            pass
 
         if 'TAS_FONT_FAMILY' in code:
             memFontScripts.add(fn)
@@ -570,6 +629,29 @@ def BuildRequirementsFromProfileScripts():
             pickCount += 1
 
     requirements = []
+
+
+    # Digital-7 mono for NSE clock: satisfied by installed family OR TTF file present.
+    if digital7Scripts:
+        ttfName = "digital-7 (mono).ttf"
+        pcands = []
+        try:
+            p0 = _ProfileDir()
+            p1 = _ProfileJythonDir()
+            if p0:
+                pcands.append(os.path.join(str(p0), ttfName))
+            if p1:
+                pcands.append(os.path.join(str(p1), ttfName))
+        except:
+            pass
+        requirements.append(FontRequirement(
+            key="DIGITAL7_MONO",
+            title="NSEClock digits: Digital-7 mono (installed font or TTF file)",
+            candidates=["Digital-7 Mono"],
+            scripts=sorted(list(digital7Scripts)),
+            fileCandidates=pcands,
+            fileLabel=ttfName
+        ))
 
     # 1) Lightbox group: any script whose prefs contains a Johnston/Railway candidate.
     lightboxScripts = []
@@ -766,13 +848,30 @@ def EvaluateRequirements(requirements):
                 fbPresent.append(a)
         res.PresentFallbackOnly = fbPresent
 
+
+        # Optional file-based satisfaction (e.g. NSEClock Digital-7 mono TTF).
+        fileHit = False
+        try:
+            if (not present) and hasattr(req, 'FileCandidates') and req.FileCandidates:
+                if _FileExistsAny(req.FileCandidates):
+                    fileHit = True
+        except:
+            fileHit = False
+
         # Status rules:
         # - Configured font: missing -> MISSING (user asked for it)
         # - Preferred-with-fallback: missing but fallback present -> WARN
         # - Otherwise: missing -> MISSING
-        if present:
+        if present or fileHit:
             res.Status = "OK"
-            res.Detail = "Installed: " + ", ".join(present)
+            if (not present) and fileHit:
+                try:
+                    lab = req.FileLabel if hasattr(req, 'FileLabel') and req.FileLabel else 'font file'
+                except:
+                    lab = 'font file'
+                res.Detail = "Found required font file: " + str(lab)
+            else:
+                res.Detail = "Installed: " + ", ".join(present)
         else:
             if req.Configured is not None:
                 # Configured but not installed
@@ -1226,6 +1325,88 @@ GetMissingFontsCount = CountMissingFonts
 # If another script runs this via execfile and wants it to be silent,
 # it can set TASFontCheckSilent=True in the globals dict passed to execfile.
 
+if globals().get('TASFontCheckSilent', False):
+    try:
+        globals()['TASFontCheckMissingCount'] = int(CountMissingFonts(False))
+    except:
+        pass
+else:
+    if __name__ == '__main__':
+        try:
+            RunFontCheck(silent=False, parentFrame=None)
+        except:
+            try:
+                RunFontCheckDialog(None)
+            except:
+                pass
+
+
+# ---------------------------
+# Public API for other scripts
+# ---------------------------
+
+def GetFontCheckResults():
+    # Returns (results, meta) without showing any UI.
+    reqs, meta = BuildRequirementsFromProfileScripts()
+    res = EvaluateRequirements(reqs)
+    return res, meta
+
+def CountMissingFonts(includeWarn=False):
+    # Returns an int count of missing fonts.
+    # By default counts only hard missing requirements (Status == "MISSING").
+    # If includeWarn=True, counts WARN rows too.
+    try:
+        results, meta = GetFontCheckResults()
+    except:
+        return 0
+
+    missing = 0
+    for r in (results or []):
+        try:
+            st = str(r.Status)
+        except:
+            st = ""
+        if st == "MISSING":
+            missing += 1
+        elif includeWarn and st == "WARN":
+            missing += 1
+    return int(missing)
+
+def RunFontCheck(silent=False, parentFrame=None):
+    # If silent=True, do not show UI and return CountMissingFonts().
+    # If silent=False, show the UI and also return CountMissingFonts() (computed first).
+    cnt = 0
+    try:
+        cnt = CountMissingFonts(False)
+    except:
+        cnt = 0
+
+    if not silent:
+        try:
+            RunFontCheckDialog(parentFrame)
+        except:
+            try:
+                FontsFrame(parentFrame)
+            except:
+                pass
+
+    # Expose as a module global for callers that use execfile.
+    try:
+        globals()['TASFontCheckMissingCount'] = int(cnt)
+    except:
+        pass
+
+    return int(cnt)
+
+# Backward-compatible alias
+GetMissingFontsCount = CountMissingFonts
+
+# ---------------------------
+# Default behaviour when executed directly
+# ---------------------------
+
+# If another script runs this via execfile and wants it to be silent,
+# it can set TASFontCheckSilent=True in the globals dict passed to execfile.
 if globals().get('TASFontCheckSilent', False):
     try:
         globals()['TASFontCheckMissingCount'] = int(CountMissingFonts(False))
