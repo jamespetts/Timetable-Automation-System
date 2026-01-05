@@ -244,6 +244,21 @@ def _html_escape(s):
              .replace(">"," >")
              .replace("'", "&#39;"))
 
+
+def _html_escape_basic(s):
+    # Minimal HTML escaping for use with Swing JLabel HTML.
+    # ASCII-only and Jython-safe.
+    try:
+        t = str(s)
+    except Exception:
+        t = ''
+    t = t.replace('&', '&amp;')
+    t = t.replace('<', '&lt;')
+    t = t.replace('>', '&gt;')
+    t = t.replace('"', '&quot;')
+    t = t.replace("'", '&#39;')
+    return t
+
 def _apply_fixed_html_width(ep, width_px):
     ep.setSize(Dimension(int(width_px), 10000))
     ps = ep.getPreferredSize()
@@ -271,6 +286,7 @@ def _build_suntimes_panel(style_old, sunRiseStr, sunSetStr):
  p.add(RuleLine(rule_col, 1))
  p.add(_gapV(2))
  row = JPanel(); row.setOpaque(False)
+ modernRow = row
  row.setLayout(BoxLayout(row, BoxLayout.X_AXIS))
  label = JLabel("Sunrise " + str(sunRiseStr) + "   Sunset " + str(sunSetStr))
  label.setForeground(txt_col)
@@ -291,7 +307,7 @@ def _build_suntimes_box(style_old, sunRiseStr, sunSetStr):
         EmptyBorder(6,8,6,8)
     ))
     p.setLayout(BoxLayout(p, BoxLayout.Y_AXIS))
-    h = JLabel("SUN")
+    h = JLabel("DAWN AND DUSK")
     h.setForeground(sub_col)
     h.setFont(Font("Serif" if style_old else "SansSerif", Font.BOLD, 10))
     h.setAlignmentX(0.5)
@@ -475,54 +491,53 @@ def _ads_from_memory(old_style):
             cta= _get_str('AD%d_CTA' % i, 'Enquire within')
             ads.append((_ascii_only(b), _ascii_only(l1), _ascii_only(l2), _ascii_only(cta)))
         return ads
-    # Expanded ASCII-only defaults (old era) ~12 items
+    # Advertisement text (old, large)
     if old_style:
         return [
-            ('Great Western Refreshments', 'Tea of notable strength', 'Favoured by travellers and staff alike.', 'Apply by post for prices'),
-            ('Maesteg Coal and Iron', 'Engines properly supplied', 'Quality fuel for dependable service.', 'Enquiries to the office'),
-            ('Jones and Sons Outfitters', 'Clothing for the railwayman', 'Durable boots and coats at fair rates.', 'Catalogues on request'),
-            ('Bristol Brassworks', 'Fittings and couplings', 'Reliable stock for workshops and depots.', 'Write for a price list'),
-            ('Harringtons Patent Oils', 'For smooth running', 'Engines preserved from undue wear.', 'Agents nationwide'),
-            ('Western Union Carriage Works', 'Repairs undertaken', 'Prompt attention - fair charges.', 'Estimates furnished'),
-            ('Carter and Pike Provisions', 'Provisions for staff messes', 'Good value. Sound quality.', 'Terms on application'),
-            ('Albion Lamp Company', 'Lanterns and wicks', 'Bright light for yard and shed.', 'Order by post'),
-            ('Swan Ink and Copy', 'For offices and clerks', 'Clean, durable ink.', 'Boxes kept in stock'),
-            ('Pembroke Rope and Canvas', 'Ropes, tarpaulins, sheets', 'Strong and weather fast.', 'Send measurements'),
-            ('Midland Timber Merchants', 'Wagons and staging', 'Well seasoned and straight.', 'Yard open daily'),
-            ('Gower Quarry Stone', 'Setts and sleepers packed', 'Hard wearing and true.', 'Rates on enquiry'),
+            ('IMPROVE YOUR GOLF', 'By using the Aylesbury Aluminium', 'GOLF TEE', 'Price 1/- per box of 6 or 2 boxes for 2/6'),
+            ('HUNTING HATS FOR LADIES AND GENTLEMEN', 'For Ladies 50/- For Gentlemen 52/6', "Scott's the Hatters", 'Illustrated catalogue post free on application'),
+            ('The original', 'ROY-HUNT BISCUITS', 'Compact, sustaining food for the field', 'Made by Stewart & Co.'),
+            ('WILLM. LOUD & SONS', 'Replacement gramophone horns', 'Made from finest materials', 'Write for a price list'),
+            ("HAYWARD'S MILITARY SAUCE", 'Get a bottle to-day and try it with a chop, steak or fried sole.', 'MILITARY SUACE stands on its flavour and purity alone.', '6d. and 9d. per bottle'),
+            ('THE HOSPITAL FOR SICK CHILDREN', 'Great Ormond Street, W. C.', 'Funds Urgently Needed to Prevent Needless Waste of Life', 'Give what you Please, but Please Give Something.'),
+            ('THE LONDON SHOE CO. LTD.', 'Wholesale boot factors - single pairs sold', 'Goods sent on approbation', 'Carriage Paid on British Letter Orders, but not on Approbation Parcels'),
+            ('SHREDDED WHEAT', 'Corrective to indigestion and constipation', 'A NATURAL Food without unnatural additions of yeast and chemicals', 'Order To-day.'),
+            ('PRESENTS FOR BOYS', 'Brass Steam Locomotive 17/6', 'Wiles Bazaar', 'Catalogues Free on receipt of One Penny for postage'),
+            ('BOVRIL', 'The SUBSTANCE of the BEEF', 'NOT the SHADOW', ''),
+            ("LIPTON'S TEAS", 'FAMOUS THE WORLD OVER', 'Have YOU enjoyed them?', 'In air-tight cans only'),
+            ("Pear's Soap", "The shaver's delight", "12 months' LUXURY for 12 pence", 'A shiling shaving stick lasts a year'),
         ]
-    # Expanded ASCII-only defaults (modern era) ~12 items
+    # Advertisement text (modern)
     else:
         return [
-            ('RailNet Ultra', 'Reliable signalling for busy routes', 'Trusted by operators nationwide', 'Call 0800 000 000'),
+            ('LOCKWOODS FRUIT SALAD', 'Fair shares for father, too', "Dad do without? Not likely - when it's Lockwods fruit salad!", "Look out for Lockwoods luscious fruit salad"),
             ("Billy's Replacement Speakers", 'Turning it up to 11 since 1911', 'Only the best interior gubbins', 'Order today'),
-            ('Acme RailCloud', 'Fleet control made simple', 'Fast. Secure. Affordable.', 'Visit acme.example'),
-            ('SignalSure', 'Next gen interlocking', 'Fail safe by design', 'Book a demo'),
-            ('LocoWash Pro', 'Keep the fleet spotless', 'Low water. High shine.', 'Service plans available'),
-            ('Waybeam IoT', 'Trackside sensors at scale', 'Data you can depend on', 'Contact sales'),
-            ('RailShield', 'Lineside cabinets', 'Rugged and secure', 'Request a brochure'),
-            ('AxleGuard', 'Condition monitoring', 'Detect faults early', 'Free trial available'),
-            ('DepotMate', 'Crew rostering software', 'Simple. Powerful.', 'Start now'),
-            ('GreenVolt Power', 'Battery systems for yards', 'Quiet and clean', 'Ask for a quote'),
-            ('ClearSignal', 'Training and certification', 'Build skills fast', 'Enroll today'),
-            ('TrackBond', 'High strength adhesives', 'For fast repairs', 'Order online'),
+            ("If you've got it in you, the Army will bring it out.", 'STAMINA. NERVE. KNOW-HOW. TEAMWORK. CONFIDENCE', 'The Professionals', 'Join today!'),
+            ("I've got a job with REAL prospects", "A career as a Post Office Telephonist", "You earn while you learn", 'TELEPHONIST RECRUITMENT CENTRE'),
+            ("The look that's good to your skin", 'The look is pure Cover Girl...', "It's the look that makes you feel good about looking good.", "Clean Make-up. COVER GIRL"),
+            ("Wall's pork pies.", "The choice is simple...", "Which will it be? Wall's Pork Pie or Wall's Melton Mowbray Pie with their famous traditional Wall's pork fillings.", "Simple, when you think about it."),
+            ('SWITCH TO SWATCH', "Swatch. On one hand, it's very Swiss. Water-resistant. Shock resistant. With precise Swiss technology.", "On the other hand, it rocks the boat. With outrageous colours.", "THE CRAZY NEW WAVE IN SWISS WATCHES."),
+            ('Only Sealink sail you to Ireland up to six times a day.', '(Decisions, decisions)', "No other ferry company can offer as many crossings to Ireland, and no other ferry company offers shorter crossings", "Sealink. Determined to give you a better service."),
+            ('A rarebit of news from Heinz', 'Four new cheese Toast Toppers!', "There's Cheese & Bacon, Cheese & Onion, Cheese & Mushroom and Cheese & Tomato", 'Delicious cheesy snacks you can cook in no time at all.'),
+            ('Banana flavour Angel Delight is pure genius', 'A taste to tempt any palate', 'Angel Delight', 'Ask any kid.'),
+            ('User Persil for ALL your wash', 'Whites. Coloureds. Fine things. Woollens', 'Washes whiter! Keeps coloureds bright! Keeps fine things fresh! Keeps woollens softer!', 'Persil.'),
+            ('SAY GOODBYE TO FIDGETY TV', 'Until now, many colour TVs had a way of keeping you on the edge of your seat.', 'Now Philips lets you relax again.', 'Philips'),
         ]
-
+# Advertisement text (old, small)
 def _small_old_ads():
-    """Dedicated pool for compact old-style adverts (shorter lines; ASCII only)."""
     return [
-        ('Rivet and Bolt Co', 'Fastenings supplied', 'Strong stock. Fair rates.', 'Post orders'),
-        ('Harper Oil and Grease', 'For bearings and slides', 'Clean running assured.', 'Agents wanted'),
-        ('Beacon Lamps', 'Yard and shed lanterns', 'Bright light. Long burning.', 'Write for lists'),
-        ('Crown Canvas', 'Tarpaulins and sheets', 'Well made. Weather fast.', 'Send sizes'),
-        ('Willm. Loud & Sons', 'Replacement gramophone horns', 'Made from finest materials', 'Order by post'),
-        ('Foundry Tools Ltd', 'Hammers and chisels', 'Forged and tempered.', 'Price by letter'),
-        ('Steam Gasket Works', 'Joints and packings', 'Tight seals, low cost.', 'Order today'),
-        ('Ironmongers Supply', 'Nails, screws, fittings', 'Prompt dispatch.', 'Catalogue free'),
-        ('Railway Tailor', 'Coats and boots', 'Hard wearing kit.', 'Measurements by post'),
-        ('Coastal Quarries', 'Ballast and stone', 'Well screened.', 'Rates on enquiry'),
-        ('Western Saddlery', 'Harness and leather', 'Stout and serviceable.', 'List sent'),
-        ('Midland Brush Co', 'Yard brooms', 'Tough fibres.', 'Boxes in stock'),
+        ("Lockyer's Virginia", 'Regal Oval cigarettes', 'Distinctive because of their Superior Quality', 'An Ideal Xmas Present'),
+        ("Rimmel's Perfumery & Toilet Soaps", 'Newest ans special - the Exquisite NESSARI', 'Orange Grove Bouquet, Gardenia Bouquet, Imperial Moscovite.', '96 Strand, W. C. 180'),
+        ("ROYLE'S PATENT", 'Self-Pouring Teapots', 'No nore aching arms as the teapot has not to be lifted', 'Illusttrated Price List post free, with Name of Nearest Agent.'),
+        ('SOUTOUMA', 'PRONOUNCED SOO-TOOMA', 'THE FAMOUS SWEET', 'Sold everywhere, 1d., 3d. & 6d.'),
+        ('Garton & King', 'Solicit Enquiries for', 'Hot Water, Domestic & Saintary Engineering', 'ESTIMATES FREE'),
+        ("Fry's Pure Concentrated Cocoa", '300 Gold Medals and Diplomas.', 'NO BETTER FOOD.', 'Dr. Andrew Wilson, F. R. S. E. & c.'),
+        ('SPECIAL VALUE', 'BRASS TABLE LAMPS', 'With opal shades.', 'Garton & King'),
+        ("FRANK COOPER'S OXFORD MARMALADE", '(As supplied to Royalty, Houses of Parliament, & c.)', 'Delightful in Flavour. Perfectly Pure.', 'THE BEST is THE CHEAPEST'),
+        ("BIRD'S CUSTARD POWDER", 'Numerous are its uses:', 'Dainties in endless variety, the choisest Dishes, and the richest Custard!', 'NO EGGS! NO RISK! NO TROUBLE!'),
+        ("DR. NICHOLS'", 'FOOD OF HEALTH', 'Nutricious and Delicious. For all ages.', '8d. per lb. packet.'),
+        ('EYEBRIGHT METAL POLISH', 'is the Best', 'for all metals', 'List sent'),
+        ('DRUCE & Compy. Ltd.', 'FURNISHERS and DECORATORS', 'All upholstry done in our own factory under hygenic conditions', 'Please write for illustrated catalogue (post free)'),
     ]
 
 # ------------------------------ OLD strapline with per-edition randomness & uniqueness ------------------------------
@@ -530,7 +545,7 @@ _EDITION_RNG = None
 _ED_USED_LINES = None
 
 def _bank_day(p):
-    t = "today"
+    t = "to-day"
     if p <= 7:  return ["Clear and bright; excellent visibility " + t + ".",
                         "Fine and sunny " + t + "; cloud slight.",
                         "Sunny throughout " + t + "; air clear.",
@@ -546,8 +561,8 @@ def _bank_day(p):
                         "Good brightness for many; cloud increasing late " + t + ".",
                         "Sunshine and cloud in turn " + t + ".",
                         "Sunny periods for most; cloud more later."]
-    if p <= 45: return ["Sunny intervals with passing cloud " + t + ".",
-                        "Bright spells at times; cloud otherwise variable " + t + ".",
+    if p <= 45: return ["Bright intervals with passing cloud " + t + ".",
+                        "Sunny spells at times; cloud otherwise variable " + t + ".",
                         "Occasional sunshine " + t + "; cloud more general later.",
                         "Mixed skies " + t + "; sunshine now and then.",
                         "Intervals of brightness amid variable cloud " + t + "."]
@@ -641,47 +656,33 @@ def _strap_old(avg_pct, daylike):
     _ED_USED_LINES.add(out)
     return out
 
-# ------------------------------ AD FOOTER STRAP (old big ad) ------------------------------
-def _old_ad_footer_strap():
-    """
-    Build a short, era-appropriate strap for the big old advert footer.
-    CHANGED: avoid literal '\u00b7' sequence; use ASCII hyphen as separator.
-    """
-    rng = _EDITION_RNG if _EDITION_RNG else random.Random(int(java.lang.System.currentTimeMillis() & 0x7FFFFFFF))
-    est_pool = [
-        "Established 1909", "Est. 1909", "Since 1909", "Founded 1909"
-    ]
-    scope_pool = [
-        "Agents nationwide", "Branches in principal towns", "Enquiries invited",
-        "Prices on application", "Catalogues posted", "Trade supplied"
-    ]
-    # ASCII-only separator to avoid stray \u00b7 text
-    return rng.choice(est_pool) + " - " + rng.choice(scope_pool)
-
 # ------------------------------ AD PANELS ------------------------------
 class ModernAd(JPanel):
-    """Centred lines; font sizes tuned to fill; used in a 2-column footer."""
-    def __init__(self, ad_tuple):
-        JPanel.__init__(self); self.setOpaque(False)
-        b, l1, l2, cta = ad_tuple
-        self.setLayout(GridLayout(0,1,0,2))
-        self.setBorder(BorderFactory.createCompoundBorder(BorderFactory.createLineBorder(MOD_RULE,2), EmptyBorder(10,12,10,12)))
-        def L(txt, size, bold):
-            style = Font.BOLD if bold else Font.PLAIN
-            lbl = JLabel(_ascii_only(txt))
-            lbl.setForeground(MOD_TEXT)
-            lbl.setFont(Font("SansSerif", style, int(size)))
-            lbl.setHorizontalAlignment(JLabel.CENTER)
-            return lbl
-        adv = JLabel("Advertisement")
-        adv.setForeground(MOD_SUBTEXT)
-        adv.setFont(Font("SansSerif", Font.BOLD, 11))
-        adv.setHorizontalAlignment(JLabel.CENTER)
-        self.add(adv)
-        self.add(L(b, 18, True))
-        self.add(L(l1, 16, True))
-        self.add(L(l2, 14, False))
-        self.add(L(cta, 14, True))
+ """Centred lines; slightly compact heights; used in a 2-column footer."""
+ def __init__(self, ad_tuple):
+  JPanel.__init__(self); self.setOpaque(False)
+  b, l1, l2, cta = ad_tuple
+  self.setLayout(GridLayout(0,1,0,0))
+  # Tighter padding so footer ads take less height without clipping.
+  self.setBorder(BorderFactory.createCompoundBorder(BorderFactory.createLineBorder(MOD_RULE,2), EmptyBorder(4,10,4,10)))
+  def L(txt, size, bold):
+   style = Font.BOLD if bold else Font.PLAIN
+   safe = _html_escape_basic(_ascii_only(txt))
+   html = "<html><div style='width:100%; text-align:center; line-height:1.05; margin:0; padding:0;'>" + safe + "</div></html>"
+   lbl = JLabel(html)
+   lbl.setForeground(MOD_TEXT)
+   lbl.setFont(Font("SansSerif", style, int(size)))
+   lbl.setHorizontalAlignment(JLabel.CENTER)
+   return lbl
+  adv = JLabel("<html><div style='width:100%; text-align:center; line-height:1.05; margin:0; padding:0;'>ADVERTISEMENT</div></html>")
+  adv.setForeground(MOD_SUBTEXT)
+  adv.setFont(Font("SansSerif", Font.BOLD, 10))
+  adv.setHorizontalAlignment(JLabel.CENTER)
+  self.add(adv)
+  self.add(L(b, 16, True))
+  self.add(L(l1, 14, True))
+  self.add(L(l2, 12, False))
+  self.add(L(cta, 12, True))
 
 class OldAd(JPanel):
     """
@@ -707,8 +708,6 @@ class OldAd(JPanel):
         self.setLayout(BorderLayout())
 
         hr_col = "rgb(0,0,0)"
-        strap = _old_ad_footer_strap()
-
         def sep_div(mtop=6, mbot=6):
             mt = int(mtop); mb = int(mbot)
             return (
@@ -718,11 +717,11 @@ class OldAd(JPanel):
         html = (
             "<html><div style='font-family: serif; color: rgb(24,24,24); text-align:center; line-height:1.28;'>"
             "<div style='font-size: 17px; font-weight:bold; margin-top: 2px;'>{brand}</div>"
-            "<div style='font-size: 17px; font-weight:bold; margin-top: 3px;'>{l1}</div>"
+            "<div style='height: 12px;'></div>"
+            "<div style='font-size: 17px; font-weight:bold; margin-top: 0px;'>{l1}</div>"
             "{rule1}"
             "<div style='font-size: 13px; margin-top: 12px;'>{l2}</div>"
             "<div style='font-size: 13px; font-weight:bold; margin-top: 10px;'>{cta}</div>"
-                        "<div style='font-size: 12px; color: rgb(60,60,60); margin-top: 12px;'>{strap}</div>"
             "</div></html>"
         ).format(
             brand=_html_escape(b.upper()),
@@ -730,8 +729,6 @@ class OldAd(JPanel):
             l2=_html_escape(l2) if (l2 and l2.strip()) else " ",
             cta=_html_escape(cta) if (cta and cta.strip()) else " ",
             rule1=sep_div(6, 6),
-            rule2="",
-            strap=_html_escape(strap)
         )
 
         self.ep = JEditorPane()
@@ -791,6 +788,7 @@ class WeatherForecastNewspaper(jmri.jmrit.automat.AbstractAutomaton):
         old_style = (style == 'old')
         oldBigAd = None
         oldLeftPanel = None
+        modernRow = None
         try:
             d = int(NEWS_DAYS.getValue() or 3); d = 2 if d < 2 else (3 if d > 3 else d)
         except Exception:
@@ -944,7 +942,7 @@ class WeatherForecastNewspaper(jmri.jmrit.automat.AbstractAutomaton):
             body.add(big_ad, BorderLayout.EAST)
 
             cp.add(body)
-
+            cp.add(_gapV(6))
         else:
             # ===== MODERN =====
             cp.add(Masthead(False, title, pub_label, include_title=True))
@@ -1010,19 +1008,90 @@ class WeatherForecastNewspaper(jmri.jmrit.automat.AbstractAutomaton):
             print("[WeatherForecastUIApp] Failed to set weather UI window icon: " + str(ex))
         
         if old_style:
+            # OLD style: cap width here; height will be auto-sized after the frame is visible.
             w = self.frame.getWidth(); h = self.frame.getHeight()
             if w > MAX_W_OLD:
-                self.frame.setSize(MAX_W_OLD, h); w = MAX_W_OLD
-            if h > OLD_HEIGHT_CAP:
-                self.frame.setSize(w, OLD_HEIGHT_CAP)
+                self.frame.setSize(MAX_W_OLD, h)
         else:
             w = self.frame.getWidth(); h = self.frame.getHeight()
+            # Prevent modern window becoming excessively wide; cap using existing MAX_W_OLD constant.
+            if w > MAX_W_OLD:
+                self.frame.setSize(MAX_W_OLD, h); w = MAX_W_OLD
             if h < MIN_H_MODERN:
                 self.frame.setSize(w, MIN_H_MODERN)
-
+            # Keep modern window width consistent with the forecast columns (do not let footer ads force a wider pack).
+            try:
+                if modernRow is not None:
+                    wRow = modernRow.getPreferredSize().width
+                    if wRow is not None and int(wRow) > 0:
+                        try:
+                            ins = self.frame.getInsets()
+                            wantW = int(wRow) + int(ins.left) + int(ins.right)
+                        except Exception:
+                            wantW = int(wRow)
+                        curW = self.frame.getWidth()
+                        curH = self.frame.getHeight()
+                        if int(wantW) > 0 and int(curW) > int(wantW):
+                            self.frame.setSize(int(wantW), int(curH))
+            except Exception:
+                pass
         self.frame.setLocationByPlatform(True)
+        selfOuter = self
         self.frame.setVisible(True)
-        
+        # Auto-size OLD window after it becomes displayable (one-shot).
+        # This uses realized insets and final preferred sizes to avoid both clipping and excess blank space.
+        try:
+            from javax.swing import Timer
+            from java.awt.event import ActionListener
+            class WX_AUTO_RESIZE_TIMER(ActionListener):
+                def actionPerformed(self, ev):
+                    try:
+                        if not old_style:
+                            return
+                        if selfOuter.frame is None:
+                            return
+                        try:
+                            if not selfOuter.frame.isDisplayable():
+                                return
+                        except Exception:
+                            pass
+                        # Re-pack now that native peers/insets exist.
+                        try:
+                            selfOuter.frame.pack()
+                        except Exception:
+                            pass
+                        cp = selfOuter.frame.getContentPane()
+                        cpH = cp.getPreferredSize().height
+                        if cpH is None:
+                            cpH = selfOuter.frame.getHeight()
+                        try:
+                            ins = selfOuter.frame.getInsets()
+                            wantH = int(cpH) + int(ins.top) + int(ins.bottom)
+                        except Exception:
+                            wantH = int(cpH)
+                        # Cap to usable screen height.
+                        try:
+                            from java.awt import Toolkit
+                            sh = Toolkit.getDefaultToolkit().getScreenSize().height
+                            maxH = int(sh) - 80
+                        except Exception:
+                            maxH = wantH
+                        if wantH > maxH:
+                            wantH = maxH
+                        # Preserve current width (already capped to MAX_W_OLD earlier).
+                        wNow = selfOuter.frame.getWidth()
+                        selfOuter.frame.setSize(int(wNow), int(wantH))
+                    except Exception:
+                        pass
+                    try:
+                        ev.getSource().stop()
+                    except Exception:
+                        pass
+            t = Timer(60, WX_AUTO_RESIZE_TIMER())
+            t.setRepeats(False)
+            t.start()
+        except Exception:
+            pass
         # ---- CLEANUP ON WINDOW CLOSE ----
         # Ensure proper disposal and clear module/global state so repeat opens are fresh.
         try:
