@@ -4355,7 +4355,7 @@ class TASSetupFrame(jmri.util.JmriJFrame):
         # Cloud cover control
         lblCloud = JLabel("Cloud cover (%):")
         txtCloud = JTextField(3)
-        txtCloud.setText(TBL.SafeGetOrCreateMemoryValue(IMWxCloudPct, "0"))
+        txtCloud.setText(str(TBL.SafeGetOrCreateMemoryValue(IMWxCloudPct, "0")))
         def ApplyCloud():
             s = txtCloud.getText().strip()
             try:
