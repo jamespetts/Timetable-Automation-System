@@ -41,7 +41,7 @@
 
 import javax.swing as swing
 import java.awt as awt
-from java.awt import Color, Font, RenderingHints, BasicStroke, Dimension, GradientPaint
+from java.awt import Color, Font, RenderingHints, BasicStroke, Dimension, GradientPaint, GraphicsEnvironment
 from java.awt.geom import RoundRectangle2D
 from java.awt.image import BufferedImage
 from javax.swing import Timer
@@ -572,11 +572,31 @@ CASE_DARK2 = Color(18, 18, 18)
 RED_LINE = Color(180, 20, 20)
 
 # Font
-FONT_MAIN = Font("SansSerif", Font.PLAIN, 44)
-FONT_MINS = Font("SansSerif", Font.PLAIN, 26)
-FONT_SPECIAL = Font("SansSerif", Font.PLAIN, 44)
+# Use the same font selection hierarchy as PIDLightboxSingle.py.
+def AvailableFamilies():
+    try:
+        ge = GraphicsEnvironment.getLocalGraphicsEnvironment()
+        return [str(f) for f in ge.getAvailableFontFamilyNames()]
+    except:
+        return []
 
-# To change typeface, edit the family name (e.g. "SansSerif") in FONT_MAIN, FONT_MINS, and FONT_SPECIAL above.
+def PickFamily():
+    # Prefer Johnston/Railway style if present; otherwise fall back safely.
+    prefs = ["LED Dot-Matrix", "SansSerif"]
+    fams = [f for f in AvailableFamilies()]
+    low = set([f.lower() for f in fams])
+    for p in prefs:
+        if p.lower() in low:
+            return p
+    for f in fams:
+        if "railway" in f.lower():
+            return f
+    return "SansSerif"
+
+FONT_FAM = PickFamily()
+FONT_MAIN = Font(FONT_FAM, Font.PLAIN, 44)
+FONT_MINS = Font(FONT_FAM, Font.PLAIN, 26)
+FONT_SPECIAL = Font(FONT_FAM, Font.PLAIN, 44)
 PAD_X = 26
 
 # Animation speed adjustment: requested ~60% of previous speed => duration / 0.6
@@ -588,6 +608,55 @@ def _RowCenterBaseline(y, h, fm):
     # Standard vertical centering for a single-line text block
     return int(y + (h - fm.getHeight()) // 2 + fm.getAscent())
 
+# Font metrics helpers
+# Different fonts (especially dot-matrix bitmap-style fonts) can have very different
+# ascent/descent/leading, so fm.getHeight() centering can look wrong.
+# These helpers center based on the actual glyph outline bounds for the specific text.
+def _GlyphBounds2D(fontObj, frc, text):
+    try:
+        s = str(text or '')
+    except:
+        s = ''
+    try:
+        gv = fontObj.createGlyphVector(frc, s)
+        return gv.getOutline(0.0, 0.0).getBounds2D()
+    except:
+        return None
+
+def _CenteredBaselineY(g2, y, h, fontObj, text):
+    # Return a baseline Y such that the *glyph outline* is vertically centered inside (y,h).
+    # Falls back to FontMetrics centering if glyph bounds are unavailable.
+    try:
+        frc = g2.getFontRenderContext()
+    except:
+        frc = None
+    if frc is not None:
+        b = _GlyphBounds2D(fontObj, frc, text)
+        if b is not None:
+            try:
+                gh = float(b.getHeight())
+                by = float(b.getY())
+                if gh > 0.0:
+                    # Want top of glyph at y + (h-gh)/2
+                    return float(y) + (float(h) - gh) / 2.0 - by
+            except:
+                pass
+    try:
+        fm = g2.getFontMetrics(fontObj)
+        return float(_RowCenterBaseline(int(y), int(h), fm))
+    except:
+        return float(y) + float(h) * 0.75
+
+def _CenteredXForBounds(x, w, bounds2d):
+    # Return an x origin for drawing a glyph outline so that its bounds are centered in (x,w).
+    try:
+        if bounds2d is None:
+            return float(x)
+        bw = float(bounds2d.getWidth())
+        bx = float(bounds2d.getX())
+        return float(x) + (float(w) - bw) / 2.0 - bx
+    except:
+        return float(x)
 
 # ------------------------------------------------------------
 # Panel
@@ -964,53 +1033,110 @@ class PIDUndergroundLedWindow(object):
             pass
 
     def _DrawRow(self, g2, x, y, w, h, leftText, minsVal):
+
         # Draw one row: left text + right minutes (number big + MINS. small aligned to row bottom)
+
         if leftText is None:
-            leftText = ""
+
+            leftText = ''
+
         leftText = str(leftText)
 
-        minsNumText = ""
-        minsSuffixText = ""
+        minsNumText = ''
+
+        minsSuffixText = ''
+
         if minsVal is not None:
+
             try:
+
                 mv = int(minsVal)
+
             except:
+
                 mv = None
+
             if mv is not None and mv > 0:
+
                 minsNumText = str(mv)
-                minsSuffixText = "MINS."
+
+                minsSuffixText = 'MINS.'
 
         g2.setColor(ORANGE)
 
-        # Left
+
+        # Left text - center using glyph bounds to handle fonts with unusual ascent/leading.
+
         g2.setFont(FONT_MAIN)
-        fmL = g2.getFontMetrics(FONT_MAIN)
-        baseLeft = _RowCenterBaseline(y, h, fmL)
-        g2.drawString(leftText, int(x + PAD_X), int(baseLeft))
-        # Right minutes: align the minutes number vertically with the main row text.
-        # Use the same baseline as the left text (baseLeft). Adjust the smaller 'MINS.' baseline
-        # so that its bottom aligns with the minutes number bottom (baseline+descent).
+
+        baseLeft = _CenteredBaselineY(g2, float(y), float(h), FONT_MAIN, leftText)
+
+        g2.drawString(leftText, int(x + PAD_X), int(round(baseLeft)))
+
+
+        # Right minutes: align number vertically with the left text, then align suffix
+
+        # so that its glyph bottom matches the number glyph bottom.
+
         if minsNumText:
+
             rightPad = 18
+
             fmNum = g2.getFontMetrics(FONT_MAIN)
+
             fmSuf = g2.getFontMetrics(FONT_MINS)
 
             numW = fmNum.stringWidth(minsNumText)
+
             sufW = fmSuf.stringWidth(minsSuffixText)
+
             gap = 10
 
             blockRight = int(x + w - rightPad)
+
             sufX = int(blockRight - sufW)
+
             numX = int(sufX - gap - numW)
 
-            baseNum = int(baseLeft)
-            baseSuf = int(baseLeft + fmNum.getDescent() - fmSuf.getDescent())
 
             g2.setFont(FONT_MAIN)
-            g2.drawString(minsNumText, numX, baseNum)
+
+            baseNum = _CenteredBaselineY(g2, float(y), float(h), FONT_MAIN, minsNumText)
+
+            try:
+
+                frc = g2.getFontRenderContext()
+
+                bNum = _GlyphBounds2D(FONT_MAIN, frc, minsNumText)
+
+                bSuf = _GlyphBounds2D(FONT_MINS, frc, minsSuffixText)
+
+                if bNum is not None and bSuf is not None:
+
+                    bottomOffNum = float(bNum.getY()) + float(bNum.getHeight())
+
+                    bottomOffSuf = float(bSuf.getY()) + float(bSuf.getHeight())
+
+                    bottomY = float(baseNum) + bottomOffNum
+
+                    baseSuf = bottomY - bottomOffSuf
+
+                else:
+
+                    baseSuf = float(baseNum) + float(fmNum.getDescent()) - float(fmSuf.getDescent())
+
+            except:
+
+                baseSuf = float(baseNum) + float(fmNum.getDescent()) - float(fmSuf.getDescent())
+
+
+            g2.setFont(FONT_MAIN)
+
+            g2.drawString(minsNumText, int(numX), int(round(baseNum)))
 
             g2.setFont(FONT_MINS)
-            g2.drawString(minsSuffixText, sufX, baseSuf)
+
+            g2.drawString(minsSuffixText, int(sufX), int(round(baseSuf)))
 
     def Paint(self, g2, w, h):
         # Plain black background
@@ -1089,10 +1215,66 @@ class PIDUndergroundLedWindow(object):
         # (rowH ~= (faceH-rowGap)/2) combined with vertical centering of the text within that tall row.
         # So changing rowGap alone cannot fix the observed spacing.
         # We instead size rows from the font metrics and center the two-row block within the face.
-        rowGap = 0
+        # Row spacing: choose a larger gap for dot-matrix fonts, and a tighter gap for outline fonts.
+        # This is font-dependent: dot-matrix fonts often report small/odd leading and tall glyph bounds.
         fmMain = g2.getFontMetrics(FONT_MAIN)
-        # Tight rows: use the font height directly to match the prototype close spacing.
-        rowH = int(fmMain.getHeight()) - 10
+        try:
+            adv = int(fmMain.getAscent() + fmMain.getDescent())
+        except:
+            adv = int(fmMain.getHeight())
+        try:
+            lead = int(fmMain.getHeight()) - int(adv)
+        except:
+            lead = 0
+        if lead < 0:
+            lead = 0
+        rowH = int(adv)
+        if rowH < 12:
+            rowH = 12
+        
+        # Identify dot-matrix style fonts by family name.
+        isMatrixFont = False
+        try:
+            famLower = str(FONT_FAM or '').lower()
+            if ('dot' in famLower) or ('matrix' in famLower) or ('led' in famLower):
+                isMatrixFont = True
+        except:
+            isMatrixFont = False
+        
+        # Parameter sets: increased differential between dot-matrix and outline fonts.
+        if isMatrixFont:
+            leadMult = 0.85
+            targetSlack = 12.0
+            extraMult = 0.90
+            minGap = 7
+            maxGap = 20
+        else:
+            leadMult = 0.18
+            targetSlack = 3.0
+            extraMult = 0.20
+            minGap = 1
+            maxGap = 8
+        
+        extraGap = 0
+        try:
+            frc = g2.getFontRenderContext()
+            sample = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
+            b = _GlyphBounds2D(FONT_MAIN, frc, sample)
+            if b is not None:
+                glyphH = float(b.getHeight())
+                slack = float(rowH) - float(glyphH)
+                if slack < 0.0:
+                    slack = 0.0
+                if slack < float(targetSlack):
+                    extraGap = int(round((float(targetSlack) - slack) * float(extraMult)))
+        except:
+            extraGap = 0
+        
+        rowGap = int(round(float(lead) * float(leadMult))) + int(extraGap)
+        if rowGap < int(minGap):
+            rowGap = int(minGap)
+        if rowGap > int(maxGap):
+            rowGap = int(maxGap)
         blockH = (2 * rowH) + rowGap
         blockTop = int(textY + (textH - blockH) // 2)
         topY = blockTop
@@ -1143,12 +1325,19 @@ class PIDUndergroundLedWindow(object):
 
                 g2.setColor(ORANGE)
                 g2.setFont(FONT_SPECIAL)
-                fm = g2.getFontMetrics(FONT_SPECIAL)
-                tw = fm.stringWidth(msg)
-                tx = int(textX + (textW - tw) // 2)
-                ty = _RowCenterBaseline(int(botY), int(rowH), fm)
-                g2.drawString(msg, tx, int(ty))
-
+                # Center special message using glyph bounds (better for dot-matrix fonts)
+                try:
+                    frc = g2.getFontRenderContext()
+                    b = _GlyphBounds2D(FONT_SPECIAL, frc, msg)
+                    tx = int(round(_CenteredXForBounds(float(textX), float(textW), b)))
+                    ty = _CenteredBaselineY(g2, float(botY), float(rowH), FONT_SPECIAL, msg)
+                    g2.drawString(msg, tx, int(round(ty)))
+                except:
+                    fm = g2.getFontMetrics(FONT_SPECIAL)
+                    tw = fm.stringWidth(msg)
+                    tx = int(textX + (textW - tw) // 2)
+                    ty = _RowCenterBaseline(int(botY), int(rowH), fm)
+                    g2.drawString(msg, tx, int(ty))
                 g2.setClip(oldClip)
 
         g2.setClip(clip)
