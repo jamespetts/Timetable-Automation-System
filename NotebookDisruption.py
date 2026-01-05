@@ -13,8 +13,8 @@
 #
 # Handwriting-on-ruled-paper disruption output (live writing + filed pages) for signallers.
 #
-# <<SIG-DISP-NAME: Notebook disruption messages>>
-# <<DESCRIPTION: Simulates handwritten disruption reports on ruled paper with a margin. Live writing on the left; filed pages on the right.>>
+# <<SIG-DISP-NAME: Message notebook>>
+# <<DESCRIPTION: A notebook where status messages about trains (delays, cancellations, etc.) are written down by hand by the signaller.>>
 #
 # <<SETTING DESCRIPTION BOOLEAN: Use 24-hour time>>
 #
@@ -44,6 +44,18 @@ import javax.swing as swing
 import java.awt as awt
 import java.awt.event as event
 from java.lang import Runnable, Thread
+
+# Adapter to allow passing Python callables to SwingUtilities.invokeLater
+class RunnableAdapter(Runnable):
+    def __init__(self, fn):
+        self.Fn = fn
+
+    def run(self):
+        try:
+            self.Fn()
+        except:
+            pass
+
 from javax.swing import SwingUtilities
 from javax.swing import Timer
 from java.util.concurrent.locks import ReentrantLock
@@ -60,6 +72,11 @@ from jmri.profile import ProfileManager
 # --------------------------------------------------
 FRAME_WIDTH = 980
 FRAME_HEIGHT = 520
+
+# Last seen BookPanel size (used for off-EDT wrap estimation to match actual rendering).
+_LAST_PANEL_W = int(FRAME_WIDTH)
+_LAST_PANEL_H = int(FRAME_HEIGHT)
+
 
 # Left notebook viewport and paper
 NOTEBOOK_PAPER_WIDTH = 420
@@ -103,6 +120,11 @@ def _GetOrCreateHub():
         hub.Windows = []
         # Filed pages (fully written).
         hub.StackPages = []
+        # Book pages (ordered).
+        hub.Pages = []
+        hub.ViewLeftPageIndex = -1
+        hub.LastBookDayName = None
+
         # Current writing job/page, or None.
         hub.Writer = None
         # Pending pages waiting to be written.
@@ -357,6 +379,50 @@ def _RowForTrain(hub, dayName, rn):
 def _GetDestinationFromRow(row):
     if not row:
         return ''
+
+def _GetOriginFromRow(row):
+    if not row:
+        return ''
+    for k in ['Origin', 'From', 'Start', 'Starting at', 'Start station', 'From station', 'Origin station']:
+        try:
+            v = row.get(k, None)
+            if v is None:
+                continue
+            s = str(v).strip()
+            if s != '':
+                return s
+        except:
+            pass
+    return ''
+
+def _GetDueTimeScheduledMinutes(row):
+    # Prefer the scheduled departure time for 'due' time.
+    if not row:
+        return None
+    try:
+        dep = (row.get('Dep', '') or '').strip()
+    except:
+        dep = ''
+    mm = _ParseTimeToMinutes(dep) if dep else None
+    if mm is not None:
+        return mm
+    # Fallbacks for older/alternative timetable conventions.
+    try:
+        trig = (row.get('Trigger', '') or '').strip()
+    except:
+        trig = ''
+    mm = _ParseTimeToMinutes(trig) if trig else None
+    if mm is not None:
+        return mm
+    try:
+        arr = (row.get('Arr', '') or '').strip()
+    except:
+        arr = ''
+    mm = _ParseTimeToMinutes(arr) if arr else None
+    if mm is not None:
+        return mm
+    # Last resort: earliest known time on the layout for the service.
+    return _GetLayoutEtaScheduledMinutes(row)
     for k in ['Destination', 'Dest', 'To', 'Terminus', 'Terminating at']:
         try:
             v = row.get(k, None)
@@ -402,21 +468,32 @@ def _GetLayoutEtaScheduledMinutes(row):
 
 
 def _MakeTrainIdentifier(hub, dayName, rn, use24h):
+    # If the reporting number is not a TAS default/hidden value, show it.
     if not TU.IsDefaultReportingNumber(str(rn)):
         return str(rn)
-    row = _RowForTrain(hub, dayName, rn)
-    sched = _GetLayoutEtaScheduledMinutes(row)
-    dest = _GetDestinationFromRow(row)
-    dest = _ToDisplayCase(dest)
-    timePart = _FormatMinutes(sched, use24h) if sched is not None else ''
-    if timePart and dest:
-        return '%s to %s' % (timePart, dest)
-    if timePart:
-        return timePart
-    if dest:
-        return dest
-    return 'Service'
 
+    # Default/hidden reporting numbers (e.g. TASxx): identify the service by timetable details.
+    row = _RowForTrain(hub, dayName, rn)
+    if row is not None:
+        dueMin = _GetDueTimeScheduledMinutes(row)
+        dueStr = _FormatTimeForEntry(dueMin, use24h) if dueMin is not None else ''
+        origin = _ToDisplayCase(_GetOriginFromRow(row))
+        dest = _ToDisplayCase(_GetDestinationFromRow(row))
+
+        if dueStr and origin and dest:
+            return '%s %s to %s' % (dueStr, origin, dest)
+        if origin and dest:
+            return '%s to %s' % (origin, dest)
+        if dueStr and dest:
+            return '%s to %s' % (dueStr, dest)
+        if dueStr and origin:
+            return '%s %s' % (dueStr, origin)
+        if dest:
+            return dest
+
+    # Fallback: should not happen in normal operation because disruption generation depends on timetable data,
+    # but keep a safe generic label for test harnesses and misconfiguration.
+    return 'train'
 # --------------------------------------------------
 # Timing helpers
 # --------------------------------------------------
@@ -497,15 +574,40 @@ def _ToDisplayCase(s):
 # Message construction
 # --------------------------------------------------
 
+def _FormatTimeForEntry(mins, use24h):
+    try:
+        mins = int(mins)
+    except:
+        return ''
+    mins = max(0, min(24 * 60 - 1, mins))
+    h = mins // 60
+    m = mins % 60
+    if use24h:
+        return '%d.%02d' % (h, m)
+    ap = 'a.m.'
+    hh = h
+    if hh >= 12:
+        ap = 'p.m.'
+        hh = hh % 12
+    if hh == 0:
+        hh = 12
+    if m == 0:
+        ms = '00'
+    elif m < 10:
+        ms = str(m)
+    else:
+        ms = '%02d' % m
+    return '%d.%s %s' % (hh, ms, ap)
+
 def _BuildMessageText(hub, dayName, nowMin, rn, disruptionInt, tpName=None, tpTimeMin=None):
-    # Handwritten-style narrative, not teleprinter structure.
+    # Book-style entry: day header once per day, then time-only entries.
     use24h = _ReadMemBool('TAS_USER_SETTING_USE_24_HOUR_TIME', True)
+    timeStr = _FormatTimeForEntry(nowMin, use24h)
 
     ident = _MakeTrainIdentifier(hub, dayName, rn, use24h)
 
-    # Status phrase
     if _IsCancelledValue(disruptionInt):
-        statusPhrase = 'cancelled'
+        statusText = 'cancelled'
     else:
         delta = None
         if tpName and tpTimeMin is not None:
@@ -522,32 +624,249 @@ def _BuildMessageText(hub, dayName, nowMin, rn, disruptionInt, tpName=None, tpTi
         st, mag = _StatusFromDelta(delta)
         stLower = str(st).strip().lower()
         if stLower == 'on time' or int(mag) == 0:
-            statusPhrase = 'on time'
+            statusText = 'on time'
         else:
             mins = int(mag)
             unit = 'min' if mins == 1 else 'mins'
-            statusPhrase = '%s %d %s' % (stLower, mins, unit)
+            statusText = '%d %s %s' % (mins, unit, stLower)
 
-    # Subject phrase
-    if TU.IsDefaultReportingNumber(str(rn)):
-        subj = 'Service ' + str(ident)
-    else:
-        subj = 'Train ' + str(ident)
+    locText = ''
+    if tpName and str(tpName).strip() != '':
+        locText = ' at ' + _ToDisplayCase(tpName)
 
-    stamp = '%s %s' % (_ToDisplayCase(dayName), _FormatMinutes(nowMin, use24h))
+    entry = '%s - %s %s%s' % (timeStr, str(ident), statusText, locText)
+
     lines = []
-    lines.append('%s - %s %s' % (stamp, subj, statusPhrase))
-
-    # Optional last reported line
-    if tpName and tpTimeMin is not None:
-        row = _RowForTrain(hub, dayName, rn)
-        arrdep = _InferArrDepForTP(row, tpName, tpTimeMin)
-        ad = str(arrdep).strip().lower()
-        lines.append('')
-        lines.append('Last at %s %s %s' % (_ToDisplayCase(tpName), ad, _FormatMinutes(tpTimeMin, use24h)))
-
+    try:
+        lastDay = getattr(hub, 'LastBookDayName', None) if hub is not None else None
+    except:
+        lastDay = None
+    dn = _ToDisplayCase(dayName)
+    if lastDay is None or str(lastDay).strip().lower() != str(dayName).strip().lower():
+        lines.append(dn)
+        lines.append('-' * max(3, len(dn)))
+        if hub is not None:
+            try:
+                hub.LastBookDayName = str(dayName)
+            except:
+                pass
+    lines.append(entry)
     return '\n'.join(lines) + '\n'
+
+
+# Build a single entry line (no day header). This is used when multiple entries share a page.
+def _BuildEntryLine(hub, dayName, nowMin, rn, disruptionInt, tpName=None, tpTimeMin=None):
+    use24h = _ReadMemBool('TAS_USER_SETTING_USE_24_HOUR_TIME', True)
+    timeStr = _FormatTimeForEntry(nowMin, use24h)
+    ident = _MakeTrainIdentifier(hub, dayName, rn, use24h)
+
+    if _IsCancelledValue(disruptionInt):
+        statusText = 'cancelled'
+    else:
+        delta = None
+        if tpName and tpTimeMin is not None:
+            row = _RowForTrain(hub, dayName, rn)
+            arrdep = _InferArrDepForTP(row, tpName, tpTimeMin)
+            sched = _GetScheduledMinuteForTP(row, tpName, arrdep)
+            if sched is not None:
+                try:
+                    delta = int(tpTimeMin) - int(sched)
+                except:
+                    delta = None
+        if delta is None:
+            try:
+                delta = int(disruptionInt)
+            except:
+                delta = 0
+        st, mag = _StatusFromDelta(delta)
+        stLower = str(st).strip().lower()
+        if stLower == 'on time' or int(mag) == 0:
+            statusText = 'on time'
+        else:
+            mins = int(mag)
+            unit = 'min' if mins == 1 else 'mins'
+            statusText = '%d %s %s' % (mins, unit, stLower)
+
+    locText = ''
+    if tpName and str(tpName).strip() != '':
+        locText = ' at ' + _ToDisplayCase(tpName)
+
+    return '%s - %s %s%s' % (timeStr, str(ident), statusText, locText)
+
+
+def _BuildDayHeaderText(dayName):
+    dn = _ToDisplayCase(dayName)
+    ul = '-' * max(3, len(dn))
+    return dn + '\n' + ul + '\n'
+
+
+# Estimate wrapped line count for a given page text using a fixed default page geometry.
+# This is used OFF the EDT to decide whether a new entry will fit on the current page.
+def _EstimateWrappedLineCountForPageText(text, font):
+    try:
+        from java.awt.image import BufferedImage
+        img = BufferedImage(2, 2, BufferedImage.TYPE_INT_ARGB)
+        g = img.getGraphics()
+    except:
+        return None
+
+    # Default geometry matches the default frame size.
+    spineW = 28
+    gutter = 10
+    outerPad = 6
+    inner = 26
+    outer = 30
+
+    try:
+        pageW = (int(_LAST_PANEL_W) - spineW - gutter * 2) // 2
+    except:
+        pageW = 400
+    try:
+        pageH = int(_LAST_PANEL_H) - outerPad * 2
+    except:
+        pageH = 500
+
+    try:
+        textW = int(pageW) - int(MARGIN_LINE_X_PX) - int(inner) - int(outer)
+    except:
+        textW = 280
+
+    try:
+        textH = int(pageH) - int(TOP_MARGIN_PX) - int(BOTTOM_MARGIN_PX)
+    except:
+        textH = 300
+
+    try:
+        maxLines = max(1, int(textH // int(LINE_HEIGHT_PX)))
+    except:
+        maxLines = 10
+
+    try:
+        g.setFont(font)
+    except:
+        pass
+
+    total = 0
+    try:
+        lines = str(text or '').split('\n')
+    except:
+        lines = []
+
+    for ln in lines:
+        # Preserve empty lines
+        try:
+            parts = _WrapTextToLines(g, font, ln, textW)
+            total += len(parts)
+        except:
+            total += 1
+
+    try:
+        g.dispose()
+    except:
+        pass
+
+    return (total, maxLines)
+
+
+def _WouldEntryFitOnPage(pageRec, addText, font):
+    try:
+        curText = str(pageRec.get('text', ''))
+    except:
+        curText = ''
+
+    # Ensure entries start two lines down from the previous entry: one blank ruled line.
+    sep = ''
+    if curText != '':
+        if curText.endswith('\n'):
+            sep = '\n'
+        else:
+            sep = '\n\n'
+
+    cand = curText + sep + str(addText) + '\n'
+
+    res = _EstimateWrappedLineCountForPageText(cand, font)
+    if res is None:
+        return False
+    used, maxLines = res
+    return used <= maxLines
+
+
+def _AppendEntryToExistingPageLocked(hub, pageRec, addText):
+    # Append addText (a single entry line) to an existing physical page and ensure writing resumes if needed.
+    # IMPORTANT: If the page is currently being written, do NOT change the writer position; just extend the text.
+    try:
+        curText = str(pageRec.get('text', ''))
+    except:
+        curText = ''
+    sep = ''
+    if curText != '':
+        if curText.endswith('\n'):
+            sep = '\n'
+        else:
+            sep = '\n\n'
+    oldText = curText
+    oldLen = len(oldText)
+    newText = oldText + sep + str(addText) + '\n'
+    pageRec['text'] = newText
+
+    # If this page is the active writer, keep its pos/lines/currentLine intact.
+    try:
+        wr = getattr(hub, 'Writer', None)
+    except:
+        wr = None
+    if wr is pageRec:
+        try:
+            pageRec['done'] = False
+        except:
+            pass
+        return
+
+    # Otherwise, if the old text was already fully written, resume at the append point and preserve display lines.
+    wasDone = False
+    try:
+        wasDone = bool(pageRec.get('done', False))
+    except:
+        wasDone = False
+    if wasDone:
+        # Preserve any existing handwritten line breaks for the already-written portion.
+        # Fall back to raw text splitlines() only if no recorded lines exist.
+        keep = None
+        try:
+            keep = pageRec.get('lines', None)
+        except:
+            keep = None
+        if keep is None or len(keep) == 0:
+            try:
+                pageRec['lines'] = str(oldText).splitlines()
+            except:
+                pageRec['lines'] = []
+        else:
+            try:
+                pageRec['lines'] = list(keep)
+            except:
+                try:
+                    pageRec['lines'] = str(oldText).splitlines()
+                except:
+                    pageRec['lines'] = []
+        pageRec['currentLine'] = ''
+        pageRec['pos'] = int(oldLen)
+
+    # Ensure these exist (do not clear them if already present).
+    if 'lines' not in pageRec:
+        pageRec['lines'] = []
+    if 'currentLine' not in pageRec:
+        pageRec['currentLine'] = ''
+    try:
+        pageRec['done'] = False
+    except:
+        pass
+
+    # If no active writer, resume on this page.
+    if getattr(hub, 'Writer', None) is None:
+        hub.Writer = pageRec
+
 def _EnsureTrainState(hub, rn):
+
     st = hub.TrainState.get(str(rn))
     if st is None:
         st = {
@@ -583,123 +902,189 @@ def _NotifyWindows(hub):
 
 
 def _NewWriterState(pageRec):
-    # pageRec contains full text.
-    return {
-        'page': pageRec,
-        'pos': 0,
-        'lines': [],
-        'currentLine': '',
-        'done': False,
-        'fileable': False,
-        'holdRemaining': int(DONE_HOLD_TICKS),
-    }
-
-
-def _AutoMoveWriterToStackLocked(hub):
-    # Caller must hold hub.Lock.
-    if hub.Writer is None:
-        return False
-    wr = hub.Writer
-    try:
-        if not wr.get('done', False):
-            return False
-        if not wr.get('fileable', False):
-            return False
-    except:
-        return False
-    try:
-        page = wr.get('page', None)
-        if page is not None:
-            hub.StackPages.append(page)
-    except:
-        pass
-    hub.Writer = None
-    return True
-
+    pageRec['pos'] = 0
+    pageRec['lines'] = []
+    pageRec['currentLine'] = ''
+    pageRec['done'] = False
+    return pageRec
 
 def _StartNextPendingIfIdleLocked(hub):
-    # Caller must hold hub.Lock.
     if hub.Writer is not None:
         return False
     if not hub.PendingPages:
         return False
     nxt = hub.PendingPages.pop(0)
     hub.Writer = _NewWriterState(nxt)
+    try:
+        pi = int(nxt.get('pageIndex', 0))
+        hub.ViewLeftPageIndex = _SpreadForPageIndex(pi)
+    except:
+        pass
     return True
 
-
 def _AddIncomingPage(hub, pageRec):
-    # Returns True if the writer state or stack changed.
     changed = False
     hub.Lock.lock()
     try:
-        # If the writer is holding a finished page and a new page arrives, auto-file it.
-        if hub.Writer is not None:
-            changed = _AutoMoveWriterToStackLocked(hub) or changed
+        if not hasattr(hub, 'Pages'):
+            hub.Pages = []
+        if not hasattr(hub, 'ViewLeftPageIndex'):
+            hub.ViewLeftPageIndex = -1
+        if not hasattr(hub, 'LastBookDayName'):
+            hub.LastBookDayName = None
+
+        try:
+            pageIndex = len(hub.Pages)
+        except:
+            pageIndex = 0
+        try:
+            pageRec['pageIndex'] = int(pageIndex)
+        except:
+            pass
+
+        hub.Pages.append(pageRec)
+        changed = True
+
         if hub.Writer is None:
             hub.Writer = _NewWriterState(pageRec)
-            changed = True
+            try:
+                hub.ViewLeftPageIndex = _SpreadForPageIndex(pageIndex)
+            except:
+                hub.ViewLeftPageIndex = 0
         else:
             hub.PendingPages.append(pageRec)
-            changed = True
+
     finally:
         hub.Lock.unlock()
+
     if changed:
         SwingUtilities.invokeLater(RunnableAdapter(lambda: _NotifyWindows(hub)))
     return changed
 
-
 def _AddMessage(hub, dayName, nowMin, rn, disruptionInt, tpName=None, tpTimeMin=None):
-    txt = _BuildMessageText(hub, dayName, nowMin, rn, disruptionInt, tpName=tpName, tpTimeMin=tpTimeMin)
-    rec = {
-        'absWeek': _ComputeWeekAbsMinute(dayName, nowMin),
-        'day': str(dayName),
-        'timeMin': int(nowMin or 0),
-        'rn': str(rn),
-        'text': txt,
-    }
-    _AddIncomingPage(hub, rec)
+    # Add a new entry to the book.
+    # Entries are separated by one blank ruled line (i.e. start two lines down).
+    # A new day always starts on a new page, with the day header at the top.
 
+    entryLine = _BuildEntryLine(hub, dayName, nowMin, rn, disruptionInt, tpName=tpName, tpTimeMin=tpTimeMin)
 
-def _CullOldPages(hub, dayName, nowMin):
-    nowAbs = _ComputeWeekAbsMinute(dayName, nowMin)
+    # Use the handwriting font for wrap estimation.
+    try:
+        font = _PickHandwritingFont(18)
+    except:
+        font = awt.Font('SansSerif', awt.Font.PLAIN, 18)
+
+    dn = str(dayName or '').strip()
+
     hub.Lock.lock()
     try:
-        # Stack
-        kept = []
-        for m in hub.StackPages:
-            try:
-                age = _AgeMinutes(nowAbs, m.get('absWeek', nowAbs))
-                if age < 1440:
-                    kept.append(m)
-            except:
-                kept.append(m)
-        hub.StackPages = kept
+        # Determine whether this is a new day.
+        forceNewPage = False
+        try:
+            lastDay = getattr(hub, 'LastBookDayName', None)
+        except:
+            lastDay = None
 
-        # Pending
-        keptP = []
-        for m in hub.PendingPages:
+        if lastDay is None:
+            forceNewPage = True
+        else:
             try:
-                age = _AgeMinutes(nowAbs, m.get('absWeek', nowAbs))
-                if age < 1440:
-                    keptP.append(m)
+                if str(lastDay).strip().lower() != dn.lower():
+                    forceNewPage = True
             except:
-                keptP.append(m)
-        hub.PendingPages = keptP
+                forceNewPage = True
 
-        # Writer page: if older than 1 day, drop it.
-        if hub.Writer is not None:
+        # Ensure hub.LastBookDayName tracks the current day when we first write for that day.
+        if forceNewPage:
             try:
-                page = hub.Writer.get('page', None)
-                if page is not None:
-                    age = _AgeMinutes(nowAbs, page.get('absWeek', nowAbs))
-                    if age >= 1440:
-                        hub.Writer = None
+                hub.LastBookDayName = dn
             except:
                 pass
+
+        # If no pages yet, or new day, start a new page with header.
+        try:
+            hasPages = len(getattr(hub, 'Pages', [])) > 0
+        except:
+            hasPages = False
+
+        if (not hasPages) or forceNewPage:
+            pageText = _BuildDayHeaderText(dn) + entryLine + '\n'
+            rec = {
+                'absWeek': _ComputeWeekAbsMinute(dn, nowMin),
+                'day': dn,
+                'timeMin': int(nowMin or 0),
+                'rn': str(rn),
+                'text': pageText,
+            }
+            _AddIncomingPage(hub, rec)
+            return
+
+        # Same day: try to append to the last page if it will fit without spilling.
+        try:
+            pages = hub.Pages
+        except:
+            pages = []
+
+        if not pages:
+            pageText = _BuildDayHeaderText(dn) + entryLine + '\n'
+            rec = {
+                'absWeek': _ComputeWeekAbsMinute(dn, nowMin),
+                'day': dn,
+                'timeMin': int(nowMin or 0),
+                'rn': str(rn),
+                'text': pageText,
+            }
+            _AddIncomingPage(hub, rec)
+            return
+
+        lastPage = pages[-1]
+
+        # Only append to the last page if it is for the same day.
+        try:
+            lastPageDay = str(lastPage.get('day', '')).strip()
+        except:
+            lastPageDay = ''
+
+        if lastPageDay.lower() != dn.lower():
+            pageText = _BuildDayHeaderText(dn) + entryLine + '\n'
+            rec = {
+                'absWeek': _ComputeWeekAbsMinute(dn, nowMin),
+                'day': dn,
+                'timeMin': int(nowMin or 0),
+                'rn': str(rn),
+                'text': pageText,
+            }
+            _AddIncomingPage(hub, rec)
+            return
+
+        if _WouldEntryFitOnPage(lastPage, entryLine, font):
+            _AppendEntryToExistingPageLocked(hub, lastPage, entryLine)
+            return
+
+        # Does not fit: start a new page (same day, no day header).
+        pageText = entryLine + '\n'
+        rec = {
+            'absWeek': _ComputeWeekAbsMinute(dn, nowMin),
+            'day': dn,
+            'timeMin': int(nowMin or 0),
+            'rn': str(rn),
+            'text': pageText,
+        }
+        _AddIncomingPage(hub, rec)
+        return
+
     finally:
         hub.Lock.unlock()
 
+    # Ensure the UI updates (safe fallback; _AddIncomingPage already notifies).
+    try:
+        SwingUtilities.invokeLater(RunnableAdapter(lambda: _NotifyWindows(hub)))
+    except:
+        pass
+
+def _CullOldPages(hub, dayName, nowMin):
+    # Unlimited book length: do not discard pages.
+    return
 
 def _PollOnce(hub):
     dayName = _DayMem.getValue() or ''
@@ -1000,6 +1385,68 @@ def _WrapTextToLines(g, font, text, maxWidthPx):
     return out
 
 
+
+def _PeekNextWord(text, startIndex):
+    # Return the next word starting at startIndex (up to space or newline).
+    # Used by the handwriting writer to decide word wrapping BEFORE writing the word.
+    try:
+        s = str(text)
+    except:
+        return ''
+    try:
+        i = int(startIndex)
+    except:
+        i = 0
+    if i < 0:
+        i = 0
+    if i >= len(s):
+        return ''
+    out = []
+    while i < len(s):
+        ch = s[i]
+        if ch == ' ' or ch == '\n' or ch == '\r' or ch == '\t':
+            break
+        out.append(ch)
+        i += 1
+    try:
+        return ''.join(out)
+    except:
+        return ''
+
+def _ComputeTextWFromPanel(panelW, panelH):
+    # Compute the available text width in pixels for a page, matching BookPanel._DrawPage.
+    try:
+        w = int(panelW)
+        h = int(panelH)
+    except:
+        w = int(FRAME_WIDTH)
+        h = int(FRAME_HEIGHT)
+    spineW = 28
+    gutter = 10
+    outerPad = 6
+    inner = 26
+    outer = 30
+    try:
+        pageW = (w - spineW - gutter * 2) // 2
+    except:
+        pageW = 400
+    try:
+        pageH = h - outerPad * 2
+    except:
+        pageH = 500
+    try:
+        textW = int(pageW) - int(MARGIN_LINE_X_PX) - int(inner) - int(outer)
+    except:
+        textW = 280
+    try:
+        textH = int(pageH) - int(TOP_MARGIN_PX) - int(BOTTOM_MARGIN_PX)
+    except:
+        textH = 300
+    try:
+        maxLines = max(1, int(textH // int(LINE_HEIGHT_PX)))
+    except:
+        maxLines = 10
+    return (int(textW), int(maxLines))
 def _DrawPaperWithRules(g, x, y, w, h, paperColor, ruleColor, marginColor):
     # Paper with soft shadow
     try:
@@ -1045,25 +1492,232 @@ def _DrawPaperWithRules(g, x, y, w, h, paperColor, ruleColor, marginColor):
         pass
 
 # --------------------------------------------------
-# Notebook (live writing) panel
-# --------------------------------------------------
-class NotebookPanel(swing.JPanel):
+# ------------------------------------------------------------------------------
+# Book UI (cover + ruled pages, two-page spreads)
+# ------------------------------------------------------------------------------
+
+BOOK_COVER_COLOR = awt.Color(28, 44, 62)
+BOOK_COVER_EDGE = awt.Color(15, 24, 36)
+BOOK_SPINE_COLOR = awt.Color(18, 30, 44)
+FOLD_PX = 26
+
+# ViewLeftPageIndex is treated as a spread index:
+# 0 = inside front cover (left) + page 0 (right)
+# 1 = pages 1 (left) and 2 (right)
+# 2 = pages 3 (left) and 4 (right), etc.
+
+def _GetMaxSpreadIndex(pages):
+    try:
+        n = len(pages)
+    except:
+        n = 0
+    if n <= 0:
+        return -1
+    # Spread 0 uses page 0; each additional spread consumes 2 pages.
+    return int(n) // 2
+
+def _SpreadForPageIndex(pageIndex):
+    try:
+        i = int(pageIndex)
+    except:
+        i = 0
+    if i <= 0:
+        return 0
+    return (i + 1) // 2
+
+def _GetCoverNewBookButtonRect(panelW, panelH):
+    try:
+        w = int(panelW)
+        h = int(panelH)
+    except:
+        w = FRAME_WIDTH
+        h = FRAME_HEIGHT
+    spineW = 28
+    outerPad = 6
+    gutter = 10
+    centerX = w // 2
+    pageW = (w - spineW - gutter * 2) // 2
+    pageH = h - outerPad * 2
+    leftX = centerX - gutter - spineW // 2 - pageW
+    pageY = outerPad
+    bw = 140
+    bh = 30
+    bx = int(leftX + (pageW - bw) // 2)
+    by = int(pageY + pageH - bh - 18)
+    return (bx, by, bw, bh)
+
+def _HitRect(x, y, rect):
+    try:
+        rx, ry, rw, rh = rect
+        return x >= rx and x <= (rx + rw) and y >= ry and y <= (ry + rh)
+    except:
+        return False
+
+def _GetLastLeftIndex(pages):
+    # Backwards-compatible name: returns the max spread index.
+    return _GetMaxSpreadIndex(pages)
+
+def _ClampViewLeftIndex(hub):
+    try:
+        pages = hub.Pages
+    except:
+        pages = []
+    maxSpread = _GetMaxSpreadIndex(pages)
+    if maxSpread < 0:
+        hub.ViewLeftPageIndex = -1
+        return
+    try:
+        v = int(getattr(hub, 'ViewLeftPageIndex', 0))
+    except:
+        v = 0
+    if v < 0:
+        v = 0
+    if v > maxSpread:
+        v = maxSpread
+    hub.ViewLeftPageIndex = v
+
+def _GoPrev(hub):
+    hub.Lock.lock()
+    try:
+        try:
+            v = int(getattr(hub, 'ViewLeftPageIndex', -1))
+        except:
+            v = -1
+        if v >= 1:
+            hub.ViewLeftPageIndex = v - 1
+            _ClampViewLeftIndex(hub)
+    finally:
+        hub.Lock.unlock()
+    SwingUtilities.invokeLater(RunnableAdapter(lambda: _NotifyWindows(hub)))
+
+def _GoNext(hub):
+    hub.Lock.lock()
+    try:
+        try:
+            pages = hub.Pages
+        except:
+            pages = []
+        maxSpread = _GetMaxSpreadIndex(pages)
+        try:
+            v = int(getattr(hub, 'ViewLeftPageIndex', -1))
+        except:
+            v = -1
+        if v >= 0 and v < maxSpread:
+            hub.ViewLeftPageIndex = v + 1
+            _ClampViewLeftIndex(hub)
+    finally:
+        hub.Lock.unlock()
+    SwingUtilities.invokeLater(RunnableAdapter(lambda: _NotifyWindows(hub)))
+
+def _NewBook(hub):
+    hub.Lock.lock()
+    try:
+        hub.Pages = []
+        hub.PendingPages = []
+        hub.Writer = None
+        hub.TrainState = {}
+        hub.LastSeenDisruptions = {}
+        hub.LastTimingDay = None
+        hub.LastTimingCountByTP = {}
+        hub.ViewLeftPageIndex = -1
+        hub.LastBookDayName = None
+    finally:
+        hub.Lock.unlock()
+    SwingUtilities.invokeLater(RunnableAdapter(lambda: _NotifyWindows(hub)))
+
+def _DrawFold(g, x, y, size, isRight):
+    try:
+        g.setColor(awt.Color(255, 255, 255, 160))
+    except:
+        return
+    if isRight:
+        xs = [int(x + size), int(x + size), int(x)]
+        ys = [int(y), int(y + size), int(y + size)]
+    else:
+        xs = [int(x), int(x), int(x + size)]
+        ys = [int(y), int(y + size), int(y + size)]
+    try:
+        g.fillPolygon(xs, ys, 3)
+        g.setColor(awt.Color(0, 0, 0, 60))
+        g.drawPolygon(xs, ys, 3)
+    except:
+        pass
+
+def _PageTextLinesForDisplay(pageRec):
+    if pageRec is None:
+        return []
+    try:
+        done = bool(pageRec.get('done', False))
+    except:
+        done = False
+    if done:
+        # Prefer the recorded handwritten lines if present so finished pages do not snap
+        # back to an unwrapped layout. Fall back to raw text for backwards compatibility.
+        try:
+            ln = pageRec.get('lines', None)
+            if ln is not None:
+                return list(ln)
+        except:
+            pass
+        try:
+            return str(pageRec.get('text', '')).splitlines()
+        except:
+            return []
+    try:
+        lines = list(pageRec.get('lines', []))
+    except:
+        lines = []
+    try:
+        cur = str(pageRec.get('currentLine', ''))
+    except:
+        cur = ''
+
+    # Only show the in-progress line if we are actually mid-line.
+    # If the last written character was a newline and currentLine is empty,
+    # appending an extra '' here consumes a ruled line and can make the last
+    # real entry appear one line higher than it should.
+    showCur = False
+    if cur != '':
+        showCur = True
+    else:
+        try:
+            pos = int(pageRec.get('pos', 0))
+        except:
+            pos = 0
+        try:
+            txt = str(pageRec.get('text', ''))
+        except:
+            txt = ''
+        if pos > 0 and pos <= len(txt):
+            try:
+                lastCh = txt[pos - 1]
+            except:
+                lastCh = ''
+            if lastCh != '\n':
+                showCur = True
+
+    if showCur:
+        lines.append(cur)
+    return lines
+
+class BookPanel(swing.JPanel):
+
     def __init__(self, hub, ownerFrame):
         swing.JPanel.__init__(self)
         self.Hub = hub
         self.Owner = ownerFrame
-        self.setBackground(awt.Color(40, 40, 40))
         self.setFocusable(True)
-
         self.PaperColor = _RgbStrToColor(_ReadMemStr('TASPAPERCOLOUR', '249,246,238'), awt.Color(249, 246, 238))
         baseInk = _RgbStrToColor(_ReadMemStr('TASINKCOLOUR', '40,40,40'), awt.Color(40, 40, 40))
         self.InkColor = _FadeInkColor(baseInk, self.PaperColor, INK_BLEND_TO_PAPER, INK_ALPHA)
         self.RuleLineColor = _RgbStrToColor(_ReadMemStr('TASRULELINECOLOUR', '173,205,235'), awt.Color(173, 205, 235))
         self.MarginColor = _RgbStrToColor(_ReadMemStr('TASMARGINCOLOUR', '220,80,80'), awt.Color(220, 80, 80))
         self.Font = _PickHandwritingFont(18)
-
-        # Cache for painting
-        self.CachedWriter = None
+        self.CachedPages = []
+        self.CachedViewLeft = -1
+        self.addMouseWheelListener(self._Wheel())
+        self.addMouseListener(self._Click())
+        self.addKeyListener(self._Keys())
 
     def paintComponent(self, g):
         try:
@@ -1071,263 +1725,309 @@ class NotebookPanel(swing.JPanel):
             g.setRenderingHint(awt.RenderingHints.KEY_ANTIALIASING, awt.RenderingHints.VALUE_ANTIALIAS_ON)
         except:
             pass
-
         w = self.getWidth()
         h = self.getHeight()
-        _DrawWoodSurface(g, 0, 0, w, h)
 
-        # Snapshot writer state without blocking EDT.
+
+        # Update shared panel size for wrap estimation (read off the EDT).
+        try:
+            global _LAST_PANEL_W
+            global _LAST_PANEL_H
+            _LAST_PANEL_W = int(w)
+            _LAST_PANEL_H = int(h)
+        except:
+            pass
         got = False
         try:
             got = self.Hub.Lock.tryLock()
         except:
             got = False
+        pages = []
+        viewLeft = -1
         if got:
             try:
-                wr = self.Hub.Writer
-                if wr is None:
-                    self.CachedWriter = None
-                else:
-                    self.CachedWriter = {
-                        'page': wr.get('page', None),
-                        'pos': int(wr.get('pos', 0)),
-                        'lines': list(wr.get('lines', [])),
-                        'currentLine': str(wr.get('currentLine', '')),
-                        'done': bool(wr.get('done', False)),
-                        'fileable': bool(wr.get('fileable', False)),
-                    }
+                pages = list(getattr(self.Hub, 'Pages', []))
+                viewLeft = int(getattr(self.Hub, 'ViewLeftPageIndex', -1))
             finally:
                 try:
                     self.Hub.Lock.unlock()
                 except:
                     pass
+            # Cache snapshot to avoid flicker when tryLock fails
+            try:
+                self.CachedPages = pages
+                self.CachedViewLeft = viewLeft
+            except:
+                pass
+        else:
+            # Use last known snapshot
+            try:
+                pages = list(getattr(self, 'CachedPages', []))
+                viewLeft = int(getattr(self, 'CachedViewLeft', -1))
+            except:
+                pages = []
+                viewLeft = -1
 
-        # Viewport
-        vpw = min(NOTEBOOK_PAPER_WIDTH + 60, w - 20)
-        vph = min(NOTEBOOK_PAPER_HEIGHT + 60, h - 20)
-        vx = (w - vpw) // 2
-        vy = (h - vph) // 2
+        try:
+            g.setColor(BOOK_COVER_COLOR)
+            g.fillRect(0, 0, w, h)
+            g.setColor(BOOK_COVER_EDGE)
+            g.drawRect(2, 2, w - 4, h - 4)
+        except:
+            pass
 
-        # Paper area inside viewport
-        px = vx + 30
-        py = vy + 30
-        pw = vpw - 60
-        ph = vph - 60
+        if len(pages) <= 0:
 
-        # Draw paper even if idle
-        _DrawPaperWithRules(g, px, py, pw, ph, self.PaperColor, self.RuleLineColor, self.MarginColor)
+            # Empty book: show the inside front cover (left) and a blank first page (right).
 
-        wr = self.CachedWriter
-        if wr is None:
+            viewLeft = 0
+
+
+            spineW = 28
+
+            outerPad = 6
+
+            gutter = 10
+
+            centerX = w // 2
+
+            pageW = (w - spineW - gutter * 2) // 2
+
+            pageH = h - outerPad * 2
+
+            leftX = centerX - gutter - spineW // 2 - pageW
+
+            rightX = centerX + gutter + spineW // 2
+
+            pageY = outerPad
+
+
+            try:
+
+                g.setColor(BOOK_SPINE_COLOR)
+
+                g.fillRect(centerX - spineW // 2, pageY, spineW, pageH)
+
+            except:
+
+                pass
+
+
+            # Inside cover
+
+            self._DrawCoverPage(g, leftX, pageY, pageW, pageH)
+
+
+            # Blank first page
+
+            try:
+
+                _DrawPaperWithRules(g, rightX, pageY, pageW, pageH, self.PaperColor, self.RuleLineColor, self.MarginColor)
+
+            except:
+
+                pass
+
             return
 
-        # Determine seed from page absWeek if possible
-        seed = 0
+        if viewLeft < 0:
+            viewLeft = 0
+
+        spineW = 28
+        outerPad = 6
+        gutter = 10
+        centerX = w // 2
+        pageW = (w - spineW - gutter * 2) // 2
+        pageH = h - outerPad * 2
+        leftX = centerX - gutter - spineW // 2 - pageW
+        rightX = centerX + gutter + spineW // 2
+        pageY = outerPad
+
         try:
-            page = wr.get('page', None)
-            if page is not None:
-                seed = int(page.get('absWeek', 0))
+            g.setColor(BOOK_SPINE_COLOR)
+            g.fillRect(centerX - spineW // 2, pageY, spineW, pageH)
         except:
-            seed = 0
+            pass
 
-        # Compute writing bounds
-        textX = int(px) + int(MARGIN_LINE_X_PX) + int(LEFT_PADDING_PX)
-        textY = int(py) + int(TOP_MARGIN_PX)
-        textW = int(pw) - int(MARGIN_LINE_X_PX) - int(LEFT_PADDING_PX) - int(RIGHT_PADDING_PX)
-        textH = int(ph) - int(TOP_MARGIN_PX) - int(BOTTOM_MARGIN_PX)
+        # Spread mapping:
+        # viewLeft == 0: inside front cover (left) + page 0 (right)
+        # viewLeft >= 1: left page = 2*viewLeft - 1, right page = 2*viewLeft
+        if int(viewLeft) <= 0:
+            self._DrawCoverPage(g, leftX, pageY, pageW, pageH)
+            self._DrawPage(g, pages, 0, rightX, pageY, pageW, pageH, isRight=True)
+        else:
+            li = int(viewLeft) * 2 - 1
+            ri = int(viewLeft) * 2
+            self._DrawPage(g, pages, li, leftX, pageY, pageW, pageH, isRight=False)
+            self._DrawPage(g, pages, ri, rightX, pageY, pageW, pageH, isRight=True)
+        if int(viewLeft) >= 1:
+            _DrawFold(g, leftX, pageY + pageH - FOLD_PX, FOLD_PX, isRight=False)
+        maxSpread = _GetMaxSpreadIndex(pages)
+        if int(viewLeft) < int(maxSpread):
+            _DrawFold(g, rightX + pageW - FOLD_PX, pageY + pageH - FOLD_PX, FOLD_PX, isRight=True)
 
-        # Prepare display lines: completed + current
+    def _DrawCoverPage(self, g, x, y, w, h):
         try:
-            doneLines = list(wr.get('lines', []))
+            g.setColor(BOOK_COVER_COLOR)
+            g.fillRoundRect(int(x), int(y), int(w), int(h), 10, 10)
+            g.setColor(BOOK_COVER_EDGE)
+            g.drawRoundRect(int(x), int(y), int(w), int(h), 10, 10)
         except:
-            doneLines = []
+            pass
+
         try:
-            curLine = str(wr.get('currentLine', ''))
+            bw = 140
+            bh = 30
+            bx = int(x + (int(w) - bw) // 2)
+            by = int(y + int(h) - bh - 18)
+            g.setColor(awt.Color(45, 64, 90))
+            g.fillRoundRect(bx, by, bw, bh, 10, 10)
+            g.setColor(awt.Color(230, 230, 230, 200))
+            g.drawRoundRect(bx, by, bw, bh, 10, 10)
+            g.setFont(awt.Font('SansSerif', awt.Font.BOLD, 12))
+            s = 'New book'
+            fm = g.getFontMetrics()
+            g.drawString(s, bx + (bw - fm.stringWidth(s)) // 2, by + (bh + fm.getAscent()) // 2 - 2)
         except:
-            curLine = ''
+            pass
 
-        display = list(doneLines)
-        display.append(curLine)
 
-        g.setColor(self.InkColor)
+
+    def _DrawPage(self, g, pages, pageIndex, x, y, w, h, isRight):
+        _DrawPaperWithRules(g, x, y, w, h, self.PaperColor, self.RuleLineColor, self.MarginColor)
+        inner = 26
+        outer = 30
+        textX = int(x + (inner if isRight else outer) + MARGIN_LINE_X_PX)
+        textX2 = int(x + w - (outer if isRight else inner))
+        textW = max(10, textX2 - textX)
+        textY = int(y + TOP_MARGIN_PX)
+        textH = int(h - TOP_MARGIN_PX - BOTTOM_MARGIN_PX)
+        pageRec = None
+        if pageIndex >= 0 and pageIndex < len(pages):
+            pageRec = pages[pageIndex]
         g.setFont(self.Font)
-
-        # Wrap each logical line to fit width.
+        g.setColor(self.InkColor)
+        lines = _PageTextLinesForDisplay(pageRec)
+        # Do not re-wrap dynamically during handwriting; the writer pre-wraps at word boundaries.
         wrapped = []
-        for ln in display:
+        for ln in lines:
             try:
-                parts = _WrapTextToLines(g, self.Font, ln, textW)
+                wrapped.append(str(ln))
             except:
-                parts = [str(ln)]
-            for p in parts:
-                wrapped.append(p)
-
-        maxLines = 1
-        try:
-            maxLines = max(1, int(textH // int(LINE_HEIGHT_PX)))
-        except:
-            maxLines = 1
-
-        # If too many, show the last maxLines (messages are short, but keep safe).
+                wrapped.append('')
+        maxLines = max(1, int(textH // LINE_HEIGHT_PX))
         if len(wrapped) > maxLines:
-            wrapped = wrapped[-maxLines:]
-
-        y = int(textY) + int(LINE_HEIGHT_PX) - 6
-        lineIndexBase = max(0, len(doneLines) - len(wrapped) + 1)
-
-        for i, ln in enumerate(wrapped):
-            # Slight per-line jitter for handwriting.
-            dx = _Jitter(seed, i + lineIndexBase, 2)
-            dy = _Jitter(seed, i + lineIndexBase + 77, 1)
-            try:
-                g.drawString(str(ln), int(textX) + int(dx), int(y) + int(dy))
-            except:
-                pass
-            y += int(LINE_HEIGHT_PX)
-
-# --------------------------------------------------
-# Filed pages (stack) panel
-# --------------------------------------------------
-class FiledPagesPanel(swing.JPanel):
-    def __init__(self, hub, ownerFrame):
-        swing.JPanel.__init__(self)
-        self.Hub = hub
-        self.Owner = ownerFrame
-        self.setBackground(awt.Color(55, 55, 55))
-        self.setFocusable(True)
-
-        self.PaperColor = _RgbStrToColor(_ReadMemStr('TASPAPERCOLOUR', '249,246,238'), awt.Color(249, 246, 238))
-        baseInk = _RgbStrToColor(_ReadMemStr('TASINKCOLOUR', '40,40,40'), awt.Color(40, 40, 40))
-        self.InkColor = _FadeInkColor(baseInk, self.PaperColor, INK_BLEND_TO_PAPER, INK_ALPHA)
-        self.RuleLineColor = _RgbStrToColor(_ReadMemStr('TASRULELINECOLOUR', '173,205,235'), awt.Color(173, 205, 235))
-        self.MarginColor = _RgbStrToColor(_ReadMemStr('TASMARGINCOLOUR', '220,80,80'), awt.Color(220, 80, 80))
-        self.Font = _PickHandwritingFont(14)
-
-        self.CachedStack = []
-
-    def paintComponent(self, g):
-        try:
-            g.setRenderingHint(awt.RenderingHints.KEY_TEXT_ANTIALIASING, awt.RenderingHints.VALUE_TEXT_ANTIALIAS_ON)
-            g.setRenderingHint(awt.RenderingHints.KEY_ANTIALIASING, awt.RenderingHints.VALUE_ANTIALIAS_ON)
-        except:
-            pass
-
-        w = self.getWidth()
-        h = self.getHeight()
-        _DrawWoodSurface(g, 0, 0, w, h)
-
-        got = False
-        try:
-            got = self.Hub.Lock.tryLock()
-        except:
-            got = False
-        if got:
-            try:
-                self.CachedStack = list(self.Hub.StackPages)
-            finally:
+            wrapped = wrapped[:maxLines]
+        yy = int(textY + LINE_HEIGHT_PX - 6)
+        prev = None
+        for s in wrapped:
+            st = str(s)
+            if prev is None:
+                # Day header line: keep a fixed centred starting point based on the FULL day name.
+                isDay = False
+                dayFull = None
+                if st in _DAYS:
+                    isDay = True
+                    dayFull = st
+                elif st != '':
+                    try:
+                        for d in _DAYS:
+                            if d.startswith(st):
+                                isDay = True
+                                dayFull = d
+                                break
+                    except:
+                        isDay = False
+                        dayFull = None
+                if isDay:
+                    try:
+                        fm = g.getFontMetrics(self.Font)
+                        wday = fm.stringWidth(dayFull if dayFull is not None else st)
+                        sx = int(textX + (textW - wday) // 2)
+                        g.drawString(st, sx, yy)
+                    except:
+                        g.drawString(st, textX, yy)
+                    prev = dayFull if dayFull is not None else st
+                    yy += int(LINE_HEIGHT_PX)
+                    continue
+            if (prev in _DAYS or (prev is not None and prev != '' and any([d.startswith(prev) for d in _DAYS]))) and len(st) > 0 and set(st) == set('-'):
                 try:
-                    self.Hub.Lock.unlock()
+                    fm = g.getFontMetrics(self.Font)
+                    wday = fm.stringWidth(prev)
+                    sx = int(textX + (textW - wday) // 2)
+                    g.drawLine(sx, yy - 6, sx + wday, yy - 6)
                 except:
                     pass
-
-        pages = self.CachedStack
-        n = len(pages)
-
-        try:
-            self.Owner.LastKnownStackCount = int(n)
-        except:
-            pass
-
-        margin = 18
-        px = margin
-        py = margin
-        pw = max(60, int(w) - margin * 2)
-        ph = max(60, int(h) - margin * 2)
-
-
-        if n == 0:
-            g.setColor(awt.Color(230, 230, 230))
-            g.setFont(awt.Font('SansSerif', awt.Font.PLAIN, 12))
+                prev = None
+                yy += int(LINE_HEIGHT_PX)
+                continue
             try:
-                g.drawString('No filed pages', int(px) + 18, int(py) + 28)
+                g.drawString(st, textX, yy)
             except:
                 pass
-            return
+            prev = st
+            yy += int(LINE_HEIGHT_PX)
 
-        # Compute paper size
-        paperW = min(int(pw) - 40, int(STACK_PAPER_MAX_WIDTH))
-        paperH = min(int(ph) - 60, int(STACK_PAPER_MAX_HEIGHT))
-        paperW = max(220, paperW)
-        paperH = max(240, paperH)
-        paperW = min(paperW, int(pw) - 40)
-        paperH = min(paperH, int(ph) - 60)
-
-        baseX = int(px) + (int(pw) - paperW) // 2
-        baseY = int(py) + (int(ph) - paperH) // 2 + 8
-
-        idx = self.Owner.StackIndex
-        idx = max(0, min(n - 1, idx))
-        self.Owner.StackIndex = idx
-
-        # Simple stack shadow behind
-        behind = min(4, n - 1)
-        for i in range(behind, 0, -1):
-            off = i * 3
+    class _Wheel(event.MouseWheelListener):
+        def mouseWheelMoved(self, e):
             try:
-                _DrawPaperWithRules(g, baseX + off, baseY + off, paperW, paperH, self.PaperColor, self.RuleLineColor, self.MarginColor)
+                hub = e.getComponent().Hub
+                rot = e.getWheelRotation()
             except:
-                pass
+                return
+            if rot < 0:
+                _GoPrev(hub)
+            elif rot > 0:
+                _GoNext(hub)
 
-        # Foremost page
-        _DrawPaperWithRules(g, baseX, baseY, paperW, paperH, self.PaperColor, self.RuleLineColor, self.MarginColor)
-
-        g.setColor(awt.Color(240, 240, 240))
-        g.setFont(awt.Font('SansSerif', awt.Font.PLAIN, 12))
-        try:
-            g.drawString('%d / %d' % (idx + 1, n), int(baseX) + 10, int(baseY) - 8)
-        except:
-            pass
-
-        page = pages[idx]
-        txt = page.get('text', '') if isinstance(page, dict) else str(page)
-
-        # Text bounds
-        textX = int(baseX) + int(MARGIN_LINE_X_PX) + 10
-        textY = int(baseY) + int(TOP_MARGIN_PX)
-        textW = int(paperW) - int(MARGIN_LINE_X_PX) - 20
-        textH = int(paperH) - int(TOP_MARGIN_PX) - int(BOTTOM_MARGIN_PX)
-
-        g.setColor(self.InkColor)
-        g.setFont(self.Font)
-
-        wrapped = _WrapTextToLines(g, self.Font, txt, textW)
-
-        maxLines = 1
-        try:
-            maxLines = max(1, int(textH // int(LINE_HEIGHT_PX)))
-        except:
-            maxLines = 1
-
-        y = int(textY) + int(LINE_HEIGHT_PX) - 6
-        for ln in wrapped[:maxLines]:
+    class _Click(event.MouseAdapter):
+        def mouseClicked(self, e):
             try:
-                g.drawString(str(ln), int(textX), int(y))
+                hub = e.getComponent().Hub
+                x = e.getX()
+                y = e.getY()
+                w = e.getComponent().getWidth()
+                h = e.getComponent().getHeight()
+                # New book button hit on inside front cover
+                try:
+                    viewSp = int(getattr(hub, 'ViewLeftPageIndex', -1))
+                except:
+                    viewSp = -1
+                if viewSp < 0:
+                    viewSp = 0
+                if viewSp == 0:
+                    rect = _GetCoverNewBookButtonRect(w, h)
+                    if _HitRect(int(x), int(y), rect):
+                        _NewBook(hub)
+                        return
             except:
-                pass
-            y += int(LINE_HEIGHT_PX)
+                return
+            if x < FOLD_PX * 2 and y > h - FOLD_PX * 2:
+                _GoPrev(hub)
+            elif x > w - FOLD_PX * 2 and y > h - FOLD_PX * 2:
+                _GoNext(hub)
 
-# --------------------------------------------------
-# Main frame
-# --------------------------------------------------
-class NotebookFrame(swing.JFrame):
+    class _Keys(event.KeyAdapter):
+        def keyPressed(self, e):
+            try:
+                hub = e.getComponent().Hub
+                code = e.getKeyCode()
+                if e.isControlDown() and code == event.KeyEvent.VK_N:
+                    _NewBook(hub)
+                    return
+
+            except:
+                return
+            if code in (event.KeyEvent.VK_LEFT, event.KeyEvent.VK_UP, event.KeyEvent.VK_PAGE_UP):
+                _GoPrev(hub)
+            elif code in (event.KeyEvent.VK_RIGHT, event.KeyEvent.VK_DOWN, event.KeyEvent.VK_PAGE_DOWN):
+                _GoNext(hub)
+
+class BookFrame(swing.JFrame):
     def __init__(self, hub):
-        swing.JFrame.__init__(self, 'Notebook session')
+        swing.JFrame.__init__(self, 'Train status messages')
         self.Hub = hub
         self.IsClosed = False
-        self.StackIndex = 0
-        self.LastKnownStackCount = 0
-
-        # Claim write ownership if none.
         try:
             hub.Lock.lock()
             try:
@@ -1337,462 +2037,244 @@ class NotebookFrame(swing.JFrame):
                 hub.Lock.unlock()
         except:
             pass
-
         self.setDefaultCloseOperation(swing.JFrame.DISPOSE_ON_CLOSE)
         self.setSize(int(FRAME_WIDTH), int(FRAME_HEIGHT))
-
         try:
             from TASIcon import SetFrameClockIcon
             SetFrameClockIcon(self, 32)
         except:
             pass
-
-        # Left: live notebook
-        self.NotebookPanel = NotebookPanel(hub, self)
-        left = swing.JPanel()
-        left.setLayout(awt.BorderLayout())
-        left.add(self.NotebookPanel, awt.BorderLayout.CENTER)
-
-        # Right: filed pages
-        self.FiledPanel = FiledPagesPanel(hub, self)
-        right = swing.JPanel()
-        right.setLayout(awt.BorderLayout())
-        right.add(self.FiledPanel, awt.BorderLayout.CENTER)
-
-        split = swing.JSplitPane(swing.JSplitPane.HORIZONTAL_SPLIT, left, right)
-        split.setResizeWeight(0.50)
+        self.Layer = swing.JLayeredPane()
+        self.Layer.setLayout(None)
+        self.setContentPane(self.Layer)
+        self.Panel = BookPanel(hub, self)
+        self.Layer.add(self.Panel, swing.JLayeredPane.DEFAULT_LAYER)
+        self.BtnNewBook = swing.JButton('New book')
         try:
-            split.setDividerLocation(520)
+            self.BtnNewBook.setVisible(False)
         except:
             pass
-
-        self.getContentPane().setLayout(awt.BorderLayout())
-        self.getContentPane().add(split, awt.BorderLayout.CENTER)
-
-        footer = swing.JPanel()
-        footer.setLayout(awt.FlowLayout(awt.FlowLayout.CENTER, 10, 6))
-        footer.setBackground(awt.Color(55, 55, 55))
-
-        self.BtnFilePage = swing.JButton('File page')
         try:
-            self.BtnFilePage.setEnabled(False)
+            self.BtnNewBook.setFocusPainted(False)
+            self.BtnNewBook.setContentAreaFilled(False)
+            self.BtnNewBook.setOpaque(False)
+            self.BtnNewBook.setForeground(awt.Color(230, 230, 230))
+            self.BtnNewBook.setBorder(swing.BorderFactory.createLineBorder(awt.Color(230, 230, 230, 160), 1))
+            self.BtnNewBook.setContentAreaFilled(True)
+            self.BtnNewBook.setOpaque(True)
+            self.BtnNewBook.setBackground(awt.Color(45, 64, 90))
+
         except:
             pass
-        footer.add(self.BtnFilePage)
-
-        self.BtnClearStack = swing.JButton('Clear filed')
-        footer.add(self.BtnClearStack)
-
-
-        self.getContentPane().add(footer, awt.BorderLayout.SOUTH)
-
-        self.BtnFilePage.addActionListener(lambda e: self._FilePage())
-        self.BtnClearStack.addActionListener(lambda e: self._ClearStack())
-
-        # Stack navigation listeners
-        self.addKeyListener(self._KeyListener())
-        self.FiledPanel.addMouseWheelListener(self._WheelListener())
-        self.FiledPanel.addMouseListener(self._ClickListener())
+        self.Layer.add(self.BtnNewBook, swing.JLayeredPane.PALETTE_LAYER)
+        self.BtnNewBook.addActionListener(lambda e: _NewBook(hub))
+        self.addComponentListener(self._ResizeListener())
         self.addWindowListener(self._WindowCloser())
-
         self.WriteTimer = Timer(int(WRITE_TIMER_MS), self._OnTick)
         self.WriteTimer.setRepeats(True)
         self.WriteTimer.start()
-
         self.setVisible(True)
-        self._UpdateButtonStates()
-        self.NotebookPanel.repaint()
-        self.FiledPanel.repaint()
+        self._LayoutChildren()
+        try:
+            self.Panel.requestFocusInWindow()
+        except:
+            pass
+
+    def _LayoutChildren(self):
+        try:
+            w = self.getContentPane().getWidth()
+            h = self.getContentPane().getHeight()
+        except:
+            try:
+                w = self.Layer.getWidth()
+                h = self.Layer.getHeight()
+            except:
+                w = FRAME_WIDTH
+                h = FRAME_HEIGHT
+        try:
+            self.Panel.setBounds(0, 0, w, h)
+        except:
+            pass
+        bw = 120
+        bh = 26
+        try:
+            self.BtnNewBook.setBounds((w - bw) // 2, h - bh - 14, bw, bh)
+        except:
+            pass
 
     def OnHubChanged(self):
         if self.IsClosed:
             return
-        self._UpdateButtonStates()
-
-        # Keep stack index on newest
-        n = None
-        got = False
         try:
-            got = self.Hub.Lock.tryLock()
-        except:
-            got = False
-        if got:
-            try:
-                try:
-                    n = len(self.Hub.StackPages)
-                except:
-                    n = None
-            finally:
-                try:
-                    self.Hub.Lock.unlock()
-                except:
-                    pass
-        if n is None:
-            try:
-                n = int(getattr(self, 'LastKnownStackCount', 0))
-            except:
-                n = 0
-        try:
-            self.LastKnownStackCount = int(n)
+            self.Panel.repaint()
         except:
             pass
-        try:
-            if int(n) > 0:
-                self.StackIndex = max(0, int(n) - 1)
-        except:
-            pass
-
-        self.NotebookPanel.repaint()
-        self.FiledPanel.repaint()
-
-    def _UpdateButtonStates(self, wr=None):
-        # Enable File page only when a page is finished and fileable.
-        # Enable Clear filed only when there are pages in the stack.
-        canFile = False
-        stackCount = None
-        try:
-            if wr is None:
-                got = False
-                try:
-                    got = self.Hub.Lock.tryLock()
-                except:
-                    got = False
-                if got:
-                    try:
-                        wr = self.Hub.Writer
-                        try:
-                            stackCount = len(self.Hub.StackPages)
-                        except:
-                            stackCount = None
-                    finally:
-                        try:
-                            self.Hub.Lock.unlock()
-                        except:
-                            pass
-            else:
-                got = False
-                try:
-                    got = self.Hub.Lock.tryLock()
-                except:
-                    got = False
-                if got:
-                    try:
-                        try:
-                            stackCount = len(self.Hub.StackPages)
-                        except:
-                            stackCount = None
-                    finally:
-                        try:
-                            self.Hub.Lock.unlock()
-                        except:
-                            pass
-            if wr is not None:
-                canFile = bool(wr.get('done', False)) and bool(wr.get('fileable', False))
-        except:
-            canFile = False
-
-        if stackCount is None:
-            try:
-                stackCount = int(getattr(self, 'LastKnownStackCount', 0))
-            except:
-                stackCount = 0
-
-        canClear = int(stackCount) > 0
-
-        try:
-            self.BtnFilePage.setEnabled(bool(canFile))
-        except:
-            pass
-        try:
-            self.BtnClearStack.setEnabled(bool(canClear))
-        except:
-            pass
-
-    def _ClearStack(self):
-        if self.IsClosed:
-            return
-
-        got = False
-        try:
-            got = self.Hub.Lock.tryLock()
-        except:
-            got = False
-        if got:
-            try:
-                try:
-                    if len(self.Hub.StackPages) <= 0:
-                        try:
-                            self.LastKnownStackCount = 0
-                        except:
-                            pass
-                        self._UpdateButtonStates()
-                        return
-                except:
-                    pass
-            finally:
-                try:
-                    self.Hub.Lock.unlock()
-                except:
-                    pass
-
-        try:
-            choice = swing.JOptionPane.showConfirmDialog(
-                self,
-                'Clear the filed pages for this JMRI runtime session?\nThis cannot be undone.',
-                'Confirm clear',
-                swing.JOptionPane.OK_CANCEL_OPTION,
-                swing.JOptionPane.WARNING_MESSAGE
-            )
-            if choice != swing.JOptionPane.OK_OPTION:
-                return
-        except:
-            return
-
-        got = False
-        try:
-            got = self.Hub.Lock.tryLock()
-        except:
-            got = False
-        if not got:
-            return
-        try:
-            self.Hub.StackPages = []
-            self.StackIndex = 0
-        finally:
-            try:
-                self.Hub.Lock.unlock()
-            except:
-                pass
-
-        try:
-            self.LastKnownStackCount = 0
-        except:
-            pass
-
-        self.OnHubChanged()
-        self._UpdateButtonStates()
-
-    def _FilePage(self):
-        if self.IsClosed:
-            return
-
-        got = False
-        try:
-            got = self.Hub.Lock.tryLock()
-        except:
-            got = False
-        if not got:
-            return
-
-        changed = False
-        try:
-            if self.Hub.Writer is not None:
-                wr = self.Hub.Writer
-                if bool(wr.get('done', False)) and bool(wr.get('fileable', False)):
-                    page = wr.get('page', None)
-                    if page is not None:
-                        self.Hub.StackPages.append(page)
-                        changed = True
-                    self.Hub.Writer = None
-                    changed = _StartNextPendingIfIdleLocked(self.Hub) or changed
-        finally:
-            try:
-                self.Hub.Lock.unlock()
-            except:
-                pass
-
-        if changed:
-            self.OnHubChanged()
 
     def _OnTick(self, e=None):
         if self.IsClosed:
             return
-
-        # Only the owner window advances writing.
         got = False
         try:
             got = self.Hub.Lock.tryLock()
         except:
             got = False
-
         if not got:
-            self.NotebookPanel.repaint()
+            try:
+                self.Panel.repaint()
+            except:
+                pass
             return
-
         changed = False
         try:
             if self.Hub.WriteOwnerId is None:
                 self.Hub.WriteOwnerId = id(self)
             if self.Hub.WriteOwnerId != id(self):
                 return
-
             changed = _StartNextPendingIfIdleLocked(self.Hub) or changed
             wr = self.Hub.Writer
-
-            # Update render caches while holding the hub lock.
-            try:
-                if wr is None:
-                    self.NotebookPanel.CachedWriter = None
-                else:
-                    self.NotebookPanel.CachedWriter = {
-                        'page': wr.get('page', None),
-                        'pos': int(wr.get('pos', 0)),
-                        'lines': list(wr.get('lines', [])),
-                        'currentLine': str(wr.get('currentLine', '')),
-                        'done': bool(wr.get('done', False)),
-                        'fileable': bool(wr.get('fileable', False)),
-                    }
-            except:
-                pass
-
-            try:
-                self.FiledPanel.CachedStack = list(self.Hub.StackPages)
-            except:
-                pass
-
-            self._UpdateButtonStates(wr)
-
             if wr is None:
-                pass
                 return
-
-            if bool(wr.get('done', False)) and bool(wr.get('fileable', False)):
-                pass
-            else:
-                pass
-
-            # If finished and pending pages exist, auto-file and start next.
-            if bool(wr.get('done', False)) and bool(wr.get('fileable', False)) and self.Hub.PendingPages:
-                changed = _AutoMoveWriterToStackLocked(self.Hub) or changed
+            text = wr.get('text', '')
+            try:
+                pos = int(wr.get('pos', 0))
+            except:
+                pos = 0
+            if pos >= len(text):
+                # Finalise the last in-progress line so the finished page uses the same wrapped layout.
+                try:
+                    curFinal = str(wr.get('currentLine', ''))
+                except:
+                    curFinal = ''
+                if curFinal != '':
+                    try:
+                        wr['lines'].append(curFinal.rstrip())
+                    except:
+                        pass
+                    wr['currentLine'] = ''
+                wr['done'] = True
+                self.Hub.Writer = None
                 changed = _StartNextPendingIfIdleLocked(self.Hub) or changed
                 return
-
-            # If done, count down hold time.
-            if bool(wr.get('done', False)) and not bool(wr.get('fileable', False)):
-                rem = int(wr.get('holdRemaining', 0))
-                rem = max(0, rem - 1)
-                wr['holdRemaining'] = rem
-                if rem <= 0:
-                    wr['fileable'] = True
-                return
-
-            # Write characters from page text.
-            page = wr.get('page', None)
-            if page is None:
-                wr['done'] = True
-                wr['holdRemaining'] = int(DONE_HOLD_TICKS)
-                return
-
-            txt = page.get('text', '')
-            pos = int(wr.get('pos', 0))
-            if pos >= len(txt):
-                wr['done'] = True
-                wr['holdRemaining'] = int(DONE_HOLD_TICKS)
-                return
-
-            # Write a few characters per tick.
-            for _i in range(int(WRITE_CHARS_PER_TICK)):
-                if pos >= len(txt):
-                    break
-                ch = txt[pos]
-                pos += 1
-                wr['pos'] = pos
-
-                if ch == '\n':
+            # Handwriting word-wrapping: decide line breaks BEFORE starting a word so existing letters never move.
+            # Also avoid writing a trailing space at the end of a line; use a newline instead.
+            try:
+                tw, _ml = _ComputeTextWFromPanel(self.Panel.getWidth(), self.Panel.getHeight())
+            except:
+                tw, _ml = _ComputeTextWFromPanel(FRAME_WIDTH, FRAME_HEIGHT)
+            try:
+                fm = self.Panel.getFontMetrics(self.Panel.Font)
+            except:
+                fm = None
+            
+            def _Width(s):
+                try:
+                    return fm.stringWidth(s)
+                except:
                     try:
-                        wr['lines'].append(wr.get('currentLine', ''))
+                        return len(s) * 8
+                    except:
+                        return 0
+            
+            for _i in range(int(WRITE_CHARS_PER_TICK)):
+                if pos >= len(text):
+                    break
+                ch = text[pos]
+                if ch == '\r':
+                    pos += 1
+                    wr['pos'] = pos
+                    continue
+                if ch == '\n':
+                    pos += 1
+                    wr['pos'] = pos
+                    try:
+                        wr['lines'].append(str(wr.get('currentLine', '')).rstrip())
                     except:
                         pass
                     wr['currentLine'] = ''
                     continue
-
-                if ch == '\r':
+                cur = str(wr.get('currentLine', ''))
+                if ch == ' ':
+                    nxt = _PeekNextWord(text, pos + 1)
+                    if cur != '' and nxt != '' and _Width(cur + ' ' + nxt) > int(tw):
+                        try:
+                            wr['lines'].append(cur.rstrip())
+                        except:
+                            pass
+                        wr['currentLine'] = ''
+                        pos += 1
+                        wr['pos'] = pos
+                        continue
+                    if cur == '':
+                        pos += 1
+                        wr['pos'] = pos
+                        continue
+                    if _Width(cur + ' ') > int(tw):
+                        try:
+                            wr['lines'].append(cur.rstrip())
+                        except:
+                            pass
+                        wr['currentLine'] = ''
+                        pos += 1
+                        wr['pos'] = pos
+                        continue
+                    wr['currentLine'] = cur + ' '
+                    pos += 1
+                    wr['pos'] = pos
                     continue
-
-                cur = wr.get('currentLine', '')
-                wr['currentLine'] = str(cur) + str(ch)
-
+                if cur != '' and cur.endswith(' '):
+                    w = _PeekNextWord(text, pos)
+                    if w != '' and _Width(cur + w) > int(tw):
+                        try:
+                            wr['lines'].append(cur.rstrip())
+                        except:
+                            pass
+                        wr['currentLine'] = ''
+                        continue
+                if cur != '' and _Width(cur + str(ch)) > int(tw):
+                    try:
+                        wr['lines'].append(cur.rstrip())
+                    except:
+                        pass
+                    wr['currentLine'] = ''
+                    continue
+                wr['currentLine'] = cur + str(ch)
+                pos += 1
+                wr['pos'] = pos
+            if pos >= len(text):
+                # Finalise the last in-progress line so the finished page uses the same wrapped layout.
+                try:
+                    curFinal = str(wr.get('currentLine', ''))
+                except:
+                    curFinal = ''
+                if curFinal != '':
+                    try:
+                        wr['lines'].append(curFinal.rstrip())
+                    except:
+                        pass
+                    wr['currentLine'] = ''
+                wr['done'] = True
+                self.Hub.Writer = None
+                changed = _StartNextPendingIfIdleLocked(self.Hub) or changed
+            _ClampViewLeftIndex(self.Hub)
         finally:
             try:
                 self.Hub.Lock.unlock()
             except:
                 pass
-
         if changed:
             self.OnHubChanged()
         else:
-            self.NotebookPanel.repaint()
-            self.FiledPanel.repaint()
-
-    class _KeyListener(event.KeyAdapter):
-        def keyPressed(self, e):
             try:
-                frame = e.getComponent()
-                code = e.getKeyCode()
+                self.Panel.repaint()
             except:
-                return
-            if code in (event.KeyEvent.VK_RIGHT, event.KeyEvent.VK_DOWN):
-                try:
-                    n = int(getattr(frame, 'LastKnownStackCount', 0))
-                    if frame.StackIndex < n - 1:
-                        frame.StackIndex += 1
-                        frame.FiledPanel.repaint()
-                except:
-                    pass
-            elif code in (event.KeyEvent.VK_LEFT, event.KeyEvent.VK_UP):
-                try:
-                    if frame.StackIndex > 0:
-                        frame.StackIndex -= 1
-                        frame.FiledPanel.repaint()
-                except:
-                    pass
+                pass
 
-    class _WheelListener(event.MouseWheelListener):
-        def mouseWheelMoved(self, e):
+    class _ResizeListener(event.ComponentAdapter):
+        def componentResized(self, e):
             try:
-                frame = e.getComponent().getTopLevelAncestor()
-                rot = e.getWheelRotation()
+                e.getComponent()._LayoutChildren()
             except:
-                return
-            if rot > 0:
-                try:
-                    if frame.StackIndex > 0:
-                        frame.StackIndex -= 1
-                        frame.FiledPanel.repaint()
-                except:
-                    pass
-            elif rot < 0:
-                try:
-                    n = int(getattr(frame, 'LastKnownStackCount', 0))
-                    if frame.StackIndex < n - 1:
-                        frame.StackIndex += 1
-                        frame.FiledPanel.repaint()
-                except:
-                    pass
-
-    class _ClickListener(event.MouseAdapter):
-        def mouseClicked(self, e):
-            try:
-                frame = e.getComponent().getTopLevelAncestor()
-                x = e.getX()
-                w = e.getComponent().getWidth()
-            except:
-                return
-            if x < w * 0.25:
-                try:
-                    if frame.StackIndex > 0:
-                        frame.StackIndex -= 1
-                        frame.FiledPanel.repaint()
-                except:
-                    pass
-            elif x > w * 0.75:
-                try:
-                    n = int(getattr(frame, 'LastKnownStackCount', 0))
-                    if frame.StackIndex < n - 1:
-                        frame.StackIndex += 1
-                        frame.FiledPanel.repaint()
-                except:
-                    pass
+                pass
 
     class _WindowCloser(event.WindowAdapter):
         def windowClosing(self, e):
@@ -1800,7 +2282,6 @@ class NotebookFrame(swing.JFrame):
                 e.getWindow()._Cleanup()
             except:
                 pass
-
         def windowClosed(self, e):
             try:
                 e.getWindow()._Cleanup()
@@ -1817,23 +2298,19 @@ class NotebookFrame(swing.JFrame):
         except:
             pass
         try:
+            self.Hub.Lock.lock()
+            try:
+                if self.Hub.WriteOwnerId == id(self):
+                    self.Hub.WriteOwnerId = None
+            finally:
+                self.Hub.Lock.unlock()
+        except:
+            pass
+        try:
             if self in self.Hub.Windows:
                 self.Hub.Windows.remove(self)
         except:
             pass
-
-
-class RunnableAdapter(Runnable):
-    def __init__(self, fn):
-        self.Fn = fn
-
-    def run(self):
-        try:
-            self.Fn()
-        except:
-            pass
-
-# --------------------------------------------------
 # Entry
 # --------------------------------------------------
 
@@ -1875,7 +2352,7 @@ def _StartHubPollingIfNeeded(hub):
 def _OpenWindow():
     hub = _GetOrCreateHub()
     _StartHubPollingIfNeeded(hub)
-    win = NotebookFrame(hub)
+    win = BookFrame(hub)
     try:
         hub.Windows.append(win)
     except:

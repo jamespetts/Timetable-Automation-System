@@ -13,8 +13,8 @@
 #
 # Teleprinter-style disruption output (printer + stack) for signallers.
 #
-# <<SIG-DISP-NAME: Teleprinter disruption messages>>
-# <<DESCRIPTION: Simulates a 1960s/1970s teleprinter with a live printer on the left and a removable paper stack on the right.>>
+# <<SIG-DISP-NAME: Teleprinter>>
+# <<DESCRIPTION: A teleprinter which shows train status messages (delays, cancellations, etc.) as notified. Suitable for circa 1960s-1990s.>>
 #
 # <<SETTING DESCRIPTION BOOLEAN: Use 24-hour time>>
 #
