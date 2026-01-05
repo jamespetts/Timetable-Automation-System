@@ -1157,10 +1157,86 @@ def RunFontCheckDialog(parentFrame=None):
     except:
         FontsFrame(parentFrame)
 
-try:
-    RunFontCheckDialog(None)
-except:
+
+# ---------------------------
+# Public API for other scripts
+# ---------------------------
+
+def GetFontCheckResults():
+    # Returns (results, meta) without showing any UI.
+    # results is a list of FontCheckResult.
+    reqs, meta = BuildRequirementsFromProfileScripts()
+    res = EvaluateRequirements(reqs)
+    return res, meta
+
+def CountMissingFonts(includeWarn=False):
+    # Returns an int count of missing fonts.
+    # By default counts only hard missing requirements (Status == "MISSING").
+    # If includeWarn=True, counts WARN rows too.
     try:
-        FontsFrame(None)
+        results, meta = GetFontCheckResults()
+    except:
+        return 0
+
+    missing = 0
+    for r in (results or []):
+        try:
+            st = str(r.Status)
+        except:
+            st = ""
+        if st == "MISSING":
+            missing += 1
+        elif includeWarn and st == "WARN":
+            missing += 1
+    return int(missing)
+
+def RunFontCheck(silent=False, parentFrame=None):
+    # If silent=True, do not show UI and return CountMissingFonts().
+    # If silent=False, show the UI and also return CountMissingFonts() (computed first).
+    cnt = 0
+    try:
+        cnt = CountMissingFonts(False)
+    except:
+        cnt = 0
+
+    if not silent:
+        try:
+            RunFontCheckDialog(parentFrame)
+        except:
+            try:
+                FontsFrame(parentFrame)
+            except:
+                pass
+
+    # Expose as a module global for callers that use execfile.
+    try:
+        globals()['TASFontCheckMissingCount'] = int(cnt)
     except:
         pass
+
+    return int(cnt)
+
+# Backward-compatible alias
+GetMissingFontsCount = CountMissingFonts
+
+# ---------------------------
+# Default behaviour when executed directly
+# ---------------------------
+
+# If another script runs this via execfile and wants it to be silent,
+# it can set TASFontCheckSilent=True in the globals dict passed to execfile.
+
+if globals().get('TASFontCheckSilent', False):
+    try:
+        globals()['TASFontCheckMissingCount'] = int(CountMissingFonts(False))
+    except:
+        pass
+else:
+    if __name__ == '__main__':
+        try:
+            RunFontCheck(silent=False, parentFrame=None)
+        except:
+            try:
+                RunFontCheckDialog(None)
+            except:
+                pass

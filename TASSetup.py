@@ -2148,6 +2148,91 @@ class TASSetupFrame(jmri.util.JmriJFrame):
         rowFont.add(lblFont); rowFont.add(Box.createHorizontalStrut(8)); rowFont.add(cmbFont)
         root.add(rowFont, gbc)
 
+        # (A2) Font check: show missing font count and provide a button to open the font checker.
+        gbc.gridy += 1
+        rowFontsCheck = Box.createHorizontalBox()
+        btnFontsCheck = JButton("Check for missing fonts...")
+        self.LblFontsMissing = JLabel("Missing fonts: (checking...)")
+        try:
+            self.LblFontsMissing.setOpaque(False)
+        except:
+            pass
+        rowFontsCheck.add(btnFontsCheck)
+        rowFontsCheck.add(Box.createHorizontalStrut(12))
+        rowFontsCheck.add(self.LblFontsMissing)
+        root.add(rowFontsCheck, gbc)
+
+        FONT_CHECK_SCRIPT = "TASFontCheck.py"
+
+        def _LoadFontCheckModule():
+            try:
+                import imp
+                pth = ProfileJythonFilePath(FONT_CHECK_SCRIPT)
+                return imp.load_source("TASFontCheck_i", pth)
+            except:
+                return None
+
+        def _UpdateFontsMissingLabel():
+            def _Worker():
+                cnt = 0
+                try:
+                    mod = _LoadFontCheckModule()
+                    if mod is not None:
+                        if hasattr(mod, "CountMissingFonts"):
+                            cnt = int(mod.CountMissingFonts(False))
+                        elif hasattr(mod, "GetMissingFontsCount"):
+                            cnt = int(mod.GetMissingFontsCount(False))
+                        elif hasattr(mod, "RunFontCheck"):
+                            cnt = int(mod.RunFontCheck(True, None))
+                except:
+                    cnt = 0
+                def _Apply():
+                    try:
+                        self.LblFontsMissing.setText("Missing fonts: %d" % int(cnt))
+                    except:
+                        pass
+                try:
+                    SwingUtilities.invokeLater(RunnableAdapter(_Apply))
+                except:
+                    try:
+                        _Apply()
+                    except:
+                        pass
+            try:
+                java.lang.Thread(RunnableAdapter(_Worker), "TASFontCheckCount").start()
+            except:
+                try:
+                    _Worker()
+                except:
+                    pass
+
+        def DoFontsCheck(e=None):
+            try:
+                mod = _LoadFontCheckModule()
+                if mod is not None:
+                    try:
+                        mod.RunFontCheck(False, self)
+                    except:
+                        try:
+                            mod.RunFontCheckDialog(self)
+                        except:
+                            try:
+                                mod.FontsFrame(self)
+                            except:
+                                pass
+                else:
+                    pth = ProfileJythonFilePath(FONT_CHECK_SCRIPT)
+                    if os.path.isfile(pth):
+                        execfile(pth, {"__name__": "__main__"})
+                    else:
+                        LogWarn("Font check script not found: " + str(pth), alsoDialog=True)
+            except Exception as ex:
+                LogError("Font check failed: " + str(ex), ex=ex, alsoDialog=True)
+            _UpdateFontsMissingLabel()
+
+        btnFontsCheck.addActionListener(lambda e: DoFontsCheck(e))
+        _UpdateFontsMissingLabel()
+
         # -------------------- (B) Background colour (JColorChooser) --------------------
         gbc.gridy += 1
         rowBg = Box.createHorizontalBox()
