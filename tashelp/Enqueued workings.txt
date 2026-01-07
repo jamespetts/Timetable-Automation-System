@@ -1,0 +1,15 @@
+***Timetable Automation System***
+
+**Workings**
+
+*Overview*
+
+Enqueued workings are the Timetable Automation System's way of dealing with what happens when trains are not in the expected place when it is time for a working to start or they cannot start for any other reason.
+
+If there should be no suitable train in any of the possible start blocks for a working when it is time for it to start, or something else is blocking it from starting (e.g. the starting block is occupied with an Auto Active Train), the working will be added to the list of enqueued workings. Every minute, the Timetable Automation System will try again to see whether the enqueued working can run now. If it can, it will run, and leave the enqueued workings list.
+
+*Checking and modifying the list*
+
+In the general tab of the setup window, you can see "Enqueued workings: [x]". This shows how many enqueued workings that there are at present. You can also see log messages from enqueued workings retrying in the system console.
+
+To delete all enqueued workings (e.g. to reset the layout state), click "Reset enqueued workings" in the general setup tab of the setup window.

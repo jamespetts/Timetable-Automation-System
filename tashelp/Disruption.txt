@@ -14,6 +14,10 @@ Delays (which includes early running) and cancellations can be enabled and disab
 
 Disruption needs to be configured before it can be used.
 
+*Resetting data*
+
+In the general setup tab of the setup window, there are buttons for resetting the disruption and timing data. Resetting the disruption data will set all trains currently recorded as running late, early or being cancelled as running on time. Resetting the timings data will reset the time that trains are recorded as having arrived at timing points. To force trains to run on time from now onwards (e.g. after disabling delays/cancellations), reset only disruption data. For a full layout reset (e.g. if fully resetting its state manually), reset both.
+
 *Configuration*
 
 To set up disruption, you need a file called Disruption.csv located in the same folder as your timetable. It must be a CSV file with the following headings:

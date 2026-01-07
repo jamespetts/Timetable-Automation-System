@@ -1,6 +1,6 @@
 ***Timetable Automation System***
 
-**Workings*
+**Workings**
 
 *Overview*
 
