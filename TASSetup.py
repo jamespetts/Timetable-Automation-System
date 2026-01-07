@@ -1188,6 +1188,16 @@ class TASSetupFrame(jmri.util.JmriJFrame):
         header = Box.createHorizontalBox()
         header.add(Box.createHorizontalGlue())
         wizardBtn = JButton("Setup wizard...")
+        # Make the button bigger with matching bigger text
+        try:
+            wizardBtn.setFont(Font(THEME_FONT_FAMILY, Font.BOLD, 18))
+        except:
+            pass
+        try:
+            size = wizardBtn.getPreferredSize()
+            wizardBtn.setPreferredSize(Dimension(size.width + 40, int(size.height * 2)))
+        except:
+            pass
 
         # Check if TASWiz.py exists in profile:jython
         wizExists = ScriptExists("TASWiz.py")
@@ -1215,6 +1225,17 @@ class TASSetupFrame(jmri.util.JmriJFrame):
 
         header.add(wizardBtn)
         header.add(Box.createHorizontalGlue())
+        # Add bottom padding under the header row so the next controls sit lower,
+        # placing the button roughly mid-gap visually.
+        try:
+            ph = wizardBtn.getPreferredSize().height
+            header.setBorder(BorderFactory.createEmptyBorder(12, 0, int(ph * 0.75), 0))
+        except:
+            try:
+                header.setBorder(BorderFactory.createEmptyBorder(12, 0, 28, 0))
+            except:
+                pass
+
         panel.add(header, gbc)
 
         # (A) Enable time-based actions (requires restart) - controls CheckWhenTimeChanges.py at Start-Up
