@@ -1617,8 +1617,8 @@ class TASWizardDialog(JDialog):
                 self._SetStrMem('TASINNERCOLOUR', innerRgb) 
                 self._SetStrMem('TASPAPERCOLOUR', paperRgb) 
                 self._SetStrMem('TASINKCOLOUR', inkRgb) 
-                self._SetStrMem('TASWTTBANDLIGHT', bandLightRgb) 
-                self._SetStrMem('TASWTTBANDDARK', bandDarkRgb) 
+                self._SetStrMem('TASWTTBANDLIGHT', paperRgb)
+                self._SetStrMem('TASWTTBANDDARK', paperRgb)
                 if fontFamily is not None: 
                     self._SetStrMem('TAS_FONT_FAMILY', fontFamily) 
                 self._SetStrMem('TASCOVERINKCOLOUR', coverInkRgb) 
@@ -1705,13 +1705,6 @@ class TASWizardDialog(JDialog):
                 self._SetStrMem('TASCOVERINKCOLOUR', defaultCoverInk) 
 
                 # ----------------------------- 
-                # Ensure no banding by default (unconditional in wizard): set dark equal to light
-        try:
-            _light = str(TBL.SafeGetOrCreateMemoryValue('TASWTTBANDLIGHT', '255,253,247')).strip()
-        except:
-            _light = '255,253,247'
-        self._SetStrMem('TASWTTBANDDARK', _light)
-
         # Paper colour policy overrides:
         # - TfL always white
         # - London Transport white from 1977
