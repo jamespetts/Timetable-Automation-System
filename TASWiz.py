@@ -105,6 +105,39 @@ def ApplyTheme(component):
         pass
 
 
+
+# ------------------------------ Font fallback helpers ------------------------------
+def _GetInstalledFontFamiliesLowerSet():
+    try:
+        from java.awt import GraphicsEnvironment
+        ge = GraphicsEnvironment.getLocalGraphicsEnvironment()
+        names = ge.getAvailableFontFamilyNames()
+        out = set([])
+        for n in names:
+            try:
+                out.add(str(n).strip().lower())
+            except:
+                pass
+        return out
+    except:
+        return set([])
+
+def _FirstInstalledFont(candidates, fallbackName):
+    # Return the first candidate present on this system; else fallbackName.
+    try:
+        avail = _GetInstalledFontFamiliesLowerSet()
+        for nm in (candidates or []):
+            try:
+                if str(nm).strip().lower() in avail:
+                    return nm
+            except:
+                pass
+    except:
+        pass
+    try:
+        return fallbackName if fallbackName is not None else 'SansSerif'
+    except:
+        return 'SansSerif'
 def MakePaperPanel():
     class PaperPanel(JPanel):
         def __init__(self):
@@ -1554,27 +1587,36 @@ class TASWizardDialog(JDialog):
                     self._SetStrMem('TAS_FONT_FAMILY', fontFamily) 
                 self._SetStrMem('TASCOVERINKCOLOUR', coverInkRgb) 
 
-            # Choose a font family default (single value; any fallbacks are handled elsewhere). 
-            fontFamily = None 
-            if companyLower in ['british railways', 'london & north eastern railway']: 
-                fontFamily = 'Gill Sans MT' 
-            elif companyLower in ['british rail', 'railtrack', 'network rail']: 
-                # Preference cascade requested: Arial, Helvetica, SansSerif. Store the first choice. 
-                fontFamily = 'Arial' 
-            elif companyLower in ['london transport', 'transport for london']: 
-                if year < 1955: 
-                    fontFamily = 'Serif' 
-                else: 
-                    # Preference cascade requested: Johnston 100, Railway Sans, Granby. Store the first choice. 
-                    fontFamily = 'Johnston 100' 
-            else: 
-                if year < 1948: 
-                    fontFamily = 'Serif' 
-                else: 
-                    fontFamily = 'Gill Sans MT' 
-
+            # Choose a font family default using installed-font fallback (GraphicsEnvironment).
+            fontFamily = None
+            fontFamilyCandidates = []
+            if companyLower in ['british railways', 'london & north eastern railway']:
+                fontFamilyCandidates = ['Gill Sans MT','Gill Sans','Liberation Sans','Arial','SansSerif']
+            elif companyLower in ['british rail']:
+                fontFamilyCandidates = ['Arial Narrow','Liberation Sans Narrow','SansSerif']
+            elif companyLower in ['railtrack', 'network rail']:
+                fontFamilyCandidates = ['Arial','Helvetica','Liberation Sans','SansSerif']
+            elif companyLower in ['london transport', 'transport for london']:
+                if year < 1955:
+                    fontFamilyCandidates = ['Serif']
+                else:
+                    # Preference cascade: Johnston 100, Railway Sans, Granby, Gill Sans MT, Arial, SansSerif
+                    fontFamilyCandidates = ['Johnston 100','Railway Sans','Granby','Gill Sans MT','Arial','SansSerif']
+            else:
+                if year < 1948:
+                    fontFamilyCandidates = ['Serif']
+                else:
+                    fontFamilyCandidates = ['Gill Sans MT','Gill Sans','Arial','SansSerif']
+            try:
+                fallbackName = fontFamilyCandidates[0] if len(fontFamilyCandidates)>0 else 'SansSerif'
+            except:
+                fallbackName = 'SansSerif'
+            fontFamily = _FirstInstalledFont(fontFamilyCandidates, fallbackName)
+            
+            if year < 1948:
+                defaultInner = '249,246,238'
+            
             if companyLower == 'british railways': 
-                # Default colour scheme/fonts, but both WTT band colours should be identical (lighter). 
                 SetScheme(defaultCover, defaultInner, defaultPaper, defaultInk, defaultBandLight, defaultBandLight, fontFamily, defaultCoverInk) 
             elif companyLower == 'british rail': 
                 brRed = '165,50,60' 
@@ -1595,6 +1637,7 @@ class TASWizardDialog(JDialog):
                     coverInk = '0,0,0' 
                 SetScheme(coverRgb, defaultPaper, defaultPaper, defaultInk, defaultBandLight, defaultBandLight, fontFamily, coverInk) 
             else: 
+                SetScheme(defaultPaper, defaultInner, defaultPaper, defaultInk, defaultBandLight, defaultBandLight, fontFamily, defaultCoverInk)
                 try: 
                     self._SetStrMem('TAS_FONT_FAMILY', fontFamily) 
                 except: 
@@ -1602,6 +1645,13 @@ class TASWizardDialog(JDialog):
                 self._SetStrMem('TASCOVERINKCOLOUR', defaultCoverInk) 
 
         # ----------------------------- 
+        # Ensure no banding by default (unconditional in wizard): set dark equal to light
+        try:
+            _light = str(TBL.SafeGetOrCreateMemoryValue('TASWTTBANDLIGHT', '255,253,247')).strip()
+        except:
+            _light = '255,253,247'
+        self._SetStrMem('TASWTTBANDDARK', _light)
+
         # Paper colour policy overrides:
         # - TfL always white
         # - London Transport white from 1977
@@ -1611,12 +1661,6 @@ class TASWizardDialog(JDialog):
             self._SetStrMem('TASPAPERCOLOUR', '255,255,255')       
             self._SetStrMem('TASWTTBANDLIGHT', '255,255,255')
             self._SetStrMem('TASWTTBANDDARK', '255,255,255')
-            # Ensure no banding by default: set dark equal to light
-            try:
-                _light = str(TBL.SafeGetOrCreateMemoryValue('TASWTTBANDLIGHT', '255,253,247')).strip()
-            except:
-                _light = '255,253,247'
-            self._SetStrMem('TASWTTBANDDARK', _light)
         
         # ----------------------------- 
         # Signallers' display defaults
@@ -1634,7 +1678,7 @@ class TASWizardDialog(JDialog):
         # ----------------------------- 
         if applyPublic: 
             pidScripts = [] 
-            if companySelStr in ['London Transport', 'Transport for London']: 
+            if companyLower in ['london transport', 'transport for london']: 
                 if year >= 1985: 
                     pidScripts = ['PIDUndergroundLED.py'] 
                 else: 
@@ -4396,4 +4440,4 @@ def ShowTASWizard():
 
 
 # Entry
-ShowTASWizard()
+ShowTASWizard() 
