@@ -779,6 +779,21 @@ class TASWizardDialog(JDialog):
             self.InitialOrientationSensingEnabled = bool(self._GetOrientationSensingEnabled())
         except:
             self.InitialOrientationSensingEnabled = False
+              # Apply default fonts via UIManager so all labels/controls use THEME_FONT_FAMILY.
+        try:
+           from javax.swing import UIManager
+           UIManager.put('Label.font', Font(THEME_FONT_FAMILY, Font.PLAIN, 13))
+           UIManager.put('Button.font', Font(THEME_FONT_FAMILY, Font.PLAIN, 13))
+           UIManager.put('CheckBox.font', Font(THEME_FONT_FAMILY, Font.PLAIN, 13))
+           UIManager.put('ComboBox.font', Font(THEME_FONT_FAMILY, Font.PLAIN, 13))
+           UIManager.put('List.font', Font(THEME_FONT_FAMILY, Font.PLAIN, 13))
+           UIManager.put('TextField.font', Font(THEME_FONT_FAMILY, Font.PLAIN, 13))
+           UIManager.put('TextArea.font', Font(THEME_FONT_FAMILY, Font.PLAIN, 13))
+           UIManager.put('ScrollPane.font', Font(THEME_FONT_FAMILY, Font.PLAIN, 13))
+           UIManager.put('OptionPane.messageFont', Font(THEME_FONT_FAMILY, Font.PLAIN, 13))
+        except:
+           pass
+
         self.BuildSteps()
         self.ShowStep(0)
 
