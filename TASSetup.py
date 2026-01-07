@@ -68,6 +68,20 @@ def LogError(msg, ex=None, alsoDialog=True, title="Error"):
         try: JOptionPane.showMessageDialog(None, str(msg), title, JOptionPane.ERROR_MESSAGE)
         except: pass
         
+        
+# Helper: run the Setup wizard if present (safe wrapper)
+def RunSetupWizard():
+    try:
+        path = ProfileJythonFilePath("TASWiz.py")
+        if not os.path.isfile(path):
+            LogWarn("Setup wizard not found: " + str(path), alsoDialog=True)
+            return False
+        execfile(path, {})
+        return True
+    except Exception as ex:
+        LogError("Setup wizard failed: " + str(ex), ex=ex, alsoDialog=True)
+        return False
+        
 # -------------------- Colour helpers --------------------
 def _RgbStrToColorOrDefault(rgbStr, defaultColor):
     try:
@@ -444,7 +458,7 @@ def _ValidateTimetable():
     """
     path = _TimetableFilePath()
     if path is None:
-        return (False, "No current timetable set.", None)
+        return (False, "No valid timetable set.", None)
     if not os.path.isfile(path):
         return (False, "Timetable file does not exist: " + path, None)
     try:
@@ -1061,8 +1075,20 @@ class TASSetupFrame(jmri.util.JmriJFrame):
             SetFrameClockIcon(self, 32)  # 32px icon size
         except Exception as ex:
             print("[TASSetup] Failed to set setup window icon: " + str(ex))
-     
+
         self.setVisible(True)
+
+        # Post-show: prompt to run the wizard when no valid timetable is configured
+        try:
+            def _DoStartupTimetableCheck():
+                try:
+                    self.CheckTimetableOnStartup()
+                except:
+                    pass
+            SwingUtilities.invokeLater(RunnableAdapter(_DoStartupTimetableCheck))
+        except:
+            pass
+
         try:
             self.StartWizardSyncTimer()
         except:
@@ -1094,7 +1120,42 @@ class TASSetupFrame(jmri.util.JmriJFrame):
         except:
             pass
         LogInfo("Setup window opened.")
+ 
+    def CheckTimetableOnStartup(self):
+        # Show a one-time prompt if no valid timetable is configured
+        try:
+            if getattr(self, "_StartupChecked", False):
+                return
+            self._StartupChecked = True
+        except:
+            pass
 
+        try:
+            ok, msg, _ = _ValidateTimetable()
+        except:
+            ok = True
+            msg = ""
+
+        if ok:
+            return
+
+        reason = ("Reason: " + str(msg)) if (msg is not None and str(msg).strip() != "") else "No timetable configured."
+        prompt = ("The Timetable Automation System is not yet configured.\n\n"
+                  + reason
+                  + "\n\nRun the Setup wizard now?")
+
+        try:
+            choice = JOptionPane.showConfirmDialog(
+                self, prompt, "Run Setup wizard?",
+                JOptionPane.OK_CANCEL_OPTION, JOptionPane.QUESTION_MESSAGE
+            )
+        except:
+            choice = JOptionPane.CANCEL_OPTION
+
+        if choice == JOptionPane.OK_OPTION:
+            if not RunSetupWizard():
+                LogWarn("Could not run the Setup wizard.", alsoDialog=True)
+    
     def PackAndCenter(self):
         self.pack()
         try: self.setLocationRelativeTo(None)
