@@ -1151,6 +1151,13 @@ class TASWizardDialog(JDialog):
             memCompany = TBL.SafeGetMemoryValue('RAILWAYCO', '').strip()
         except:
             memCompany = ''
+        # Treat blank company as Network Rail from 2002 onward (Network Rail does not appear on printed timetables).
+        try:
+            yr = int(self.LayoutYear) if self.LayoutYear is not None else None
+        except:
+            yr = None
+        if memCompany == '' and yr is not None and yr >= 2002:
+            memCompany = 'Network Rail'
         try:
             memRegion = TBL.SafeGetOrCreateMemoryValue('REGION', '').strip()
         except:
@@ -1293,6 +1300,8 @@ class TASWizardDialog(JDialog):
                     return ''
             if s == 'Select...':
                 return ''
+            if s == 'Network Rail':
+                return ''
             return s
         except:
             return ''
@@ -1338,6 +1347,8 @@ class TASWizardDialog(JDialog):
                 company = ''
         else:
             company = selStr
+            if selStr == 'Network Rail':
+                company = ''
             # Region selection
             # Region/division is optional: if the user does not select anything, treat it as blank.
         try:
@@ -1488,6 +1499,9 @@ class TASWizardDialog(JDialog):
         except:
             _companyActual = companySelStr
         companyLower = self._NormLower(_companyActual)
+        # Treat blank company as Network Rail from 2002 onward (Network Rail does not appear on printed timetables).
+        if companyLower == '' and year >= 2002:
+            companyLower = 'network rail'
 
 
         # ----------------------------- 
