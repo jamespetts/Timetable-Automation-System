@@ -674,6 +674,18 @@ def DayGroupsFromMode(mode):
     else:
         return DayGroupsFromMode("SEVEN_DAYS")
 
+def DisplayLabelForHeader(label, group_days):
+ # Some historic timetables used 'WEEKDAYS' to mean Monday-Saturday.
+ # Internally we keep the grouping label 'MON-SAT' for clarity, but display 'WEEKDAYS'.
+ try:
+     if label == 'MON-SAT':
+         want = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday']
+         if list(group_days or []) == want:
+             return 'WEEKDAYS'
+ except:
+     pass
+ return label
+
 def _ScoreRowForGroup(svc, group_days):
     inside = 0; outside = 0
     for d in DAYS_ORDER:
@@ -1405,7 +1417,7 @@ def _FitFrameSnug():
         pass
 
 def ApplyPage(page, SHOW_REP_ROW, REP_ROW_INDEX):
-    rightHeader.setText(page["label"])
+    rightHeader.setText(DisplayLabelForHeader(page["label"], page.get("days", [])))
     dir_txt = page.get("direction", None)
     centerHeader.setText("" if not dir_txt else str(dir_txt).upper())
 
