@@ -1313,7 +1313,7 @@ class TASWizardDialog(JDialog):
             section = 'SECTION B'
 
         try:
-            TBL.SafeSetMemoryValue('RAILWAYCO', company)
+            TBL.SafeSetMemoryValue('RAILWAYCO', '' if company is None else str(company).upper())
             TBL.SafeSetMemoryValue('REGION', region)
             TBL.SafeSetMemoryValue('SECTION', section)
         except Exception as ex:
@@ -1472,19 +1472,19 @@ class TASWizardDialog(JDialog):
             # Reporting number row name defaults by railway company. 
             # NOTE: Blank means use the WTTDisplay default. 
             repNoLabel = None 
-            if companySelStr == 'British Rail': 
+            if companyLower == 'british rail': 
                 repNoLabel = '' 
-            elif companySelStr == 'Railtrack': 
+            elif companyLower == 'railtrack': 
                 repNoLabel = 'Train ID' 
-            elif companySelStr == 'Network Rail': 
+            elif companyLower == 'network rail': 
                 repNoLabel = 'Signal ID' 
-            elif companySelStr == 'London Transport': 
+            elif companyLower == 'london transport': 
                 repNoLabel = 'Train no.' 
-            elif companySelStr == 'Transport for London': 
+            elif companyLower == 'transport for london': 
                 repNoLabel = '' 
-            elif companySelStr == 'British Railways': 
+            elif companyLower == 'british railways': 
                 repNoLabel = 'Rep. no.' 
-            elif companySelStr == 'London & North Eastern Railway': 
+            elif companyLower == 'london & north eastern railway': 
                 repNoLabel = 'No.' 
             if repNoLabel is not None: 
                 self._SetStrMem('WTT_REP_NO_LABEL', repNoLabel) 
@@ -1492,26 +1492,26 @@ class TASWizardDialog(JDialog):
             # Timing load label defaults. 
             # Please update these values if further research indicates different historic conventions. 
             timingLoadLabel = None 
-            if companySelStr in ['British Rail', 'Railtrack', 'Network Rail']: 
+            if companyLower in ['british rail', 'railtrack', 'network rail']: 
                 timingLoadLabel = 'Timing load' 
-            elif companySelStr in ['London Transport', 'Metropolitan Railway']: 
+            elif companyLower in ['london transport', 'metropolitan railway']: 
                 timingLoadLabel = 'Make Up' 
-            elif companySelStr in ['Underground Electric Railways of London', 'Metropolitan District Railway']: 
+            elif companyLower in ['underground electric railways of london', 'metropolitan district railway']: 
                 timingLoadLabel = 'No. Cars' 
-            elif companySelStr == 'Southern Railway': 
+            elif companyLower == 'southern railway': 
                 timingLoadLabel = 'Electric Head Code' 
-            elif companySelStr == 'British Railways' and regionLower == 'southern region': 
+            elif companyLower == 'british railways' and regionLower == 'southern region': 
                 timingLoadLabel = 'Electric Head Code' 
-            elif companySelStr == 'London & North Eastern Railway': 
+            elif companyLower == 'london & north eastern railway': 
                 timingLoadLabel = 'Description.' 
-            elif companySelStr == 'Great Western Railway': 
+            elif companyLower == 'great western railway': 
                 timingLoadLabel = 'Reporting No.' 
             if timingLoadLabel is not None: 
                 self._SetStrMem('WTT_TIMING_LOAD_LABEL', timingLoadLabel) 
 
             # Vertical headers: 
             # before 1966 if not London Transport, Metropolitan Railway, Underground Electric Railways of London, Metropolitan District Railway. 
-            isUnderground = companySelStr in ['London Transport', 'Transport for London', 'Metropolitan Railway', 'Metropolitan District Railway', 'Underground Electric Railways of London'] 
+            isUnderground = companyLower in ['london transport', 'transport for london', 'metropolitan railway', 'metropolitan district railway', 'underground electric railways of london'] 
             self._SetBoolMem('WTT_OD_HEADER_VERTICAL', (year < 1966) and (not isUnderground)) 
 
             # ECS label: 
@@ -1522,7 +1522,7 @@ class TASWizardDialog(JDialog):
             # - Weekdays, Saturdays, Sundays after 1960 for all 
             # - always for London Transport and Underground Electric Railways of London 
             # - otherwise Weekdays (including Saturdays), Sundays 
-            if companySelStr in ['London Transport', 'Underground Electric Railways of London']: 
+            if companyLower in ['london transport', 'underground electric railways of london']: 
                 self._SetStrMem('WTT_PAGE_MODE', 'WEEKDAYS_SAT_SUN') 
             elif year > 1960: 
                 self._SetStrMem('WTT_PAGE_MODE', 'WEEKDAYS_SAT_SUN') 
@@ -1556,12 +1556,12 @@ class TASWizardDialog(JDialog):
 
             # Choose a font family default (single value; any fallbacks are handled elsewhere). 
             fontFamily = None 
-            if companySelStr in ['British Railways', 'London & North Eastern Railway']: 
+            if companyLower in ['british railways', 'london & north eastern railway']: 
                 fontFamily = 'Gill Sans MT' 
-            elif companySelStr in ['British Rail', 'Railtrack', 'Network Rail']: 
+            elif companyLower in ['british rail', 'railtrack', 'network rail']: 
                 # Preference cascade requested: Arial, Helvetica, SansSerif. Store the first choice. 
                 fontFamily = 'Arial' 
-            elif companySelStr in ['London Transport', 'Transport for London']: 
+            elif companyLower in ['london transport', 'transport for london']: 
                 if year < 1955: 
                     fontFamily = 'Serif' 
                 else: 
@@ -1573,18 +1573,18 @@ class TASWizardDialog(JDialog):
                 else: 
                     fontFamily = 'Gill Sans MT' 
 
-            if companySelStr == 'British Railways': 
+            if companyLower == 'british railways': 
                 # Default colour scheme/fonts, but both WTT band colours should be identical (lighter). 
                 SetScheme(defaultCover, defaultInner, defaultPaper, defaultInk, defaultBandLight, defaultBandLight, fontFamily, defaultCoverInk) 
-            elif companySelStr == 'British Rail': 
-                brRed = '140,50,60' 
+            elif companyLower == 'british rail': 
+                brRed = '165,50,60' 
                 SetScheme(brRed, brRed, defaultPaper, defaultInk, defaultBandLight, defaultBandDark, fontFamily, defaultCoverInk) 
-            elif companySelStr == 'Railtrack': 
+            elif companyLower == 'railtrack': 
                 railtrackBg = '60,10,25' 
                 SetScheme(railtrackBg, railtrackBg, '255,255,255', defaultInk, defaultBandLight, defaultBandDark, fontFamily, '255,255,255') 
-            elif companySelStr == 'Network Rail': 
+            elif companyLower == 'network rail': 
                 SetScheme('220,220,220', '255,255,255', '255,255,255', defaultInk, defaultBandLight, defaultBandDark, fontFamily, '0,0,0') 
-            elif companySelStr in ['London Transport', 'Transport for London']: 
+            elif companyLower in ['london transport', 'transport for london']: 
                 coverRgb = defaultPaper 
                 coverInk = '0,0,0' 
                 if year >= 1977 and year <= 2000: 
@@ -1602,16 +1602,24 @@ class TASWizardDialog(JDialog):
                 self._SetStrMem('TASCOVERINKCOLOUR', defaultCoverInk) 
 
         # ----------------------------- 
-        # Paper colour policy overrides (minimal change):
+        # Paper colour policy overrides:
         # - TfL always white
         # - London Transport white from 1977
         # - Always white after 2002 irrespective of company
+        # ----------------------------- 
         if companyLower == 'transport for london' or ((companyLower == 'london transport') and (year >= 1977)) or year >= 2002:
             self._SetStrMem('TASPAPERCOLOUR', '255,255,255')       
             self._SetStrMem('TASWTTBANDLIGHT', '255,255,255')
             self._SetStrMem('TASWTTBANDDARK', '255,255,255')
-
-        # Signallers' display defaults 
+            # Ensure no banding by default: set dark equal to light
+            try:
+                _light = str(TBL.SafeGetOrCreateMemoryValue('TASWTTBANDLIGHT', '255,253,247')).strip()
+            except:
+                _light = '255,253,247'
+            self._SetStrMem('TASWTTBANDDARK', _light)
+        
+        # ----------------------------- 
+        # Signallers' display defaults
         # ----------------------------- 
         if applySignallers: 
             sigScript = 'NotebookDisruption.py' 
@@ -1620,6 +1628,7 @@ class TASWizardDialog(JDialog):
             elif year >= 1964: 
                 sigScript = 'TeleprinterDisruption.py' 
             self._SetStrMem('SIGNALLERDISPLAYLIST', sigScript) 
+            
         # ----------------------------- 
         # Public information display defaults 
         # ----------------------------- 
@@ -1632,11 +1641,11 @@ class TASWizardDialog(JDialog):
                     pidScripts = ['PIDLightboxSingle.py'] 
             else: 
                 if year >= 2005: 
-                    pidScripts = ['PIDSingle.py'] 
+                    pidScripts = ['PIDSmall.py'] 
                 elif year >= 1995: 
-                    pidScripts = ['PIDCRTPlatformSingleColour.py', 'PIDCRTPlatformSumaryColour.py'] 
+                    pidScripts = ['PIDCRTPlatformSingleColour.py', 'PIDCRTPlatformSummaryColour.py'] 
                 elif year >= 1985: 
-                    pidScripts = ['PIDCRTSingle.py', 'PIDCRTSummar.py'] 
+                    pidScripts = ['PIDCRTSingle.py', 'PIDCRTSummary.py'] 
                 elif year >= 1975: 
                     pidScripts = ['PIDSolariSingle.py'] 
                 elif year >= 1966: 
@@ -1648,7 +1657,6 @@ class TASWizardDialog(JDialog):
             self._SetStrMem('PUBLICDISPLAYLIST', ','.join(pidScripts)) 
 
         return True 
-
 
 
     def _GetAutoWorkingEnabled(self):
