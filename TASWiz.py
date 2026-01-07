@@ -1429,6 +1429,13 @@ class TASWizardDialog(JDialog):
         regionSelStr = self._Norm(regionSel) 
 
         regionLower = self._NormLower(regionSelStr) 
+        # Added: derive actual company value (handles 'Other...' free text) and lower-case for matching
+        try:
+            _companyActual = self._GetStep5CompanyValue()
+        except:
+            _companyActual = companySelStr
+        companyLower = self._NormLower(_companyActual)
+
 
         # ----------------------------- 
         # Weather forecasting defaults 
@@ -1576,7 +1583,7 @@ class TASWizardDialog(JDialog):
                 railtrackBg = '60,10,25' 
                 SetScheme(railtrackBg, railtrackBg, '255,255,255', defaultInk, defaultBandLight, defaultBandDark, fontFamily, '255,255,255') 
             elif companySelStr == 'Network Rail': 
-                SetScheme('255,255,255', '220,220,220', '255,255,255', defaultInk, defaultBandLight, defaultBandDark, fontFamily, '0,0,0') 
+                SetScheme('220,220,220', '255,255,255', '255,255,255', defaultInk, defaultBandLight, defaultBandDark, fontFamily, '0,0,0') 
             elif companySelStr in ['London Transport', 'Transport for London']: 
                 coverRgb = defaultPaper 
                 coverInk = '0,0,0' 
@@ -1595,16 +1602,24 @@ class TASWizardDialog(JDialog):
                 self._SetStrMem('TASCOVERINKCOLOUR', defaultCoverInk) 
 
         # ----------------------------- 
+        # Paper colour policy overrides (minimal change):
+        # - TfL always white
+        # - London Transport white from 1977
+        # - Always white after 2002 irrespective of company
+        if companyLower == 'transport for london' or ((companyLower == 'london transport') and (year >= 1977)) or year >= 2002:
+            self._SetStrMem('TASPAPERCOLOUR', '255,255,255')       
+            self._SetStrMem('TASWTTBANDLIGHT', '255,255,255')
+            self._SetStrMem('TASWTTBANDDARK', '255,255,255')
+
         # Signallers' display defaults 
         # ----------------------------- 
         if applySignallers: 
             sigScript = 'NotebookDisruption.py' 
             if year >= 1989: 
                 sigScript = 'TRUST-TRJA.py' 
-            elif year >= 1965: 
+            elif year >= 1964: 
                 sigScript = 'TeleprinterDisruption.py' 
             self._SetStrMem('SIGNALLERDISPLAYLIST', sigScript) 
-
         # ----------------------------- 
         # Public information display defaults 
         # ----------------------------- 
