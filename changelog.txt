@@ -5,6 +5,16 @@ Verion 1.1
 * Improved Network SouthEast clock
 * Fix an error whereby the system would not cope with different prefixes for memory variables
 * Improved way of selecting passenger information and signallers' displays in the setup dialogue
+* Many additional public information displays
+* Additional signallers' displays
+* User settable parameters for signallers' and public information displays
+* Station working display
+* Setup wizard
+* Improved the newspaper weather forecasts
+* Platform alteration handling for the public information displays (triggering not implemented yet; but can be triggered by custom scripts)
+* Timing point grouping
+* Visual improvements to the timetable display
+* More help topics
 
 
 Version 1.0
