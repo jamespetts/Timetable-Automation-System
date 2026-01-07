@@ -1093,6 +1093,8 @@ class TASWizardDialog(JDialog):
             regions = ['Scottish Region', 'Southern Region', 'Midland Region', 'Western Region', 'Eastern Region']
         elif nm == 'Southern Railway':
             regions = ['Western Division', 'Central Division', 'Eastern Division']
+        elif nm in ['London Transport', 'Transport for London']:
+            regions = ['Bakerloo line', 'Central line', 'Circle line', 'District line', 'Hammersmith & City line', 'Jubilee line', 'Metropolitan line', 'Northern line', 'Piccadilly line', 'Victoria line', 'Waterloo & City line']
         regions.append('Other...')
         return ['Select...'] + regions
 
@@ -1665,11 +1667,35 @@ class TASWizardDialog(JDialog):
                 coverInk = '0,0,0' 
                 if year >= 1977 and year <= 2000: 
                     coverRgb = '255,255,255' 
-                    coverInk = '200,0,0' 
+                    # Choose cover text colour based on the selected London Underground line (region/division).
+                    coverInk = '200,0,0'
+                    try:
+                        lineInk = {
+                            'bakerloo line': '178,99,0',
+                            'central line': '220,36,31',
+                            'circle line': '0,0,0',
+                            'district line': '0,125,50',
+                            'hammersmith & city line': '245,137,166',
+                            'jubilee line': '131,141,147',
+                            'metropolitan line': '155,0,88',
+                            'northern line': '0,0,0',
+                            'piccadilly line': '0,25,168',
+                            'victoria line': '3,155,229',
+                            'waterloo & city line': '118,208,189'
+                        }
+                        if regionLower in lineInk:
+                            coverInk = lineInk.get(regionLower)
+                    except:
+                        pass
                 elif year > 2000: 
                     coverRgb = '255,255,255' 
                     coverInk = '0,0,0' 
-                SetScheme(coverRgb, defaultPaper, defaultPaper, defaultInk, defaultBandLight, defaultBandLight, fontFamily, coverInk) 
+                innerRgb = defaultPaper
+                paperRgb = defaultPaper
+                if str(coverRgb).strip() == '255,255,255':
+                    innerRgb = '255,255,255'
+                    paperRgb = '255,255,255'
+                SetScheme(coverRgb, innerRgb, paperRgb, defaultInk, defaultBandLight, defaultBandLight, fontFamily, coverInk)
             else: 
                 SetScheme(defaultPaper, defaultInner, defaultPaper, defaultInk, defaultBandLight, defaultBandLight, fontFamily, defaultCoverInk)
                 try: 
@@ -4399,7 +4425,7 @@ class TASWizardDialog(JDialog):
             pass
         try:
             if int(self.StepIndex) == (len(self.Steps) - 1):
-                self.BtnCancel.setText('Finished')
+                self.BtnCancel.setText('Finish')
             else:
                 self.BtnCancel.setText('Cancel')
         except:
