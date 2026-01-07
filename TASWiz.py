@@ -1715,8 +1715,7 @@ class TASWizardDialog(JDialog):
                 if year < 1955:
                     fontFamilyCandidates = ['Serif']
                 else:
-                # Preference cascade: Johnston 100, Railway Sans, Granby, Gill Sans MT, Arial, SansSerif
-                    fontFamilyCandidates = ['Johnston 100','Railway Sans','Granby','Gill Sans MT','Arial','SansSerif']
+                    fontFamilyCandidates = ["Johnston 100", "Johnston100", "Railway", "Railway Sans", "Granby", "Liberation Sans", "Helvetica", "Arial", "SansSerif"]
             else:
                 if year < 1948:
                     fontFamilyCandidates = ['Serif']
