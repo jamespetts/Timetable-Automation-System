@@ -162,6 +162,39 @@ def TitleCase(s):
     except:
         return s
 
+
+# Lighting decoder address helper (exclude from orientation lists)
+def NormAddr(s):
+    try:
+        t = str(s).strip()
+    except:
+        return ''
+    if t is None:
+        return ''
+    t = str(t).strip()
+    if t == '':
+        return ''
+    if t.isdigit():
+        try:
+            return str(int(t))
+        except:
+            try:
+                return t.lstrip('0') or '0'
+            except:
+                return t
+    return t
+
+def GetLightingAddressSet():
+    addrs = set([])
+    for memName in ['LOWCTTHROTTLEADDR', 'HIGHCTTHROTTLEADDR']:
+        try:
+            raw = GetMemoryString(memName, '').strip()
+        except:
+            raw = ''
+        raw = NormAddr(raw)
+        if raw != '':
+            addrs.add(raw)
+    return addrs
 # --------- Roster/DCC helpers (expand last-reported to all IDs sharing an address) ---------
 
 def BuildRosterAddressIndex():
@@ -268,6 +301,9 @@ def BuildListingData():
 
     expandedLast = ExpandLastMapToAllIds(lastMap)
 
+    # Filter out roster entries that are actually layout lighting decoders (warm/cool).
+    lightingAddrs = GetLightingAddressSet()
+    ridLowerToAddr, _addrToRidList = BuildRosterAddressIndex()
     lastLowerToDisplay = {}
     for k in expandedLast.keys():
         lk = NormId(k)
@@ -278,6 +314,12 @@ def BuildListingData():
 
     rows = []
     for lowerId in sorted(list(unionLower)):
+        try:
+            addr = ridLowerToAddr.get(lowerId, '')
+        except:
+            addr = ''
+        if NormAddr(addr) != '' and NormAddr(addr) in lightingAddrs:
+            continue
         inNormal = lowerId in normalMap
         inLast = lowerId in lastLowerToDisplay
         if inLast and not inNormal:

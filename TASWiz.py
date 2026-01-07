@@ -1897,9 +1897,35 @@ class TASWizardDialog(JDialog):
                     self.DispatcherHelpButton.setVisible(False)
             except:
                 pass
+    def _GetLightingDccAddressSet(self):
+        # Return a set of DCC addresses (as normalized strings) used by the layout lighting decoders.
+        addrs = set([])
+        for memName in ['LOWCTTHROTTLEADDR', 'HIGHCTTHROTTLEADDR']:
+            try:
+                raw = str(TBL.SafeGetOrCreateMemoryValue(memName, '')).strip()
+            except:
+                raw = ''
+            if raw is None:
+                raw = ''
+            raw = str(raw).strip()
+            if raw != '' and raw.isdigit():
+                try:
+                    addrs.add(str(int(raw)))
+                except:
+                    try:
+                        addrs.add(raw.lstrip('0') or '0')
+                    except:
+                        pass
+        return addrs
+
     def _ListRosterIds(self):
         try:
             out = []
+            lightingAddrs = set([])
+            try:
+                lightingAddrs = self._GetLightingDccAddressSet()
+            except:
+                lightingAddrs = set([])
             import jmri.jmrit.roster as JR
             roster = JR.Roster.getDefault()
             if roster is None:
@@ -1909,8 +1935,28 @@ class TASWizardDialog(JDialog):
             for re in seq:
                 try:
                     rid = re.getId()
-                    if rid is not None:
-                        out.append(str(rid))
+                    if rid is None:
+                        continue
+                    ridStr = str(rid)
+                    addrStr = ''
+                    try:
+                        if hasattr(re, 'getDccAddress'):
+                            addrStr = str(re.getDccAddress())
+                    except:
+                        addrStr = ''
+                    if addrStr is None:
+                        addrStr = ''
+                    addrStr = str(addrStr).strip()
+                    addrNorm = addrStr
+                    if addrStr != '' and addrStr.isdigit():
+                        try:
+                            addrNorm = str(int(addrStr))
+                        except:
+                            addrNorm = addrStr.lstrip('0') or '0'
+                    # Filter out the layout lighting decoders (warm/cool) by DCC address.
+                    if addrNorm != '' and addrNorm in lightingAddrs:
+                        continue
+                    out.append(ridStr)
                 except:
                     pass
             return out
