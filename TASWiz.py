@@ -1102,7 +1102,39 @@ class TASWizardDialog(JDialog):
                 y = None
             if y is None:
                 y = 2000
+            y = None
+            try:
+                y = int(self.LayoutYear) if self.LayoutYear is not None else None
+            except:
+                y = None
+            if y is None:
+                y = 2000
             regions = []
+            # Sub-surface lines
+            regions.append('District line')
+            regions.append('Metropolitan line')
+            # The Circle line name was used officially from 1936; before then it was referred to as the Inner Circle.
+            if y < 1936:
+                regions.append('Inner Circle')
+            else:
+                regions.append('Circle line')
+            # The East London line was part of London Underground from 1933, but closed for transition to Overground in 2007
+            if y >= 1933 and y < 2008:
+                regions.append('East London line')
+            # The Hammersmith & City line was redesignated as a separate line on 30 July 1990.
+            if y >= 1990:
+                regions.append('Hammersmith & City line')
+            # Deep-level lines
+            regions.append('Bakerloo line')
+            regions.append('Central line')
+            regions.append('Northern line')
+            regions.append('Piccadilly line')
+            if y >= 1968:
+                regions.append('Victoria line')
+            if y >= 1979:
+                regions.append('Jubilee line')
+            if y >= 1994:
+                regions.append('Waterloo & City line')
             # Sub-surface lines
             regions.append('District line')
             regions.append('Metropolitan line')
@@ -1729,8 +1761,15 @@ class TASWizardDialog(JDialog):
                             'northern line': '0,0,0',
                             'piccadilly line': '0,25,168',
                             'victoria line': '3,155,229',
-                            'waterloo & city line': '118,208,189'
+                            'waterloo & city line': '118,208,189',
+                            'east london line': '255,163,0',
                         }
+                        # East London line: before 1990 it used Metropolitan line colour on maps; from 1990 it was changed to orange.
+                        if regionLower == 'east london line':
+                            if year < 1990:
+                                coverInk = '155,0,88'
+                            else:
+                                coverInk = '255,163,0'
                         if regionLower in lineInk:
                             coverInk = lineInk.get(regionLower)
                     except:
@@ -1790,7 +1829,10 @@ class TASWizardDialog(JDialog):
                 if year >= 1985: 
                     pidScripts = ['PIDUndergroundLED.py'] 
                 else: 
-                    pidScripts = ['PIDLightboxSingle.py'] 
+                    if regionLower == 'district line':
+                        pidScripts = ['PIDLightboxSingleArrow.py']
+                    else:
+                        pidScripts = ['PIDLightboxSingle.py']
             else: 
                 if year >= 2005: 
                     pidScripts = ['PIDSmall.py'] 
