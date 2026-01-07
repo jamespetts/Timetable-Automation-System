@@ -28,14 +28,14 @@ import os
 import csv
 
 from java.awt import (BorderLayout, Color, Dimension, Font, GridBagConstraints,
-                      GridBagLayout, Insets, RenderingHints)
+GridBagLayout, Insets, RenderingHints)
 from java.awt.image import BufferedImage
 from java.lang import Runnable
 
 from javax.swing import (Box, JButton, JDialog, JLabel, JPanel, JScrollPane,
-                         SwingUtilities, BorderFactory, JTextArea, JOptionPane,
-                         JTextField, JCheckBox, JComboBox, DefaultComboBoxModel,
-                         JFileChooser, JList, ListSelectionModel)
+                        SwingUtilities, BorderFactory, JTextArea, JOptionPane,
+                        JTextField, JCheckBox, JComboBox, DefaultComboBoxModel,
+JFileChooser, JList, ListSelectionModel)
 from javax.swing import JList, ListSelectionModel
 from javax.swing.filechooser import FileNameExtensionFilter
 
@@ -61,10 +61,10 @@ def LogInfo(msg):
 
 
 def LogWarn(msg):
- try:
-  print(TAG + 'WARN: ' + str(msg))
- except:
-  pass
+    try:
+        print(TAG + 'WARN: ' + str(msg))
+    except:
+        pass
 
 def LogError(msg, ex=None):
     try:
@@ -75,7 +75,7 @@ def LogError(msg, ex=None):
     except:
         pass
 
-# ------------------------------- Theme -----------------------------------
+        # ------------------------------- Theme -----------------------------------
 
 def _RgbStrToColorOrDefault(rgbStr, defaultColor):
     try:
@@ -106,7 +106,7 @@ def ApplyTheme(component):
 
 
 
-# ------------------------------ Font fallback helpers ------------------------------
+        # ------------------------------ Font fallback helpers ------------------------------
 def _GetInstalledFontFamiliesLowerSet():
     try:
         from java.awt import GraphicsEnvironment
@@ -123,7 +123,7 @@ def _GetInstalledFontFamiliesLowerSet():
         return set([])
 
 def _FirstInstalledFont(candidates, fallbackName):
-    # Return the first candidate present on this system; else fallbackName.
+# Return the first candidate present on this system; else fallbackName.
     try:
         avail = _GetInstalledFontFamiliesLowerSet()
         for nm in (candidates or []):
@@ -169,7 +169,7 @@ def MakePaperPanel():
             return img
 
         def paintComponent(self, g):
-            # Jython-safe superclass paint call.
+        # Jython-safe superclass paint call.
             super(PaperPanel, self).paintComponent(g)
             iw = self.texture.getWidth()
             ih = self.texture.getHeight()
@@ -193,7 +193,7 @@ def MakeHeading(text):
 
 
 def MakeWrappedTextArea(text, fontSize=13):
-    # JTextArea wrapping avoids HTML JLabel measurement quirks that can clip horizontally.
+# JTextArea wrapping avoids HTML JLabel measurement quirks that can clip horizontally.
     ta = JTextArea()
     try:
         ta.setText("" if text is None else str(text))
@@ -234,13 +234,13 @@ def MakeScrollForText(textArea):
         pass
     return sp
 
-# -------------------------- Wizard image helper ---------------------------
+    # -------------------------- Wizard image helper ---------------------------
 
 DEFAULT_WIZARD_IMAGE_PROFILE_PATH = "profile:jython/TASWizard.png"
 
 
 def _ResolveWizardImageProfilePath():
-    # Returns a profile: path string.
+# Returns a profile: path string.
     try:
         raw = TBL.SafeGetOrCreateMemoryValue("TAS_WIZARD_IMAGE", "").strip()
     except:
@@ -261,7 +261,7 @@ def _CandidateWizardImageProfilePaths():
 
 
 def _LoadWizardImage():
-    # Returns a BufferedImage or None.
+# Returns a BufferedImage or None.
     try:
         for profPath in _CandidateWizardImageProfilePaths():
             try:
@@ -288,8 +288,8 @@ def _LoadWizardImage():
 
 
 class WizardSidebarImagePanel(JPanel):
-    # Paints the sidebar image scaled to fill the sidebar area (classic wizard look).
-    # Uses a cover scale: the image fills the panel and is cropped as needed.
+# Paints the sidebar image scaled to fill the sidebar area (classic wizard look).
+# Uses a cover scale: the image fills the panel and is cropped as needed.
     def __init__(self, img):
         JPanel.__init__(self)
         self.Image = img
@@ -324,14 +324,14 @@ class WizardSidebarImagePanel(JPanel):
         if iw <= 0 or ih <= 0:
             return
 
-        # Scale to cover the panel.
+            # Scale to cover the panel.
         sx = float(w) / float(iw)
         sy = float(h) / float(ih)
         scale = sx if sx > sy else sy
         if scale <= 0.0:
             return
 
-        # Center crop: compute source rectangle in original image coords.
+            # Center crop: compute source rectangle in original image coords.
         srcW = int(float(w) / float(scale))
         srcH = int(float(h) / float(scale))
         if srcW <= 0 or srcH <= 0:
@@ -363,14 +363,14 @@ class WizardSidebarImagePanel(JPanel):
             except:
                 pass
 
-# ------------------------------ Font check --------------------------------
+                # ------------------------------ Font check --------------------------------
 
 FONT_CHECK_SCRIPT = "TASFontCheck.py"
 
 WORKING_CREATOR_SCRIPT = 'WorkingCreator_HeadlessAudit_20260106_v2.py'
 WORKINGS_UI_SCRIPT = 'TASWorkingsUi.py'
 def LoadWorkingsUiModule():
-    # Returns a loaded module or None.
+# Returns a loaded module or None.
     try:
         import imp
         pth = ProfileJythonFilePath(WORKINGS_UI_SCRIPT)
@@ -384,7 +384,7 @@ def LoadWorkingsUiModule():
         return None
 
 def MakeWrappedLabel(htmlText, widthPx=560, lineHeight=1.25, bold=False):
-    # Create a JLabel that wraps text using HTML with an explicit width.
+# Create a JLabel that wraps text using HTML with an explicit width.
     try:
         html = "<html><div style='width:%dpx; line-height:%s;'>%s</div></html>" % (int(widthPx), str(float(lineHeight)), str(htmlText))
     except:
@@ -404,7 +404,7 @@ def MakeWrappedLabel(htmlText, widthPx=560, lineHeight=1.25, bold=False):
 
 
 def LoadWorkingCreatorModule():
-    # Returns a loaded module or None.
+# Returns a loaded module or None.
     try:
         import imp
         pth = ProfileJythonFilePath(WORKING_CREATOR_SCRIPT)
@@ -433,7 +433,7 @@ def ProfileJythonFilePath(name):
         return None
 
 def _LoadNamedPresetsFromConfigCsv(fileName, defaultNames):
-    # Read preset names from profile:jython/config/<fileName> (tab-delimited, ASCII).
+# Read preset names from profile:jython/config/<fileName> (tab-delimited, ASCII).
     names = list(defaultNames or [])
     try:
         path = FileUtil.getExternalFilename('profile:jython/config/' + str(fileName))
@@ -534,7 +534,7 @@ class RestrictedCsvChooserWizard(JFileChooser):
 
 
 def LoadFontCheckModule():
-    # Returns a loaded module or None.
+# Returns a loaded module or None.
     try:
         import imp
         pth = ProfileJythonFilePath(FONT_CHECK_SCRIPT)
@@ -549,7 +549,7 @@ def LoadFontCheckModule():
 
 
 def CountMissingFonts(mod):
-    # Returns int or None.
+# Returns int or None.
     if mod is None:
         return None
     try:
@@ -564,7 +564,7 @@ def CountMissingFonts(mod):
         pass
     try:
         if hasattr(mod, "RunFontCheck"):
-            # silent=True should not show UI.
+        # silent=True should not show UI.
             return int(mod.RunFontCheck(True, None))
     except:
         pass
@@ -572,8 +572,8 @@ def CountMissingFonts(mod):
 
 
 def OpenFontCheckUi(mod, parentWindow):
-    # Best-effort UI opener.
-    # Try module entry points if available, then fall back to execfile.
+# Best-effort UI opener.
+# Try module entry points if available, then fall back to execfile.
     if mod is not None:
         try:
             if hasattr(mod, "RunFontCheckDialog"):
@@ -596,7 +596,7 @@ def OpenFontCheckUi(mod, parentWindow):
         pass
     return False
 
-# ----------------------------- Wizard Dialog ------------------------------
+    # ----------------------------- Wizard Dialog ------------------------------
 
 class RunnableAdapter(Runnable):
     def __init__(self, func):
@@ -608,7 +608,7 @@ class RunnableAdapter(Runnable):
 
 class TASWizardDialog(JDialog):
     def __init__(self):
-        # Modeless so helper tools can be used.
+    # Modeless so helper tools can be used.
         JDialog.__init__(self, None, "Timetable Automation System setup wizard", False)
         self.setDefaultCloseOperation(JDialog.DISPOSE_ON_CLOSE)
         try:
@@ -616,7 +616,7 @@ class TASWizardDialog(JDialog):
         except:
             pass
 
-        # Set window icon.
+            # Set window icon.
         try:
             from TASIcon import SetFrameClockIcon
             SetFrameClockIcon(self, 32)
@@ -650,7 +650,7 @@ class TASWizardDialog(JDialog):
         except:
             self.TestMissingFontsOverride = None
 
-        # Step 4 values (not stored long-term).
+            # Step 4 values (not stored long-term).
         self.LayoutYear = None
         self.ProfileNameField = None
         self.YearField = None
@@ -694,6 +694,11 @@ class TASWizardDialog(JDialog):
         self.HighCtAddrField = None
         self.Step2fClimateCombo = None
         self.Step2fDaylightCombo = None
+        # Step 2bd (disruption) UI references cached here.
+        self.Step2bdInfoTextArea = None
+        self.Step2bdInfoScroll = None
+        self.EnableDelaysCheck = None
+        self.EnableCancellationsCheck = None
         # Cached feature selections (wizard only; not persisted).
         self.UseAutoTrainsSelected = False
         self.UseOrientationSelected = False
@@ -779,20 +784,20 @@ class TASWizardDialog(JDialog):
             self.InitialOrientationSensingEnabled = bool(self._GetOrientationSensingEnabled())
         except:
             self.InitialOrientationSensingEnabled = False
-              # Apply default fonts via UIManager so all labels/controls use THEME_FONT_FAMILY.
+            # Apply default fonts via UIManager so all labels/controls use THEME_FONT_FAMILY.
         try:
-           from javax.swing import UIManager
-           UIManager.put('Label.font', Font(THEME_FONT_FAMILY, Font.PLAIN, 13))
-           UIManager.put('Button.font', Font(THEME_FONT_FAMILY, Font.PLAIN, 13))
-           UIManager.put('CheckBox.font', Font(THEME_FONT_FAMILY, Font.PLAIN, 13))
-           UIManager.put('ComboBox.font', Font(THEME_FONT_FAMILY, Font.PLAIN, 13))
-           UIManager.put('List.font', Font(THEME_FONT_FAMILY, Font.PLAIN, 13))
-           UIManager.put('TextField.font', Font(THEME_FONT_FAMILY, Font.PLAIN, 13))
-           UIManager.put('TextArea.font', Font(THEME_FONT_FAMILY, Font.PLAIN, 13))
-           UIManager.put('ScrollPane.font', Font(THEME_FONT_FAMILY, Font.PLAIN, 13))
-           UIManager.put('OptionPane.messageFont', Font(THEME_FONT_FAMILY, Font.PLAIN, 13))
+            from javax.swing import UIManager
+            UIManager.put('Label.font', Font(THEME_FONT_FAMILY, Font.PLAIN, 13))
+            UIManager.put('Button.font', Font(THEME_FONT_FAMILY, Font.PLAIN, 13))
+            UIManager.put('CheckBox.font', Font(THEME_FONT_FAMILY, Font.PLAIN, 13))
+            UIManager.put('ComboBox.font', Font(THEME_FONT_FAMILY, Font.PLAIN, 13))
+            UIManager.put('List.font', Font(THEME_FONT_FAMILY, Font.PLAIN, 13))
+            UIManager.put('TextField.font', Font(THEME_FONT_FAMILY, Font.PLAIN, 13))
+            UIManager.put('TextArea.font', Font(THEME_FONT_FAMILY, Font.PLAIN, 13))
+            UIManager.put('ScrollPane.font', Font(THEME_FONT_FAMILY, Font.PLAIN, 13))
+            UIManager.put('OptionPane.messageFont', Font(THEME_FONT_FAMILY, Font.PLAIN, 13))
         except:
-           pass
+            pass
 
         self.BuildSteps()
         self.ShowStep(0)
@@ -861,7 +866,7 @@ class TASWizardDialog(JDialog):
         if center is None:
             return root
         try:
-            # center uses GridBagLayout; add a new row after the scroll pane.
+        # center uses GridBagLayout; add a new row after the scroll pane.
             btn = JButton(buttonText)
             ApplyTheme(btn)
             btn.addActionListener(lambda e: onClick())
@@ -880,8 +885,8 @@ class TASWizardDialog(JDialog):
         return root
 
     def EnsureFontCheck(self):
-        # Populate self.FontCheckMod and self.MissingFontsCount.
-        # Test harness override: if set at dialog creation time, forces the result.
+    # Populate self.FontCheckMod and self.MissingFontsCount.
+    # Test harness override: if set at dialog creation time, forces the result.
         try:
             if self.TestMissingFontsOverride is not None:
                 self.MissingFontsCount = int(self.TestMissingFontsOverride)
@@ -903,7 +908,7 @@ class TASWizardDialog(JDialog):
             self.MissingFontsCount = None
 
     def ShouldSkipFontStep(self):
-        # Returns True only when we have already computed the count and it is zero.
+    # Returns True only when we have already computed the count and it is zero.
         try:
             return (self.MissingFontsCount is not None) and (int(self.MissingFontsCount) == 0)
         except:
@@ -942,8 +947,8 @@ class TASWizardDialog(JDialog):
             return 2000
 
     def _ApplyLayoutDetailsFromStep4(self):
-        # Apply profile name change and cache year for later steps.
-        # Year is not persisted.
+    # Apply profile name change and cache year for later steps.
+    # Year is not persisted.
         try:
             if self.ProfileNameField is None or self.YearField is None:
                 return True
@@ -1006,7 +1011,7 @@ class TASWizardDialog(JDialog):
         return True
 
     def _CompanyOptionsForYear(self, yearVal):
-        # Returns a list of company names valid for the given year. Always includes 'Other...'.
+    # Returns a list of company names valid for the given year. Always includes 'Other...'.
         companies = [
             ('Network Rail', 2002, None),
             ('Railtrack', 1994, 2003),
@@ -1122,8 +1127,8 @@ class TASWizardDialog(JDialog):
 
 
     def _RefreshCompanyOptionsForYear(self):
-        # Rebuild the company list based on self.LayoutYear.
-        # The wizard builds all panels up-front, so refresh when Step 4 sets the year.
+    # Rebuild the company list based on self.LayoutYear.
+    # The wizard builds all panels up-front, so refresh when Step 4 sets the year.
         try:
             if self.CompanyCombo is None:
                 return
@@ -1310,10 +1315,10 @@ class TASWizardDialog(JDialog):
             return ''
 
     def _ApplyRailwayDetailsFromStep5(self):
-        # Set RAILWAYCO, REGION, SECTION to match TASSetup.py.
-        # If the user selects 'Other...', allow the free-text field to be blank.
+    # Set RAILWAYCO, REGION, SECTION to match TASSetup.py.
+    # If the user selects 'Other...', allow the free-text field to be blank.
 
-        # Company selection
+    # Company selection
         try:
             sel = self.CompanyCombo.getSelectedItem() if self.CompanyCombo is not None else None
         except:
@@ -1333,8 +1338,8 @@ class TASWizardDialog(JDialog):
                 company = ''
         else:
             company = selStr
-        # Region selection
-        # Region/division is optional: if the user does not select anything, treat it as blank.
+            # Region selection
+            # Region/division is optional: if the user does not select anything, treat it as blank.
         try:
             rsel = self.RegionCombo.getSelectedItem() if self.RegionCombo is not None else None
         except:
@@ -1350,7 +1355,7 @@ class TASWizardDialog(JDialog):
         else:
             region = rselStr
 
-        # Section (blank -> default)
+            # Section (blank -> default)
         try:
             section = ''
             if self.SectionField is not None:
@@ -1400,43 +1405,43 @@ class TASWizardDialog(JDialog):
             pass
 
     def _WeatherAccuracyForYear(self, yr):
-        # Forecast reliability (%) defaults.
-        # These are approximate values intended to reflect the broad historic improvements
-        # in observational networks and numerical weather prediction.
-        # Please update these values if better research becomes available.
-        # Bins are 30-year chunks spanning 1800-2025.
+    # Forecast reliability (%) defaults.
+    # These are approximate values intended to reflect the broad historic improvements
+    # in observational networks and numerical weather prediction.
+    # Please update these values if better research becomes available.
+    # Bins are 30-year chunks spanning 1800-2025.
         try:
             y = int(yr)
         except:
             y = 2000
 
-        # 1800-1829: essentially no operational public forecasting.
+            # 1800-1829: essentially no operational public forecasting.
         if y <= 1829:
             return 40
-        # 1830-1859: early instrument-based local rules.
+            # 1830-1859: early instrument-based local rules.
         if y <= 1859:
             return 50
-        # 1860-1889: telegraph-era observation networks; early storm warnings.
+            # 1860-1889: telegraph-era observation networks; early storm warnings.
         if y <= 1889:
             return 60
-        # 1890-1919: expanding synoptic practice.
+            # 1890-1919: expanding synoptic practice.
         if y <= 1919:
             return 65
-        # 1920-1949: improved observations; still pre-computer guidance.
+            # 1920-1949: improved observations; still pre-computer guidance.
         if y <= 1949:
             return 70
-        # 1950-1979: first operational numerical weather prediction and satellites.
+            # 1950-1979: first operational numerical weather prediction and satellites.
         if y <= 1979:
             return 80
-        # 1980-2009: modern NWP era; major skill gains.
+            # 1980-2009: modern NWP era; major skill gains.
         if y <= 2009:
             return 90
-        # 2010-date: current-era guidance (including ensemble use and high resolution).
+            # 2010-date: current-era guidance (including ensemble use and high resolution).
         return 95
  
     def _ApplyDefaultsFromStep6(self): 
-        # Apply defaults based on the user's selections from Step 4 (year) and Step 5 (railway details). 
-        # The user can opt out per category using the tick boxes on Step 6. 
+    # Apply defaults based on the user's selections from Step 4 (year) and Step 5 (railway details). 
+    # The user can opt out per category using the tick boxes on Step 6. 
 
         def _IsChecked(chk, defaultVal): 
             try: 
@@ -1446,7 +1451,7 @@ class TASWizardDialog(JDialog):
             except: 
                 return bool(defaultVal) 
 
-        # Backward compatibility: if the legacy single checkbox exists and is unticked, skip everything. 
+                # Backward compatibility: if the legacy single checkbox exists and is unticked, skip everything. 
         if not _IsChecked(getattr(self, 'ApplyDefaultsCheck', None), True): 
             return True 
 
@@ -1458,7 +1463,7 @@ class TASWizardDialog(JDialog):
         if (not applyAppearance) and (not applyPublic) and (not applySignallers) and (not applyWeather): 
             return True 
 
-        # Gather year and selected company/region for branching. 
+            # Gather year and selected company/region for branching. 
         try: 
             year = int(self.LayoutYear) if self.LayoutYear is not None else 2000 
         except: 
@@ -1489,10 +1494,10 @@ class TASWizardDialog(JDialog):
         # Weather forecasting defaults 
         # ----------------------------- 
         if applyWeather: 
-            # Forecast type: 
-            # - before 1962: old newspaper 
-            # - 1963-2010: new newspaper 
-            # - 2010 and later: mobile app 
+        # Forecast type: 
+        # - before 1962: old newspaper 
+        # - 1963-2010: new newspaper 
+        # - 2010 and later: mobile app 
             if year <= 1962: 
                 self._SetStrMem('WX_UI', 'Newspaper') 
                 self._SetStrMem('WX_NEWS_STYLE', 'Old') 
@@ -1502,16 +1507,16 @@ class TASWizardDialog(JDialog):
             else: 
                 self._SetStrMem('WX_UI', 'App') 
 
-            # Forecast reliability (%) 
+                # Forecast reliability (%) 
             self._SetStrMem('WX_FORECAST_ACCURACY', str(self._WeatherAccuracyForYear(year))) 
 
-        # ----------------------------- 
-        # Timetable appearance defaults 
-        # (includes the main menu and TASSetup) 
-        # ----------------------------- 
+            # ----------------------------- 
+            # Timetable appearance defaults 
+            # (includes the main menu and TASSetup) 
+            # ----------------------------- 
         if applyAppearance: 
-            # WTT display defaults 
-            # Use 24 hour time: checked if 1964 or later, unchecked if 1963 or earlier. 
+        # WTT display defaults 
+        # Use 24 hour time: checked if 1964 or later, unchecked if 1963 or earlier. 
             self._SetBoolMem('WTT_TIME_24H', year >= 1964) 
 
             # Time separator: space if 1923 or later, '.' if 1922 or earlier. 
@@ -1537,8 +1542,8 @@ class TASWizardDialog(JDialog):
             if repNoLabel is not None: 
                 self._SetStrMem('WTT_REP_NO_LABEL', repNoLabel) 
 
-            # Timing load label defaults. 
-            # Please update these values if further research indicates different historic conventions. 
+                # Timing load label defaults. 
+                # Please update these values if further research indicates different historic conventions. 
             timingLoadLabel = None 
             if companyLower in ['british rail', 'railtrack', 'network rail']: 
                 timingLoadLabel = 'Timing load' 
@@ -1557,8 +1562,8 @@ class TASWizardDialog(JDialog):
             if timingLoadLabel is not None: 
                 self._SetStrMem('WTT_TIMING_LOAD_LABEL', timingLoadLabel) 
 
-            # Vertical headers: 
-            # before 1966 if not London Transport, Metropolitan Railway, Underground Electric Railways of London, Metropolitan District Railway. 
+                # Vertical headers: 
+                # before 1966 if not London Transport, Metropolitan Railway, Underground Electric Railways of London, Metropolitan District Railway. 
             isUnderground = companyLower in ['london transport', 'transport for london', 'metropolitan railway', 'metropolitan district railway', 'underground electric railways of london'] 
             self._SetBoolMem('WTT_OD_HEADER_VERTICAL', (year < 1966) and (not isUnderground)) 
 
@@ -1577,9 +1582,9 @@ class TASWizardDialog(JDialog):
             else: 
                 self._SetStrMem('WTT_PAGE_MODE', 'MONSAT_PLUS_SUN') 
 
-            # Interface defaults (main menu + paper/ink/bands + font) 
-            # NOTE: RGB values below are intended defaults and are easy to change. 
-            # Please update these values if further research indicates different historic corporate styles. 
+                # Interface defaults (main menu + paper/ink/bands + font) 
+                # NOTE: RGB values below are intended defaults and are easy to change. 
+                # Please update these values if further research indicates different historic corporate styles. 
             defaultCover = '240,238,220' 
             defaultInner = '220,235,220' 
             defaultPaper = '249,246,238' 
@@ -1602,7 +1607,7 @@ class TASWizardDialog(JDialog):
                     self._SetStrMem('TAS_FONT_FAMILY', fontFamily) 
                 self._SetStrMem('TASCOVERINKCOLOUR', coverInkRgb) 
 
-            # Choose a font family default using installed-font fallback (GraphicsEnvironment).
+                # Choose a font family default using installed-font fallback (GraphicsEnvironment).
             fontFamily = None
             fontFamilyCandidates = []
             if companyLower in ['british railways', 'london & north eastern railway']:
@@ -1615,7 +1620,7 @@ class TASWizardDialog(JDialog):
                 if year < 1955:
                     fontFamilyCandidates = ['Serif']
                 else:
-                    # Preference cascade: Johnston 100, Railway Sans, Granby, Gill Sans MT, Arial, SansSerif
+                # Preference cascade: Johnston 100, Railway Sans, Granby, Gill Sans MT, Arial, SansSerif
                     fontFamilyCandidates = ['Johnston 100','Railway Sans','Granby','Gill Sans MT','Arial','SansSerif']
             else:
                 if year < 1948:
@@ -1659,8 +1664,8 @@ class TASWizardDialog(JDialog):
                     pass 
                 self._SetStrMem('TASCOVERINKCOLOUR', defaultCoverInk) 
 
-        # ----------------------------- 
-        # Ensure no banding by default (unconditional in wizard): set dark equal to light
+                # ----------------------------- 
+                # Ensure no banding by default (unconditional in wizard): set dark equal to light
         try:
             _light = str(TBL.SafeGetOrCreateMemoryValue('TASWTTBANDLIGHT', '255,253,247')).strip()
         except:
@@ -1677,9 +1682,9 @@ class TASWizardDialog(JDialog):
             self._SetStrMem('TASWTTBANDLIGHT', '255,255,255')
             self._SetStrMem('TASWTTBANDDARK', '255,255,255')
         
-        # ----------------------------- 
-        # Signallers' display defaults
-        # ----------------------------- 
+            # ----------------------------- 
+            # Signallers' display defaults
+            # ----------------------------- 
         if applySignallers: 
             sigScript = 'NotebookDisruption.py' 
             if year >= 1989: 
@@ -1688,9 +1693,9 @@ class TASWizardDialog(JDialog):
                 sigScript = 'TeleprinterDisruption.py' 
             self._SetStrMem('SIGNALLERDISPLAYLIST', sigScript) 
             
-        # ----------------------------- 
-        # Public information display defaults 
-        # ----------------------------- 
+            # ----------------------------- 
+            # Public information display defaults 
+            # ----------------------------- 
         if applyPublic: 
             pidScripts = [] 
             if companyLower in ['london transport', 'transport for london']: 
@@ -1719,7 +1724,7 @@ class TASWizardDialog(JDialog):
 
 
     def _GetAutoWorkingEnabled(self):
-        # Mirror TASSetup.py: IMTASAutoWorking = 'TASAUTOWORKING'
+    # Mirror TASSetup.py: IMTASAutoWorking = 'TASAUTOWORKING'
         try:
             v = TBL.SafeGetOrCreateMemoryValue('TASAUTOWORKING', '')
         except:
@@ -1751,7 +1756,7 @@ class TASWizardDialog(JDialog):
         except:
             return False
     def _BuildStep2aText(self):
-        # Step 2a text is independent of the other 'Before you start' substeps.
+    # Step 2a text is independent of the other 'Before you start' substeps.
         lines = []
         lines.append('Before you can use the Timetable Automation System, you need to have created a timetable.')
         lines.append('')
@@ -1773,14 +1778,14 @@ class TASWizardDialog(JDialog):
             pass
 
     def _UpdateFeatureCache(self):
-        # Cache the user's selections within the wizard only.
-        # Automatic running is driven by TASAUTOWORKING (same as TASSetup.py).
+    # Cache the user's selections within the wizard only.
+    # Automatic running is driven by TASAUTOWORKING (same as TASSetup.py).
         useAuto = False
         try:
             useAuto = self._GetAutoWorkingEnabled()
         except:
             useAuto = self._IsSelectedSafe(getattr(self, 'UseAutoTrainsCheck', None))
-        # Keep the checkbox in sync in case TASAUTOWORKING was changed elsewhere while the wizard is open.
+            # Keep the checkbox in sync in case TASAUTOWORKING was changed elsewhere while the wizard is open.
         try:
             if self.UseAutoTrainsCheck is not None:
                 self.SuppressAutoTrainsListener = True
@@ -1800,7 +1805,7 @@ class TASWizardDialog(JDialog):
             useLight = bool(self._GetDayNightEnabled())
         except:
             useLight = self._IsSelectedSafe(getattr(self, 'UseLightingCheck', None))
-        # Keep the checkbox in sync in case DayNight.py start-up was changed elsewhere while the wizard is open.
+            # Keep the checkbox in sync in case DayNight.py start-up was changed elsewhere while the wizard is open.
         try:
             if self.UseLightingCheck is not None:
                 self.SuppressLightingListener = True
@@ -1819,7 +1824,7 @@ class TASWizardDialog(JDialog):
             useOrient = bool(self._GetOrientationSensingEnabled())
         except:
             useOrient = self._IsSelectedSafe(getattr(self, 'UseOrientationCheck', None))
-        # Keep the checkbox in sync in case LastReportedDirection.py start-up was changed elsewhere while the wizard is open.
+            # Keep the checkbox in sync in case LastReportedDirection.py start-up was changed elsewhere while the wizard is open.
         try:
             if self.UseOrientationCheck is not None:
                 self.SuppressOrientationListener = True
@@ -1834,7 +1839,7 @@ class TASWizardDialog(JDialog):
             except:
                 pass
 
-        # Orientation sensing is meaningful only with automatic running.
+                # Orientation sensing is meaningful only with automatic running.
         if not useAuto:
             useOrient = False
             try:
@@ -1881,7 +1886,7 @@ class TASWizardDialog(JDialog):
             except:
                 pass
         else:
-            # Keep space reserved; just clear the text.
+        # Keep space reserved; just clear the text.
             try:
                 if self.Step2bExtraTextArea is not None:
                     self.Step2bExtraTextArea.setText('')
@@ -1913,8 +1918,8 @@ class TASWizardDialog(JDialog):
             return []
 
     def _NormalDirectionRegisterSetLower(self):
-        # Return a set of roster IDs that have a hardware orientation setting.
-        # This uses NormalDirectionRegister only (matches HardwareDirectionConfig.py).
+    # Return a set of roster IDs that have a hardware orientation setting.
+    # This uses NormalDirectionRegister only (matches HardwareDirectionConfig.py).
         out = set([])
         try:
             import NormalDirectionRegister as NDR
@@ -1938,7 +1943,7 @@ class TASWizardDialog(JDialog):
         return out
 
     def _GetRosterIdsWithoutNormalDirectionRegister(self):
-        # Compare roster IDs to NormalDirectionRegister (case-insensitive).
+    # Compare roster IDs to NormalDirectionRegister (case-insensitive).
         try:
             rosterIds = self._ListRosterIds()
         except:
@@ -1983,7 +1988,7 @@ class TASWizardDialog(JDialog):
             except:
                 pass
         else:
-            # Keep space reserved; just clear the text.
+        # Keep space reserved; just clear the text.
             try:
                 if self.Step2cExtraTextArea is not None:
                     self.Step2cExtraTextArea.setText('')
@@ -2041,7 +2046,7 @@ class TASWizardDialog(JDialog):
             except:
                 pass
         else:
-            # Keep space reserved; just clear the text.
+        # Keep space reserved; just clear the text.
             try:
                 if self.Step2dExtraTextArea is not None:
                     self.Step2dExtraTextArea.setText('')
@@ -2095,7 +2100,7 @@ class TASWizardDialog(JDialog):
             return False
 
     def _RefreshTimetableChooserUi(self):
-        # Populate the chooser controls from the current timetable memory.
+    # Populate the chooser controls from the current timetable memory.
         try:
             if self.TimetableNameField is None:
                 return
@@ -2118,8 +2123,8 @@ class TASWizardDialog(JDialog):
             pass
 
     def _ParseTimetableTimeToMinutes(self, timeStr):
-        # Parse 12h/24h times to minutes since midnight. Seconds are not supported.
-        # Accepts: '13:37', '1:37 PM', '01:37 pm'.
+    # Parse 12h/24h times to minutes since midnight. Seconds are not supported.
+    # Accepts: '13:37', '1:37 PM', '01:37 pm'.
         if timeStr is None:
             return None
         try:
@@ -2164,8 +2169,8 @@ class TASWizardDialog(JDialog):
             return None
 
     def _ValidateTimetableFile(self, bareName):
-        # Validate a timetable as described in TAS help. Only compulsory columns are required.
-        # Returns (ok, message).
+    # Validate a timetable as described in TAS help. Only compulsory columns are required.
+    # Returns (ok, message).
         try:
             bn = self._StripCsvExt(bareName)
         except:
@@ -2175,7 +2180,7 @@ class TASWizardDialog(JDialog):
         bn = str(bn).strip()
         if bn == '':
             return (False, 'No timetable selected.')
-        # Reject anything that looks like a path.
+            # Reject anything that looks like a path.
         try:
             if ('/' in bn) or ('\\' in bn) or (':' in bn):
                 return (False, 'Please choose a timetable from the timetable folder.')
@@ -2229,14 +2234,14 @@ class TASWizardDialog(JDialog):
                             break
                     if emptyAll:
                         return (False, 'Row %d: no time in Trigger/Arr/Dep.' % int(rowIndex))
-                    # Validate times (seconds not supported).
+                        # Validate times (seconds not supported).
                     for k in ['Trigger','Arr','Dep']:
                         if k in header:
                             v = (row.get(k,'') or '').strip()
                             if v != '':
                                 if self._ParseTimetableTimeToMinutes(v) is None:
                                     return (False, 'Row %d: invalid %s time: %s.' % (int(rowIndex), str(k), str(v)))
-                    # Validate day columns contain TRUE or FALSE (case-insensitive).
+                                    # Validate day columns contain TRUE or FALSE (case-insensitive).
                     for dcol in days:
                         dv = (row.get(dcol,'') or '').strip().lower()
                         if dv not in ['true','false','1','0','yes','no','y','n']:
@@ -2254,7 +2259,7 @@ class TASWizardDialog(JDialog):
         return (True, '')
 
     def _RefreshStep2bttUi(self, showErrorDialog=False):
-        # Validate the currently selected timetable and gate the Forward button on the chooser step.
+    # Validate the currently selected timetable and gate the Forward button on the chooser step.
         try:
             if self.TimetableNameField is None:
                 return False
@@ -2303,7 +2308,7 @@ class TASWizardDialog(JDialog):
             except:
                 pass
             return False
-        # Valid: show summary, save memory and enable Forward on this step.
+            # Valid: show summary, save memory and enable Forward on this step.
         try:
             if self.TimetableChosenLabel is not None:
                 self.TimetableChosenLabel.setText('Selected timetable: ' + name + '.csv')
@@ -2318,7 +2323,7 @@ class TASWizardDialog(JDialog):
 
 
     def _ApplyTimetableFromChooserStep(self):
-        # Called when leaving the timetable chooser step.
+    # Called when leaving the timetable chooser step.
         try:
             if self.TimetableNameField is None:
                 return True
@@ -2347,7 +2352,7 @@ class TASWizardDialog(JDialog):
             except:
                 pass
             return False
-        # Save the bare name (without extension) like TASSetup, but only if it changed.
+            # Save the bare name (without extension) like TASSetup, but only if it changed.
         try:
             cur = self._GetCurrentTimetableName()
         except:
@@ -2386,7 +2391,7 @@ class TASWizardDialog(JDialog):
                 return ""
 
     def _MatchScriptPath(self, model, scriptFileName):
-        # True iff model's script path points to profile:jython/<scriptFileName>.
+    # True iff model's script path points to profile:jython/<scriptFileName>.
         try:
             path = model.getFileName()
             if path is None:
@@ -2497,14 +2502,14 @@ class TASWizardDialog(JDialog):
         return ok
 
     def _ParseDccAddr(self, rawText):
-        # 1..9999, max 4 digits, 0 not valid.
+    # 1..9999, max 4 digits, 0 not valid.
         try:
             s = '' if rawText is None else str(rawText).strip()
         except:
             s = ''
         if s == '':
             return None
-        # Reject non-digits (allow leading/trailing spaces already stripped)
+            # Reject non-digits (allow leading/trailing spaces already stripped)
         for ch in s:
             if ch < '0' or ch > '9':
                 return None
@@ -2519,7 +2524,7 @@ class TASWizardDialog(JDialog):
         return n
 
     def _RefreshStep2eUi(self):
-        # Populate the lighting address fields from memory.
+    # Populate the lighting address fields from memory.
         try:
             low = str(TBL.SafeGetOrCreateMemoryValue('LOWCTTHROTTLEADDR', '990')).strip()
         except:
@@ -2540,7 +2545,7 @@ class TASWizardDialog(JDialog):
             pass
 
     def _RefreshStep2fUi(self):
-        # Sync the climate and daylight preset combos from memory.
+    # Sync the climate and daylight preset combos from memory.
         try:
             curClimate = str(TBL.SafeGetOrCreateMemoryValue('WX_CLIMATE', 'SouthWales_EarlySep')).strip()
         except:
@@ -2559,7 +2564,7 @@ class TASWizardDialog(JDialog):
                 self.Step2fDaylightCombo.setSelectedItem(curDay)
         except:
             pass
-        # Commit immediately on selection changes.
+            # Commit immediately on selection changes.
         try:
             if self.Step2fClimateCombo is not None:
                 def _ApplyClimate():
@@ -2568,7 +2573,7 @@ class TASWizardDialog(JDialog):
                         TBL.SafeSetMemoryValue('WX_CLIMATE', val)
                     except:
                         pass
-                # Avoid stacking listeners by clearing and re-adding is hard in Swing; add once guarded.
+                        # Avoid stacking listeners by clearing and re-adding is hard in Swing; add once guarded.
                 if not hasattr(self, '_Step2fClimateHooked'):
                     self._Step2fClimateHooked = True
                     self.Step2fClimateCombo.addActionListener(lambda e: _ApplyClimate())
@@ -2589,7 +2594,7 @@ class TASWizardDialog(JDialog):
             pass
 
     def _ApplyLightingAddressesFromStep2e(self):
-        # Validate and store lighting DCC addresses.
+    # Validate and store lighting DCC addresses.
         try:
             lowRaw = '' if self.LowCtAddrField is None else self.LowCtAddrField.getText()
         except:
@@ -2606,7 +2611,7 @@ class TASWizardDialog(JDialog):
             except:
                 pass
             return False
-        # Accept low==high? This is probably not useful; treat as invalid.
+            # Accept low==high? This is probably not useful; treat as invalid.
         try:
             if int(low) == int(high):
                 JOptionPane.showMessageDialog(self, 'The warm and cool addresses must be different.', 'Lighting addresses', JOptionPane.INFORMATION_MESSAGE)
@@ -2632,14 +2637,14 @@ class TASWizardDialog(JDialog):
             return ""
 
     def _DefaultWorkingRN(self, rowNumber):
-        # Header row is 1, first data row is 2.
+    # Header row is 1, first data row is 2.
         try:
             return "TAS" + str(int(rowNumber))
         except:
             return "TAS"
 
     def _CurrentTimetableCsvPath(self):
-        # Returns filesystem path to CURRENTTIMETABLE.csv under profile:timetable, or None.
+    # Returns filesystem path to CURRENTTIMETABLE.csv under profile:timetable, or None.
         try:
             name = str(TBL.SafeGetOrCreateMemoryValue("CURRENTTIMETABLE", "")).strip()
         except:
@@ -2658,7 +2663,7 @@ class TASWizardDialog(JDialog):
             return None
 
     def _DetermineWorkingDirection(self, rowDict):
-        # Priority: Trigger, then Arr, then Dep.
+    # Priority: Trigger, then Arr, then Dep.
         try:
             t = (rowDict.get("Trigger", "") or "").strip()
             if t != "":
@@ -2693,7 +2698,7 @@ class TASWizardDialog(JDialog):
 
 
     def _GetWorkingsStatusFromWorkingCreator(self):
-        # Try to use WorkingCreator headless audit if available.
+    # Try to use WorkingCreator headless audit if available.
         csvPath = None
         try:
             csvPath = self._CurrentTimetableCsvPath()
@@ -2715,15 +2720,15 @@ class TASWizardDialog(JDialog):
 
 
     def _ReadTimetableRows(self, csvPath):
-        # Read timetable file rows as list of dicts.
-        # Timetable files are commonly tab-separated, but older examples may use commas.
-        # Try a small set of delimiters rather than relying on csv.Sniffer (which can be unreliable with free-text fields).
+    # Read timetable file rows as list of dicts.
+    # Timetable files are commonly tab-separated, but older examples may use commas.
+    # Try a small set of delimiters rather than relying on csv.Sniffer (which can be unreliable with free-text fields).
         rows = []
         if csvPath is None:
             return rows
         if not os.path.isfile(csvPath):
             return rows
-        # Try delimiters in order of likelihood.
+            # Try delimiters in order of likelihood.
         delims = ['\t', ",", ' ' ]
         for delim in delims:
             rows = []
@@ -2736,7 +2741,7 @@ class TASWizardDialog(JDialog):
                         fieldnames = list(reader.fieldnames or [])
                     except:
                         fieldnames = []
-                    # We need at least these columns.
+                        # We need at least these columns.
                     need = ['Reporting number', 'Forms']
                     haveNeed = True
                     for n in need:
@@ -2747,7 +2752,7 @@ class TASWizardDialog(JDialog):
                         continue
                     for r in reader:
                         rows.append(r)
-                    # Delimiter accepted.
+                        # Delimiter accepted.
                     return rows
                 finally:
                     try:
@@ -2759,7 +2764,7 @@ class TASWizardDialog(JDialog):
         return rows
 
     def _ListMissingWorkings(self):
-        # Returns a list of dicts: {rn, direction, rowIndex, formsNext, path}
+    # Returns a list of dicts: {rn, direction, rowIndex, formsNext, path}
         out = []
         csvPath = self._CurrentTimetableCsvPath()
         if csvPath is None or (not os.path.isfile(csvPath)):
@@ -2771,7 +2776,7 @@ class TASWizardDialog(JDialog):
         if len(rows) == 0:
             return out
 
-        # Formation mapping: destination RN -> forming RN.
+            # Formation mapping: destination RN -> forming RN.
         formedBy = {}
         try:
             ridx = 2
@@ -2819,7 +2824,7 @@ class TASWizardDialog(JDialog):
 
 
     def _ListAllWorkingsEntries(self):
-        # Returns a list of dicts: {rn, direction, rowIndex, formsNext, path, exists}
+    # Returns a list of dicts: {rn, direction, rowIndex, formsNext, path, exists}
         out = []
         csvPath = self._CurrentTimetableCsvPath()
         if csvPath is None or (not os.path.isfile(csvPath)):
@@ -2829,7 +2834,7 @@ class TASWizardDialog(JDialog):
             rows = []
         if len(rows) == 0:
             return out
-        # Formation mapping: destination RN -> forming RN.
+            # Formation mapping: destination RN -> forming RN.
         formedBy = {}
         try:
             ridx = 2
@@ -2880,7 +2885,7 @@ class TASWizardDialog(JDialog):
         return out
 
     def _RefreshStep2bwUi(self):
-        # Workings validation step: only relevant when automatic running is enabled.
+    # Workings validation step: only relevant when automatic running is enabled.
         try:
             self._UpdateFeatureCache()
         except:
@@ -2948,7 +2953,7 @@ class TASWizardDialog(JDialog):
             except:
                 lines.append('Invalid workings:')
 
-            # Show a short list (first 8) to avoid huge blocks.
+                # Show a short list (first 8) to avoid huge blocks.
             try:
                 show = (missing + invalid)[:8]
             except:
@@ -2976,7 +2981,7 @@ class TASWizardDialog(JDialog):
         except:
             pass
 
-        # Button visible/enabled always so the user can open Working Creator even when all workings are present.
+            # Button visible/enabled always so the user can open Working Creator even when all workings are present.
         try:
             if self.WorkingsCreateButton is not None:
                 self.WorkingsCreateButton.setVisible(True)
@@ -2984,7 +2989,7 @@ class TASWizardDialog(JDialog):
         except:
             pass
 
-        # Gate Forward while missing.
+            # Gate Forward while missing.
         try:
             if self.Steps[int(self.StepIndex)] == 'step2bw':
                 self.BtnForward.setEnabled(bool(ok))
@@ -3134,7 +3139,7 @@ class TASWizardDialog(JDialog):
 
 
 
-        # Filler row to keep the content top-aligned (leave unused space at the bottom).
+            # Filler row to keep the content top-aligned (leave unused space at the bottom).
         g2btt.gridy = 4
         g2btt.weighty = 1.0
         g2btt.fill = GridBagConstraints.BOTH
@@ -3194,39 +3199,39 @@ class TASWizardDialog(JDialog):
         center2b.add(self.Step2bExtraScroll, g2bExtra)
 
         def _OnAutoTrainsToggled2b():
-         try:
-          if not self.SuppressAutoTrainsListener:
-           try:
-            self._SetAutoWorkingEnabled(self.UseAutoTrainsCheck.isSelected())
-           except:
-            pass
-         except:
-          pass
-         try:
-          self._UpdateFeatureCache()
-         except:
-          pass
-         try:
-          self._UpdateFeatureCache()
-         except:
-          pass
-         try:
-          self._RefreshStep2bUi()
-         except:
-          pass
-         try:
-          center2b.revalidate()
-          center2b.repaint()
-         except:
-          pass
+            try:
+                if not self.SuppressAutoTrainsListener:
+                    try:
+                        self._SetAutoWorkingEnabled(self.UseAutoTrainsCheck.isSelected())
+                    except:
+                        pass
+            except:
+                pass
+            try:
+                self._UpdateFeatureCache()
+            except:
+                pass
+            try:
+                self._UpdateFeatureCache()
+            except:
+                pass
+            try:
+                self._RefreshStep2bUi()
+            except:
+                pass
+            try:
+                center2b.revalidate()
+                center2b.repaint()
+            except:
+                pass
 
         try:
-         self.UseAutoTrainsCheck.addActionListener(lambda e: _OnAutoTrainsToggled2b())
+            self.UseAutoTrainsCheck.addActionListener(lambda e: _OnAutoTrainsToggled2b())
         except:
-         pass
+            pass
 
 
-        # Button to open the JMRI DispatcherPro help.
+            # Button to open the JMRI DispatcherPro help.
         g2bDisp = GridBagConstraints()
         g2bDisp.insets = Insets(6, 12, 6, 6)
         g2bDisp.gridx = 0
@@ -3305,71 +3310,132 @@ class TASWizardDialog(JDialog):
 
         def _OpenWorkingCreatorForNextMissing():
 
-                    # Open the shared Workings UI (same as TASSetup Workings tab) in a dialog owned by the wizard.
+        # Open the shared Workings UI (same as TASSetup Workings tab) in a dialog owned by the wizard.
 
-                    mod = None
+            mod = None
 
-                    try:
+            try:
 
-                        mod = LoadWorkingsUiModule()
+                mod = LoadWorkingsUiModule()
 
-                    except:
+            except:
 
-                        mod = None
+                mod = None
 
-                    if mod is None or not hasattr(mod, 'ShowWorkingsDialog'):
+            if mod is None or not hasattr(mod, 'ShowWorkingsDialog'):
 
-                        try:
+                try:
 
-                            JOptionPane.showMessageDialog(self, 'Shared workings UI module could not be loaded.\n\nPlease ensure TASWorkingsUi.py is present in profile:jython.', 'Workings', JOptionPane.ERROR_MESSAGE)
+                    JOptionPane.showMessageDialog(self, 'Shared workings UI module could not be loaded.\n\nPlease ensure TASWorkingsUi.py is present in profile:jython.', 'Workings', JOptionPane.ERROR_MESSAGE)
 
-                        except:
+                except:
 
-                            pass
+                    pass
 
-                        return
+                return
 
-                    def _GetTTPath():
+            def _GetTTPath():
 
-                        try:
+                try:
 
-                            return self._CurrentTimetableCsvPath()
+                    return self._CurrentTimetableCsvPath()
 
-                        except:
+                except:
 
-                            return None
+                    return None
 
-                    try:
+            try:
 
-                        selBg = Color(210, 225, 235)
+                selBg = Color(210, 225, 235)
 
-                        selFg = Color(20, 20, 20)
+                selFg = Color(20, 20, 20)
 
-                    except:
+            except:
 
-                        selBg = THEME_PAPER
+                selBg = THEME_PAPER
 
-                        selFg = THEME_TEXT_COLOR
+                selFg = THEME_TEXT_COLOR
 
-                    try:
+            try:
 
-                        mod.ShowWorkingsDialog(self, _GetTTPath, ProfileJythonFilePath, ApplyTheme, MakePaperPanel, MakeHeading, MakeWrappedLabel, THEME_PAPER, THEME_FONT_FAMILY, THEME_TEXT_COLOR, selBg, selFg, LogInfo, LogWarn, LogError, title='Workings')
+                mod.ShowWorkingsDialog(self, _GetTTPath, ProfileJythonFilePath, ApplyTheme, MakePaperPanel, MakeHeading, MakeWrappedLabel, THEME_PAPER, THEME_FONT_FAMILY, THEME_TEXT_COLOR, selBg, selFg, LogInfo, LogWarn, LogError, title='Workings')
 
-                    except Exception as ex:
+            except Exception as ex:
 
-                        try:
+                try:
 
-                            JOptionPane.showMessageDialog(self, 'Could not open workings editor.\n\nDetails: ' + str(ex), 'Workings', JOptionPane.ERROR_MESSAGE)
+                    JOptionPane.showMessageDialog(self, 'Could not open workings editor.\n\nDetails: ' + str(ex), 'Workings', JOptionPane.ERROR_MESSAGE)
 
-                        except:
+                except:
 
-                            pass
+                    pass
         try:
             self.WorkingsCreateButton.addActionListener(lambda e: _OpenWorkingCreatorForNextMissing())
         except:
             pass
 
         p2bw.add(center2bw, BorderLayout.CENTER)
+
+        # Step 2bd: disruption configuration (only shown when automatic running is enabled)
+        p2bd = MakePaperPanel()
+        p2bd.setLayout(BorderLayout())
+        p2bd.add(self._BuildSidebar(), BorderLayout.WEST)
+        center2bd = JPanel()
+        center2bd.setOpaque(False)
+        center2bd.setLayout(GridBagLayout())
+        g2bd = GridBagConstraints()
+        g2bd.insets = Insets(6, 12, 6, 6)
+        g2bd.gridx = 0
+        g2bd.gridy = 0
+        g2bd.weightx = 1.0
+        g2bd.weighty = 0.0
+        g2bd.fill = GridBagConstraints.HORIZONTAL
+        center2bd.add(MakeHeading('Disruption'), g2bd)
+        g2bd.gridy = 1
+        info2bd = (
+            'The Timetable Automation System can simulate delays and cancellations for trains that are run automatically.\n\n'
+            'To enable this feature, you must set up disruption groups and provide a Disruption.csv file in the timetable folder.'
+        )
+        center2bd.add(MakeWrappedTextArea(info2bd, fontSize=13), g2bd)
+        g2bd.gridy = 2
+        g2bd.weighty = 0.0
+        g2bd.fill = GridBagConstraints.HORIZONTAL
+        box2bd = Box.createHorizontalBox()
+        self.EnableDelaysCheck = JCheckBox('Enable delays')
+        self.EnableDelaysCheck.setOpaque(False)
+        self.EnableCancellationsCheck = JCheckBox('Enable cancellations')
+        self.EnableCancellationsCheck.setOpaque(False)
+        def _OnEnableDelays(e=None):
+            try:
+                TBL.SafeSetMemoryValue('ALLOWDELAYS', 'true' if self.EnableDelaysCheck.isSelected() else 'false')
+            except:
+                pass
+            try:
+                self._RefreshStep2bdUi()
+            except:
+                pass
+        def _OnEnableCancellations(e=None):
+            try:
+                TBL.SafeSetMemoryValue('ALLOWCANCELLATIONS', 'true' if self.EnableCancellationsCheck.isSelected() else 'false')
+            except:
+                pass
+            try:
+                self._RefreshStep2bdUi()
+            except:
+                pass
+        self.EnableDelaysCheck.addActionListener(lambda e: _OnEnableDelays())
+        self.EnableCancellationsCheck.addActionListener(lambda e: _OnEnableCancellations())
+        box2bd.add(self.EnableDelaysCheck)
+        box2bd.add(Box.createHorizontalStrut(18))
+        box2bd.add(self.EnableCancellationsCheck)
+        center2bd.add(box2bd, g2bd)
+        g2bd.gridy = 3
+        g2bd.weighty = 1.0
+        g2bd.fill = GridBagConstraints.BOTH
+        self.Step2bdInfoTextArea = MakeWrappedTextArea('', fontSize=13)
+        self.Step2bdInfoScroll = MakeScrollForText(self.Step2bdInfoTextArea)
+        center2bd.add(self.Step2bdInfoScroll, g2bd)
+        p2bd.add(center2bd, BorderLayout.CENTER)
 
 
         # Step 2c: before you start (orientation sensing) - shown only if automatic running is selected
@@ -3419,29 +3485,29 @@ class TASWizardDialog(JDialog):
         center2c.add(self.Step2cExtraScroll, g2cExtra)
 
         def _OnOrientationToggled2c():
-         try:
-          if not self.SuppressOrientationListener:
-           try:
-            self._SetOrientationSensingEnabled(self.UseOrientationCheck.isSelected())
-           except:
-            pass
-          self._UpdateFeatureCache()
-         except:
-          pass
-         try:
-          self._RefreshStep2cUi()
-         except:
-          pass
-         try:
-          center2c.revalidate()
-          center2c.repaint()
-         except:
-          pass
+            try:
+                if not self.SuppressOrientationListener:
+                    try:
+                        self._SetOrientationSensingEnabled(self.UseOrientationCheck.isSelected())
+                    except:
+                        pass
+                self._UpdateFeatureCache()
+            except:
+                pass
+            try:
+                self._RefreshStep2cUi()
+            except:
+                pass
+            try:
+                center2c.revalidate()
+                center2c.repaint()
+            except:
+                pass
 
         try:
-         self.UseOrientationCheck.addActionListener(lambda e: _OnOrientationToggled2c())
+            self.UseOrientationCheck.addActionListener(lambda e: _OnOrientationToggled2c())
         except:
-         pass
+            pass
 
         g2c.gridy = 4
         g2c.weighty = 0.0
@@ -3554,32 +3620,32 @@ class TASWizardDialog(JDialog):
         center2d.add(self.Step2dExtraScroll, g2dExtra)
 
         def _OnLightingToggled2d():
-         try:
-          if not self.SuppressLightingListener:
-           try:
-            self._SetDayNightEnabled(self.UseLightingCheck.isSelected())
-           except:
-            pass
-         except:
-          pass
-         try:
-          self._UpdateFeatureCache()
-         except:
-          pass
-         try:
-          self._RefreshStep2dUi()
-         except:
-          pass
-         try:
-          center2d.revalidate()
-          center2d.repaint()
-         except:
-          pass
+            try:
+                if not self.SuppressLightingListener:
+                    try:
+                        self._SetDayNightEnabled(self.UseLightingCheck.isSelected())
+                    except:
+                        pass
+            except:
+                pass
+            try:
+                self._UpdateFeatureCache()
+            except:
+                pass
+            try:
+                self._RefreshStep2dUi()
+            except:
+                pass
+            try:
+                center2d.revalidate()
+                center2d.repaint()
+            except:
+                pass
 
         try:
-         self.UseLightingCheck.addActionListener(lambda e: _OnLightingToggled2d())
+            self.UseLightingCheck.addActionListener(lambda e: _OnLightingToggled2d())
         except:
-         pass
+            pass
 
         g2d.gridy = 4
         g2d.weighty = 0.0
@@ -3733,7 +3799,7 @@ class TASWizardDialog(JDialog):
         filler2f.setOpaque(False)
         center2f.add(filler2f, g2f)
         p2f.add(center2f, BorderLayout.CENTER)
- # Step 3: fonts (optional)
+        # Step 3: fonts (optional)
         fontText = (
             "The Timetable Automation System looks best if you have the recommended fonts installed.\n\n"
             "You are seeing this step because you are missing at least one recommended font.\n\n"
@@ -3878,7 +3944,7 @@ class TASWizardDialog(JDialog):
         except:
             existingSection = 'SECTION B'
 
-        # Company row (combo only)
+            # Company row (combo only)
         g5.gridy = 2
         rowC = JPanel()
         rowC.setOpaque(False)
@@ -4019,7 +4085,7 @@ class TASWizardDialog(JDialog):
         except:
             pass
 
-        # Step 6: apply defaults based on user choices
+            # Step 6: apply defaults based on user choices
         p6 = MakePaperPanel() 
         p6.setLayout(BorderLayout()) 
         p6.add(self._BuildSidebar(), BorderLayout.WEST) 
@@ -4092,6 +4158,7 @@ class TASWizardDialog(JDialog):
         self.AddStep("step2btt", p2btt)
         self.AddStep("step2b", p2b)
         self.AddStep("step2bw", p2bw)
+        self.AddStep("step2bd", p2bd)
         self.AddStep("step2c", p2c)
         self.AddStep("step2ch", p2ch)
         self.AddStep("step2d", p2d)
@@ -4115,7 +4182,7 @@ class TASWizardDialog(JDialog):
             key = self.Steps[int(idx)]
         except:
             return False
-        # Step 2c is optional: show it only when automatic running is selected.
+            # Step 2c is optional: show it only when automatic running is selected.
         if key == "step2c":
             try:
                 self._UpdateFeatureCache()
@@ -4125,7 +4192,7 @@ class TASWizardDialog(JDialog):
                 return not bool(self.UseAutoTrainsSelected)
             except:
                 return True
-        # Step 2bw is optional: show it only when automatic running is selected.
+                # Step 2bw is optional: show it only when automatic running is selected.
         if key == "step2bw":
             try:
                 self._UpdateFeatureCache()
@@ -4137,6 +4204,17 @@ class TASWizardDialog(JDialog):
                 return True
 
                 # Step 2ch is optional: show it only when hardware orientation sensing is enabled and at least one roster entry is not in the normal direction register.
+
+                # Step 2bd is optional: show it only when automatic running is selected.
+        if key == "step2bd":
+            try:
+                self._UpdateFeatureCache()
+            except:
+                pass
+            try:
+                return not bool(self.UseAutoTrainsSelected)
+            except:
+                return True
         if key == "step2ch":
             try:
                 enabled = bool(self._GetOrientationSensingEnabled())
@@ -4149,7 +4227,7 @@ class TASWizardDialog(JDialog):
             except:
                 return True
 
-# Step 2e is optional: show it only when day/night lighting is selected.
+                # Step 2e is optional: show it only when day/night lighting is selected.
         if key == "step2e":
             try:
                 self._UpdateFeatureCache()
@@ -4170,7 +4248,7 @@ class TASWizardDialog(JDialog):
             except:
                 return True
 
-# Step 3 (fonts) is optional when no recommended fonts are missing.
+                # Step 3 (fonts) is optional when no recommended fonts are missing.
         if key != "step3":
             return False
         return self.ShouldSkipFontStep()
@@ -4215,6 +4293,8 @@ class TASWizardDialog(JDialog):
                 self._RefreshStep2bUi()
             if key == 'step2bw':
                 self._RefreshStep2bwUi()
+            if key == 'step2bd':
+                self._RefreshStep2bdUi()
             if key == 'step2c':
                 self._UpdateFeatureCache()
                 self._RefreshStep2cUi()
@@ -4244,14 +4324,14 @@ class TASWizardDialog(JDialog):
             self.BtnForward.setEnabled(self.NextIndex(self.StepIndex) > self.StepIndex)
         except:
             pass
-        # Step 2btt: gate Forward until a valid timetable is selected.
+            # Step 2btt: gate Forward until a valid timetable is selected.
         try:
             if key == 'step2btt':
                 self.BtnForward.setEnabled(bool(self._RefreshStep2bttUi(False)))
         except:
             pass
 
-        # Step 2bw: gate Forward until all required working scripts exist.
+            # Step 2bw: gate Forward until all required working scripts exist.
         try:
             if key == 'step2bw':
                 self.BtnForward.setEnabled(bool(getattr(self, 'WorkingsOk', False)))
@@ -4272,6 +4352,228 @@ class TASWizardDialog(JDialog):
             pass
 
 
+    def _ParseBool(self, v, defaultVal=False):
+        try:
+            if isinstance(v, bool):
+                return bool(v)
+        except:
+            pass
+        try:
+            t = str(v).strip().lower()
+        except:
+            t = ""
+        if t in ["1", "true", "yes", "y", "on", "enabled"]:
+            return True
+        if t in ["0", "false", "no", "n", "off", "disabled"]:
+            return False
+        return bool(defaultVal)
+
+    def _DisruptionCsvPath(self):
+    # DisruptionGenerator expects Disruption.csv in the timetable folder.
+        try:
+            ttDir = FileUtil.getExternalFilename('profile:timetable')
+        except:
+            ttDir = None
+        if not ttDir:
+            return None
+        try:
+            return os.path.join(str(ttDir), 'Disruption.csv')
+        except:
+            return None
+
+    def _GetTimetablePath(self):
+        try:
+            name = str(TBL.SafeGetOrCreateMemoryValue('CURRENTTIMETABLE', '')).strip()
+        except:
+            name = ''
+        if not name:
+            return None
+        try:
+            ttDir = FileUtil.getExternalFilename('profile:timetable')
+        except:
+            ttDir = None
+        if not ttDir:
+            return None
+        try:
+            return os.path.join(str(ttDir), name + '.csv')
+        except:
+            return None
+
+    def _DisruptionGroupsUsedByTimetable(self):
+    # Return (usedExactSet, usedLowerSet, hadColumn, errorMsg)
+        path = self._GetTimetablePath()
+        if not path or (not os.path.isfile(path)):
+            return (set([]), set([]), False, 'No timetable file is selected.')
+        try:
+            with open(path, 'r') as f:
+                r = csv.DictReader(f, delimiter='\t')
+                header = r.fieldnames or []
+                if 'Disruption group' not in header:
+                    return (set([]), set([]), False, "Timetable does not have a 'Disruption group' column.")
+                usedExact = set([])
+                usedLower = set([])
+                for row in r:
+                    try:
+                        g = (row.get('Disruption group', '') or '').strip()
+                    except:
+                        g = ''
+                    if g:
+                        usedExact.add(g)
+                        usedLower.add(g.lower())
+                return (usedExact, usedLower, True, '')
+        except Exception as ex:
+            return (set([]), set([]), False, 'Error reading timetable: ' + str(ex))
+
+    def _DisruptionGroupsProvidedByCsv(self):
+    # Return (providedExactSet, providedLowerSet, ok, errorMsg)
+        path = self._DisruptionCsvPath()
+        if not path or (not os.path.isfile(path)):
+            return (set([]), set([]), False, 'Disruption.csv was not found in the timetable folder.')
+        try:
+            with open(path, 'r') as f:
+                r = csv.DictReader(f, delimiter='\t')
+                header = r.fieldnames or []
+                if 'Disruption group' not in header:
+                    return (set([]), set([]), False, "Disruption.csv is missing the 'Disruption group' column.")
+                providedExact = set([])
+                providedLower = set([])
+                for row in r:
+                    try:
+                        nm = (row.get('Disruption group', '') or '').strip()
+                    except:
+                        nm = ''
+                    if nm:
+                        providedExact.add(nm)
+                        providedLower.add(nm.lower())
+                return (providedExact, providedLower, True, '')
+        except Exception as ex:
+            return (set([]), set([]), False, 'Error reading Disruption.csv: ' + str(ex))
+
+    def _ValidateDisruptionConfiguration(self):
+        usedExact, usedLower, hadCol, msg = self._DisruptionGroupsUsedByTimetable()
+        if msg:
+            return (False, msg)
+        if not usedExact:
+            return (False, 'No workings in the timetable have a Disruption group configured.')
+
+        provExact, provLower, ok, msg2 = self._DisruptionGroupsProvidedByCsv()
+        if not ok:
+            return (False, msg2)
+
+        missing = []
+        caseMismatch = []
+        for g in sorted(list(usedExact)):
+            if g in provExact:
+                continue
+            if g.lower() in provLower:
+                caseMismatch.append(g)
+            else:
+                missing.append(g)
+
+        if caseMismatch:
+            return (False, 'Disruption.csv has group names with different letter case for: ' + ', '.join(caseMismatch) + '. Make them match exactly.')
+        if missing:
+            return (False, 'Disruption.csv does not contain rows for these Disruption groups: ' + ', '.join(missing) + '.')
+
+        return (True, '')
+
+    def _RefreshStep2bdUi(self):
+        try:
+            self._UpdateFeatureCache()
+        except:
+            pass
+
+        autoEnabled = False
+        try:
+            autoEnabled = bool(self.UseAutoTrainsSelected)
+        except:
+            autoEnabled = False
+
+        ok = False
+        msg = ''
+        if autoEnabled:
+            try:
+                ok, msg = self._ValidateDisruptionConfiguration()
+            except Exception as ex:
+                ok = False
+                msg = 'Error validating disruptions: ' + str(ex)
+        else:
+            ok = False
+            msg = 'Disruptions are available only when automatic running is enabled.'
+
+        try:
+            curDelays = self._ParseBool(TBL.SafeGetOrCreateMemoryValue('ALLOWDELAYS', ''), False)
+        except:
+            curDelays = False
+        try:
+            curCancels = self._ParseBool(TBL.SafeGetOrCreateMemoryValue('ALLOWCANCELLATIONS', ''), False)
+        except:
+            curCancels = False
+
+        try:
+            if self.EnableDelaysCheck is not None:
+                self.EnableDelaysCheck.setSelected(bool(curDelays))
+        except:
+            pass
+        try:
+            if self.EnableCancellationsCheck is not None:
+                self.EnableCancellationsCheck.setSelected(bool(curCancels))
+        except:
+            pass
+
+        enabled = bool(autoEnabled) and bool(ok)
+        try:
+            if self.EnableDelaysCheck is not None:
+                self.EnableDelaysCheck.setEnabled(enabled)
+        except:
+            pass
+        try:
+            if self.EnableCancellationsCheck is not None:
+                self.EnableCancellationsCheck.setEnabled(enabled)
+        except:
+            pass
+
+        lines = []
+
+        if enabled:
+
+            lines.append('Disruption is configured for this timetable.')
+
+            lines.append('')
+
+            lines.append('Use the tick boxes above to control enable or disable delays and cancellations. This can be changed later.')
+
+        else:
+
+            lines.append('Disruption is not configured for this timetable yet.')
+
+            lines.append('')
+
+            if msg:
+
+                lines.append('Current status: ' + str(msg))
+
+            lines.append('')
+
+            lines.append('To enable disruption, add a disruption group to at least one timetable entry and create timetable/Disruption.csv with a row for each group used.')
+
+            lines.append('')
+
+            lines.append('See the Disruption help for full instructions on how to configure disruptions.')
+
+
+        try:
+
+            if self.Step2bdInfoTextArea is not None:
+
+                self.Step2bdInfoTextArea.setText('\n'.join(lines))
+                try:
+                    self.Step2bdInfoTextArea.setCaretPosition(0)
+                except:
+                    pass
+        except:
+            pass
+
     def _HelpTopicForKey(self, key):
         try:
             k = '' if key is None else str(key)
@@ -4291,6 +4593,8 @@ class TASWizardDialog(JDialog):
             return 'Day and night cycle'
         if k == 'step2f':
             return 'Day and night cycle'
+        if k == 'step2bd':
+            return 'Disruption'
         return 'General'
 
     def _HelpTopicForCurrentStep(self):
@@ -4338,7 +4642,7 @@ class TASWizardDialog(JDialog):
                 pass
 
     def OnCancelOrFinished(self):
-        # Only apply defaults and show restart encouragement when the wizard has reached the final step.
+    # Only apply defaults and show restart encouragement when the wizard has reached the final step.
         isFinal = False
         try:
             isFinal = (int(self.StepIndex) == (len(self.Steps) - 1))
@@ -4346,7 +4650,7 @@ class TASWizardDialog(JDialog):
             isFinal = False
 
         if isFinal:
-            # Apply automatic configuration defaults (Step 6) when finishing, regardless of where Step 6 is in the flow.
+        # Apply automatic configuration defaults (Step 6) when finishing, regardless of where Step 6 is in the flow.
             try:
                 self._ApplyDefaultsFromStep6()
             except:
@@ -4370,14 +4674,14 @@ class TASWizardDialog(JDialog):
         self.ShowStep(prevIdx)
 
     def GoForward(self):
-        # Keep cached feature selections in sync as the user moves forward.
+    # Keep cached feature selections in sync as the user moves forward.
         try:
             if self.Steps[int(self.StepIndex)] in ['step2b', 'step2c', 'step2d', 'step2e']:
                 self._UpdateFeatureCache()
         except:
             pass
 
-        # Do not allow leaving the workings check step until all required scripts exist.
+            # Do not allow leaving the workings check step until all required scripts exist.
         try:
             if self.Steps[int(self.StepIndex)] == 'step2bw':
                 try:
@@ -4388,7 +4692,7 @@ class TASWizardDialog(JDialog):
                     return
         except:
             pass
-        # Compute font status before step3 so we can skip it when appropriate.
+            # Compute font status before step3 so we can skip it when appropriate.
         try:
             curKey = self.Steps[int(self.StepIndex)]
         except:
@@ -4398,7 +4702,7 @@ class TASWizardDialog(JDialog):
                 if curKey == 'step2e' or curKey == 'step2f':
                     self.EnsureFontCheck()
                 elif curKey == 'step2d':
-                    # If step2e will be skipped, ensure font check now.
+                # If step2e will be skipped, ensure font check now.
                     try:
                         if self.NextIndex(self.StepIndex) != (int(self.StepIndex) + 1):
                             self.EnsureFontCheck()
@@ -4406,7 +4710,7 @@ class TASWizardDialog(JDialog):
                         pass
         except:
             pass
-        # If leaving the timetable chooser step, validate and apply the selection.
+            # If leaving the timetable chooser step, validate and apply the selection.
         try:
             if self.Steps[int(self.StepIndex)] == 'step2btt':
                 if not self._ApplyTimetableFromChooserStep():
@@ -4414,7 +4718,7 @@ class TASWizardDialog(JDialog):
         except:
             pass
 
-        # If leaving the lighting addresses step, validate and save the addresses.
+            # If leaving the lighting addresses step, validate and save the addresses.
         try:
             if self.Steps[int(self.StepIndex)] == 'step2e':
                 if not self._ApplyLightingAddressesFromStep2e():
@@ -4423,7 +4727,7 @@ class TASWizardDialog(JDialog):
             pass
 
 
-        # If leaving step4, apply layout details.
+            # If leaving step4, apply layout details.
         try:
             if self.Steps[int(self.StepIndex)] == 'step4':
                 if not self._ApplyLayoutDetailsFromStep4():
@@ -4431,7 +4735,7 @@ class TASWizardDialog(JDialog):
         except:
             pass
 
-        # If leaving step5, apply railway details.
+            # If leaving step5, apply railway details.
         try:
             if self.Steps[int(self.StepIndex)] == 'step5':
                 if not self._ApplyRailwayDetailsFromStep5():
@@ -4454,5 +4758,5 @@ def ShowTASWizard():
         SwingUtilities.invokeLater(RunnableAdapter(_Run))
 
 
-# Entry
+        # Entry
 ShowTASWizard() 
