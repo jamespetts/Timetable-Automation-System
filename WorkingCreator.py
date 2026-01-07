@@ -17,6 +17,7 @@
 # Entry point: ShowWorkingCreator(rn, direction, rowIndex, formsNext)
 # Generates scripts under scripts/workings/<Direction>/<RN>.py
 import jmri, os
+import csv
 from java.awt import BorderLayout, GridBagLayout, GridBagConstraints, Insets, Dimension, Font
 from javax.swing import (JDialog, JPanel, JLabel, JButton, JCheckBox, JTextField, JTextArea,
                          JScrollPane, JList, JOptionPane, Box, DefaultListModel, ListSelectionModel)
@@ -66,6 +67,143 @@ def AnyTrainInfoHasSetLater(trainInfoNames):
 
 
 # Entry point
+
+# ---------------- Headless workings audit (used by TASWiz) ----------------
+# These helpers do not change the GUI behaviour. They are safe to import and call.
+
+def _DefaultWorkingRN(rowNumber):
+    # Header row is 1, first data row is 2.
+    try:
+        return 'TAS' + str(int(rowNumber))
+    except:
+        return 'TAS'
+
+def _DetermineWorkingDirection(rowDict):
+    # Priority: Trigger, then Arr, then Dep.
+    try:
+        t = (rowDict.get('Trigger', '') or '').strip()
+        if t != '':
+            return 'Trigger'
+    except:
+        pass
+    try:
+        t = (rowDict.get('Arr', '') or '').strip()
+        if t != '':
+            return 'Arr'
+    except:
+        pass
+    try:
+        t = (rowDict.get('Dep', '') or '').strip()
+        if t != '':
+            return 'Dep'
+    except:
+        pass
+    return None
+
+def _ReadTimetableRows(csvPath):
+    rows = []
+    try:
+        f = open(csvPath, 'r')
+        try:
+            reader = csv.DictReader(f, delimiter='	')
+            for r in reader:
+                rows.append(r)
+        finally:
+            f.close()
+    except:
+        return []
+    return rows
+
+def _BuildFormationMap(rows):
+    # destination RN (lower) -> forming RN
+    formedBy = {}
+    try:
+        idx = 2
+        for r in rows:
+            rnCell = (r.get('Reporting number', '') or '').strip()
+            formingRN = rnCell if rnCell != "" else _DefaultWorkingRN(idx)
+            formsCell = (r.get('Forms', '') or '').strip()
+            if formsCell != "":
+                formedBy[str(formsCell).strip().lower()] = formingRN
+            idx += 1
+    except:
+        formedBy = {}
+    return formedBy
+
+def _WorkingScriptPath(direction, rn):
+    try:
+        scriptsPath = jmri.util.FileUtil.getScriptsPath()
+    except:
+        scriptsPath = None
+    if not scriptsPath:
+        return None
+    try:
+        return os.path.join(str(scriptsPath), 'workings', str(direction), str(rn) + '.py')
+    except:
+        return None
+
+def _IsScriptSyntacticallyValid(path):
+    # Best-effort Python syntax check. Treat any exception as invalid.
+    try:
+        if path is None or (not os.path.isfile(path)):
+            return False
+        f = open(path, 'r')
+        try:
+            code = f.read()
+        finally:
+            f.close()
+        if code is None:
+            return False
+        if len(str(code)) == 0:
+            return False
+        compile(code, path, 'exec')
+        return True
+    except:
+        return False
+
+def GetWorkingsStatusForTimetable(csvPath):
+    # Headless audit for required working scripts for a timetable CSV.
+    # Returns: {ok:bool, missing:[...], invalid:[...], total:int}
+    missing = []
+    invalid = []
+    total = 0
+    if csvPath is None:
+        return {'ok': False, 'missing': [], 'invalid': [], 'total': 0}
+    try:
+        if not os.path.isfile(csvPath):
+            return {'ok': False, 'missing': [], 'invalid': [], 'total': 0}
+    except:
+        return {'ok': False, 'missing': [], 'invalid': [], 'total': 0}
+    rows = _ReadTimetableRows(csvPath)
+    formedBy = _BuildFormationMap(rows)
+    idx = 2
+    for r in rows:
+        total += 1
+        direction = _DetermineWorkingDirection(r)
+        rnCell = (r.get('Reporting number', '') or '').strip()
+        rn = rnCell if rnCell != "" else _DefaultWorkingRN(idx)
+        formsNext = None
+        try:
+            key = str(rn).strip().lower()
+            if key in formedBy:
+                formsNext = formedBy.get(key)
+        except:
+            formsNext = None
+        pth = _WorkingScriptPath(direction, rn)
+        if direction is None or pth is None:
+            missing.append({'rn': rn, 'direction': direction, 'rowIndex': idx, 'formsNext': formsNext, 'path': pth})
+        else:
+            try:
+                if not os.path.isfile(pth):
+                    missing.append({'rn': rn, 'direction': direction, 'rowIndex': idx, 'formsNext': formsNext, 'path': pth})
+                elif not _IsScriptSyntacticallyValid(pth):
+                    invalid.append({'rn': rn, 'direction': direction, 'rowIndex': idx, 'formsNext': formsNext, 'path': pth})
+            except:
+                missing.append({'rn': rn, 'direction': direction, 'rowIndex': idx, 'formsNext': formsNext, 'path': pth})
+        idx += 1
+    ok = (len(missing) == 0) and (len(invalid) == 0) and (total > 0)
+    return {'ok': bool(ok), 'missing': missing, 'invalid': invalid, 'total': int(total)}
+
 def ShowWorkingCreator(rn, direction, rowIndex, formsNext=None):
     dlg = JDialog(None, "Create Working", True)
     dlg.setSize(840, 1024)

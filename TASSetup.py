@@ -27,7 +27,7 @@ from javax.swing import (Box, JButton, JCheckBox, JFileChooser, JLabel, JDialog,
     JList, JOptionPane, JPanel, JScrollPane, JTabbedPane, JTextField,
     ListSelectionModel, SwingUtilities, UIManager, DefaultListModel,
     DefaultListCellRenderer, BorderFactory, JComboBox, JRadioButton, ButtonGroup,
-    JSpinner, SpinnerNumberModel)
+    JSpinner, SpinnerNumberModel, Timer)
 from javax.swing.filechooser import FileNameExtensionFilter
 from javax.swing import JTextPane
 from javax.swing.event import DocumentListener, ListSelectionListener, ChangeListener
@@ -1035,6 +1035,10 @@ class TASSetupFrame(jmri.util.JmriJFrame):
         self.InitialTASMenu = _IsScriptEnabled("TimetableAutomation.py")
         self.CurrentTASMenu = self.InitialTASMenu
 
+        # Wizard sync: allow UI to refresh if a setup wizard changes preferences while this window is open.
+        self.SuppressWizardSync = False
+        self.WizardSyncTimer = None
+
         # --- Build tabs AFTER initial/current state is ready ---
         tabs = JTabbedPane()
         ApplyTheme(tabs)
@@ -1059,6 +1063,31 @@ class TASSetupFrame(jmri.util.JmriJFrame):
             print("[TASSetup] Failed to set setup window icon: " + str(ex))
      
         self.setVisible(True)
+        try:
+            self.StartWizardSyncTimer()
+        except:
+            pass
+
+        # Ensure the timer stops when this window is closed.
+        try:
+            class _WizardSyncWindowListener(java.awt.event.WindowAdapter):
+                def windowClosing(innerSelf, e):
+                    try:
+                        if getattr(self, "WizardSyncTimer", None) is not None:
+                            self.WizardSyncTimer.stop()
+                            self.WizardSyncTimer = None
+                    except:
+                        pass
+                def windowClosed(innerSelf, e):
+                    try:
+                        if getattr(self, "WizardSyncTimer", None) is not None:
+                            self.WizardSyncTimer.stop()
+                            self.WizardSyncTimer = None
+                    except:
+                        pass
+            self.addWindowListener(_WizardSyncWindowListener())
+        except:
+            pass
         # Ensure initial font is applied across all controls
         try:
             _ApplyFontRecursive(self.getContentPane(), THEME_FONT_FAMILY)
@@ -1097,7 +1126,7 @@ class TASSetupFrame(jmri.util.JmriJFrame):
                
         header = Box.createHorizontalBox()
         header.add(Box.createHorizontalGlue())
-        wizardBtn = JButton("Setup wizard")
+        wizardBtn = JButton("Setup wizard...")
 
         # Check if TASWiz.py exists in profile:jython
         wizExists = ScriptExists("TASWiz.py")
@@ -2285,6 +2314,50 @@ class TASSetupFrame(jmri.util.JmriJFrame):
         rowBg.add(Box.createHorizontalStrut(8))
         rowBg.add(btnReset)
         root.add(rowBg, gbc)
+
+
+        # (B1) Main menu ink colour (cover text/lines)
+        gbc.gridy += 1
+        rowCoverInk = Box.createHorizontalBox()
+        lblCoverInk = JLabel('Main menu ink colour:')
+        # Swatch panel
+        swatchCoverInk = JPanel()
+        swatchCoverInk.setOpaque(True)
+        swatchCoverInk.setBorder(BorderFactory.createLineBorder(Color(80,80,80), 1))
+        swi2, shi2 = 100, 36
+        swatchCoverInk.setPreferredSize(Dimension(swi2, shi2))
+        swatchCoverInk.setMinimumSize(Dimension(swi2, shi2))
+        swatchCoverInk.setMaximumSize(Dimension(swi2, shi2))
+        # Initial colour from memory (default = black 0,0,0)
+        memRgbCoverInk = TBL.SafeGetOrCreateMemoryValue('TASCOVERINKCOLOUR', '0,0,0')
+        currentCoverInk = _RgbStrToColorOrDefault(memRgbCoverInk, Color(0,0,0))
+        swatchCoverInk.setBackground(currentCoverInk)
+        class SwatchCoverInkClick(MouseAdapter):
+            def mouseClicked(self, e):
+                try:
+                    initial = swatchCoverInk.getBackground()
+                    chosen = JColorChooser.showDialog(None, 'Choose main menu ink colour', initial)
+                    if chosen is not None:
+                        swatchCoverInk.setBackground(chosen)
+                        TBL.SafeSetMemoryValue('TASCOVERINKCOLOUR', _ColorToRgbStr(chosen))
+                except Exception as ex:
+                    LogWarn('Colour chooser failed: ' + str(ex), alsoDialog=True)
+        swatchCoverInk.addMouseListener(SwatchCoverInkClick())
+        btnResetCoverInk = JButton('Reset')
+        def DoResetCoverInk(e=None):
+            try:
+                defaultCoverInk = Color(0,0,0)
+                swatchCoverInk.setBackground(defaultCoverInk)
+                TBL.SafeSetMemoryValue('TASCOVERINKCOLOUR', _ColorToRgbStr(defaultCoverInk))
+            except Exception as ex:
+                LogWarn('Reset failed: ' + str(ex), alsoDialog=True)
+        btnResetCoverInk.addActionListener(lambda e: DoResetCoverInk(e))
+        rowCoverInk.add(lblCoverInk)
+        rowCoverInk.add(Box.createHorizontalStrut(8))
+        rowCoverInk.add(swatchCoverInk)
+        rowCoverInk.add(Box.createHorizontalStrut(8))
+        rowCoverInk.add(btnResetCoverInk)
+        root.add(rowCoverInk, gbc)
         
         # -------------------- (B2) Inner panel background colour (JColorChooser) --------------------
         gbc.gridy += 1
@@ -2847,737 +2920,42 @@ class TASSetupFrame(jmri.util.JmriJFrame):
             return "%s (%s) - row %d%s" % (self.RN, self.Direction, int(self.RowIndex), timePart)
 
     def BuildWorkingsTab(self):
-        panel = MakePaperPanel()
-        panel.setLayout(GridBagLayout())
-        gbc = GridBagConstraints()
-        gbc.insets = Insets(10,10,10,10)
-        gbc.fill = GridBagConstraints.BOTH
-        gbc.weightx = 1.0
-        gbc.weighty = 1.0
-        gbc.gridx = 0
-        gbc.gridy = 0
-
-        # Left: JList of workings
-        leftModel = DefaultListModel()
-        leftList = JList(leftModel)
-        leftList.setSelectionMode(ListSelectionModel.SINGLE_SELECTION)
-        leftScroll = JScrollPane(leftList)
-        leftScroll.setPreferredSize(Dimension(200, 420))
-
-        # Custom renderer: bright red for missing script (appears mid-grey to red-blind viewers)
-        class WorkingsRenderer(DefaultListCellRenderer):
-            def getListCellRendererComponent(self, lst, value, index, isSelected, cellHasFocus):
-                labelText = value.Label()
-                comp = DefaultListCellRenderer.getListCellRendererComponent(
-                    self, lst, labelText, index, isSelected, cellHasFocus
-                )
-                comp.setFont(Font(THEME_FONT_FAMILY, Font.PLAIN, 13))
-                # Ghost workings: always grey, regardless of validity or selection
-                if getattr(value, "IsExtra", False):
-                    comp.setForeground(Color(128, 128, 128))
-                elif not value.HasScript:
-                    # Missing script: bright red
-                    comp.setForeground(Color(255, 0, 0))
-                elif not getattr(value, "ValidScript", True):
-                    # Invalid script: orange
-                    comp.setForeground(Color(255, 140, 0))
-                else:
-                    comp.setForeground(THEME_TEXT_COLOR)
-                # Keep selection background but do NOT override the foreground for ghosts
-                comp.setBackground(LIST_SEL_BG if isSelected else THEME_PAPER)
-                comp.setOpaque(True)
-                return comp
-                
-        leftList.setCellRenderer(WorkingsRenderer())
-
-        # Right: placeholder panel we swap between editor and action buttons       
-        rightPanel = JPanel()
-        rightPanel.setOpaque(True)
-        rightPanel.setBackground(THEME_PAPER)
-        rightPanel.setLayout(GridBagLayout())
-        # NOTE: no outer scroll here-editor has its own scroll pane; buttons remain fixed
-
-        # Track editor state
-        self.WorkingsDirty = False
-        self.WorkingsCurrentItem = None
-        self.WorkingsRightPanel = rightPanel      
-        self.WorkingsSuppressDirty = False
-
-        # Helpers ---------------------------------------------------------------
-
-        def TimetablePath():
-            # Reuse your memory-backed timetable file logic
-            return _TimetableFilePath()
-      
-        
-        def ValidateWorkingScriptReasons(path):
-            # Return a list of specific validation failures for this script.
-            # If list is empty, the script is valid.
-            reasons = []
-
+        # Workings tab UI is provided by a shared module so TASSetup and TASWiz use identical logic.
+        mod = None
+        try:
+            import imp
+            pth = ProfileJythonFilePath("TASWorkingsUi.py")
+            if pth and os.path.isfile(pth):
+                mod = imp.load_source("TASWorkingsUi_i", pth)
+        except Exception as ex:
+            LogWarn("Could not load shared Workings UI: " + str(ex), alsoDialog=False)
+            mod = None
+        if mod is None or not hasattr(mod, "BuildWorkingsPanel"):
+            p = MakePaperPanel()
             try:
-                if not (path and os.path.isfile(path)):
-                    # Missing script is handled as red elsewhere; here we treat it invalid with a reason.
-                    reasons.append("Script file not found.")
-                    return reasons
-                with open(path, "r") as f:
-                    raw = f.read()
-                lines = raw.replace("\r\n", "\n").replace("\r", "\n").split("\n")
-            except Exception as ex:
-                reasons.append("Error reading script: " + str(ex))
-                return reasons
-
-            def isIgnored(line):
-                s = (line or "").strip()
-                return (s == "" or s.startswith("#") or s.startswith("import ") or s.startswith("from "))
-
-            # Index important lines (trimmed) - flexible header import
-            importHeaderIdx = None  # any single "import ..." line whose comma list contains jmri and os
-            importFileUtil = None
-            scriptsPathLine = None
-            execStartTrainLine = None
-            execTrainFinderLine = None
-
-            for idx, ln in enumerate(lines):
-                s = ln.strip()
-
-                # Flexible detection: "import jmri, os, random" (order-insensitive, extra tokens allowed)
-                if importHeaderIdx is None and s.startswith("import "):
-                    listStr = s[7:].strip()
-                    tokens = [t.strip() for t in listStr.split(",") if t.strip() != ""]
-                    baseNames = []
-                    for t in tokens:
-                        # Tolerate "jmri as x" (take the first word)
-                        parts = t.split()
-                        base = parts[0].strip().lower() if parts else ""
-                        baseNames.append(base)
-                    if ("jmri" in baseNames) and ("os" in baseNames):
-                        importHeaderIdx = idx
-
-                if importFileUtil is None and s == "from jmri.util import FileUtil":
-                    importFileUtil = idx
-                if scriptsPathLine is None and s == "scriptsPath = jmri.util.FileUtil.getScriptsPath()":
-                    scriptsPathLine = idx
-                if execStartTrainLine is None and s == "execfile(os.path.join(scriptsPath, 'startTrain.py'), globals())":
-                    execStartTrainLine = idx
-                if execTrainFinderLine is None and s == "execfile(os.path.join(scriptsPath, 'trainFinder.py'), globals())":
-                    execTrainFinderLine = idx
-
-            # First non-ignored line (real code)
-            firstReal = None
-            for idx, ln in enumerate(lines):
-                if not isIgnored(ln):
-                    firstReal = idx
-                    break
-
-            # Header rules
-            if importHeaderIdx is None:
-                reasons.append("Missing header import list containing 'jmri' and 'os' (e.g., 'import jmri, os')")
-            if importFileUtil is None:
-                reasons.append("Missing header line: from jmri.util import FileUtil")
-
-            if firstReal is not None:
-                if importHeaderIdx is not None and not (importHeaderIdx < firstReal):
-                    reasons.append("Header imports must appear before any real code (line with both 'jmri' and 'os')")
-                if importFileUtil is not None and not (importFileUtil < firstReal):
-                    reasons.append("Header imports must appear before any real code: 'from jmri.util import FileUtil'")
-
-            # Loader lines presence
-            if scriptsPathLine is None:
-                reasons.append("Missing loader line: scriptsPath = jmri.util.FileUtil.getScriptsPath()")
-            if execStartTrainLine is None:
-                reasons.append("Missing loader line: execfile(os.path.join(scriptsPath, 'startTrain.py'), globals())")
-
-            # scriptsPath must be after imports (when imports present)         
-            if scriptsPathLine is not None:
-                if importHeaderIdx is not None and scriptsPathLine < importHeaderIdx:
-                    reasons.append("scriptsPath must appear after the header import line containing 'jmri' and 'os'")
-                if importFileUtil is not None and scriptsPathLine < importFileUtil:
-                    reasons.append("scriptsPath must appear after the header imports: 'from jmri.util import FileUtil'")
-
-            # trainFinder call must have a prior loader line
-            firstTfCall = None
-            for idx, ln in enumerate(lines):
-                s = ln.strip()
-                if s.startswith("#"):
-                    continue
-                if "trainFinder(" in s:
-                    firstTfCall = idx
-                    break
-            if firstTfCall is not None:
-                if execTrainFinderLine is None or not (execTrainFinderLine < firstTfCall):
-                    reasons.append("trainFinder( call found without prior execfile(os.path.join(scriptsPath, 'trainFinder.py'), globals())")
-
-            # startTrain(...) must occur after the startTrain loader
-            startTrainCallAfter = False
-            if execStartTrainLine is not None:
-                for idx, ln in enumerate(lines):
-                    s = ln.strip()
-                    if s.startswith("#"):
-                        continue
-                    if "startTrain(" in s and idx > execStartTrainLine:
-                        startTrainCallAfter = True
-                        break
-            if execStartTrainLine is not None and not startTrainCallAfter:
-                reasons.append("No startTrain( call after execfile(os.path.join(scriptsPath, 'startTrain.py'), globals())")
-
-            return reasons
-
-        def ValidateWorkingScript(path):
-            return len(ValidateWorkingScriptReasons(path)) == 0
-
-            def isIgnored(line):
-                s = (line or "").strip()
-                return (s == "" or s.startswith("#") or s.startswith("import ") or s.startswith("from "))
-
-            # Indices of important lines (exact matches, trimmed)
-            importJmriOs = None
-            importFileUtil = None
-            scriptsPathLine = None
-            execStartTrainLine = None
-            execTrainFinderLine = None
-
-            for idx, ln in enumerate(lines):
-                s = ln.strip()
-                if importJmriOs is None and s == "import jmri, os":
-                    importJmriOs = idx
-                if importFileUtil is None and s == "from jmri.util import FileUtil":
-                    importFileUtil = idx
-                if scriptsPathLine is None and s == "scriptsPath = jmri.util.FileUtil.getScriptsPath()":
-                    scriptsPathLine = idx
-                if execStartTrainLine is None and s == "execfile(os.path.join(scriptsPath, 'startTrain.py'), globals())":
-                    execStartTrainLine = idx
-                if execTrainFinderLine is None and s == "execfile(os.path.join(scriptsPath, 'trainFinder.py'), globals())":
-                    execTrainFinderLine = idx
-
-            # First non-ignored line (must come after the two import lines)
-            firstReal = None
-            for idx, ln in enumerate(lines):
-                if not isIgnored(ln):
-                    firstReal = idx
-                    break
-
-            # Rule 1: two import lines must appear before any real code
-            if firstReal is None:
-                # No real code at all: still require the import lines to exist
-                if importJmriOs is None or importFileUtil is None:
-                    return False
-            else:
-                if importJmriOs is None or importFileUtil is None:
-                    return False
-                if not (importJmriOs < firstReal and importFileUtil < firstReal):
-                    return False
-
-            # Rule 2: scriptsPath line and exec startTrain.py line must exist (anywhere after imports)
-            if scriptsPathLine is None or execStartTrainLine is None:
-                return False
-            if importJmriOs is not None and scriptsPathLine < importJmriOs:
-                return False
-            if importFileUtil is not None and scriptsPathLine < importFileUtil:
-                return False
-
-            # Rule 3: If there is a trainFinder( call (in a non-comment line), there must be a prior execfile(... 'trainFinder.py' ...)
-            firstTfCall = None
-            for idx, ln in enumerate(lines):
-                s = ln.strip()
-                if s.startswith("#"):
-                    continue
-                if "trainFinder(" in s:
-                    firstTfCall = idx
-                    break
-            if firstTfCall is not None:
-                if execTrainFinderLine is None or not (execTrainFinderLine < firstTfCall):
-                    return False
-
-            # Rule 4: There must be a call to startTrain(...) after the exec startTrain loader line (non-comment line)
-            startTrainCallAfter = False
-            for idx, ln in enumerate(lines):
-                s = ln.strip()
-                if s.startswith("#"):
-                    continue
-                if "startTrain(" in s and idx > execStartTrainLine:
-                    startTrainCallAfter = True
-                    break
-            if not startTrainCallAfter:
-                return False
-
-            return True
-        
-        
-        def ExtractWorkings():
-            items = []
-            path = TimetablePath()
-            if path is None or not os.path.isfile(path):
-                return items
-            try:
-                scriptsPath = jmri.util.FileUtil.getScriptsPath()
-                # Read the timetable once
-                with open(path, "r") as f:
-                    reader = csv.DictReader(f, delimiter="\t")
-                    header = reader.fieldnames or []
-                    hasTrigger = ("Trigger" in header)
-                    hasArr = ("Arr" in header)
-                    hasDep = ("Dep" in header)
-                    rows = list(reader)
-
-                # Build formation map: destination RN (normalized) -> forming RN (original case or TAS<row>)
-                formedBy = {}
-                for idx, r in enumerate(rows, start=2):
-                    rnCell = (r.get("Reporting number", "") or "").strip()
-                    formingRN = rnCell if rnCell != "" else _MakeDefaultRN(idx)
-                    formsCell = (r.get("Forms", "") or "").strip()
-                    if formsCell != "":
-                        formedBy[_NormRN(formsCell)] = formingRN
-
-                # Build the workings list, attaching FormsNext where applicable
-                for rowIndex, row in enumerate(rows, start=2):
-                    direction = None 
-                    triggerPresent = hasTrigger and (row.get("Trigger", "") or "").strip() != ""
-                    arrPresent = hasArr and (row.get("Arr", "") or "").strip() != ""
-                    depPresent = hasDep and (row.get("Dep", "") or "").strip() != ""
-
-                    # If trigger and dep present but no arr > treat as trigger-only
-                    if triggerPresent:
-                        direction = "Trigger"
-                    elif arrPresent:
-                        direction = "Arr"
-                    elif depPresent:
-                        direction = "Dep"
-                    else:
-                        # No time in Trigger/Arr/Dep -> cannot determine a script directory; skip
-                        continue
-
-                    rnCell = (row.get("Reporting number", "") or "").strip()
-                    rn = rnCell if rnCell != "" else _MakeDefaultRN(rowIndex)
-                    scriptPath = os.path.join(scriptsPath, "workings", direction, rn + ".py")
-                    hasScript = os.path.isfile(scriptPath)
-                    valid = ValidateWorkingScript(scriptPath) if hasScript else False
-                    
-                    # Determine time based on direction
-                    timeText = ""
-                    if direction == "Dep":
-                        timeText = (row.get("Dep", "") or "").strip()
-                    elif direction == "Arr":
-                        timeText = (row.get("Arr", "") or "").strip()
-                    elif direction == "Trigger":
-                        timeText = (row.get("Trigger", "") or "").strip()
-
-                    it = self.WorkingItem(rn, direction, rowIndex, scriptPath, hasScript, valid, timeText)
-
-                    # If any timetable row says "Forms <this RN>", mark the forming RN
-                    try:
-                        normRN = _NormRN(rn)
-                        if normRN in formedBy:
-                            it.FormsNext = formedBy[normRN]
-                    except Exception:
-                        pass
-
-                    items.append(it)
-
-                return items
-            except Exception as ex:
-                LogWarn("Workings load failed: " + str(ex), alsoDialog=True)
-                return []
-
-        def RefreshLeftList():
-            # Clear and repopulate
-            leftModel.removeAllElements()
-            for it in ExtractWorkings():
-                leftModel.addElement(it)                   
-            try:
-                scriptsPath = jmri.util.FileUtil.getScriptsPath()
-                timetableRNs = set([_NormRN(it.RN) for it in ExtractWorkings()])
-                for direction in ["Trigger", "Arr", "Dep"]:
-                    dirPath = os.path.join(scriptsPath, "workings", direction)
-                    if not os.path.isdir(dirPath):
-                        continue
-                    for fname in os.listdir(dirPath):
-                        if not fname.lower().endswith(".py"):
-                            continue
-                        rn = fname[:-3]  # strip .py
-                        if _NormRN(rn) in timetableRNs:
-                            continue
-                        scriptPath = os.path.join(dirPath, fname)
-                        reasons = ValidateWorkingScriptReasons(scriptPath)
-                        if len(reasons) < 6:  # passes at least one check                          
-                            valid = ValidateWorkingScript(scriptPath)
-                            extraItem = self.WorkingItem(rn, direction, 0, scriptPath, True, valid)
-                            extraItem.IsExtra = True
-                            leftModel.addElement(extraItem)
-
-            except Exception as ex:
-                LogWarn("Extra script scan failed: " + str(ex), alsoDialog=False)
-            
-        # --- Simple text editor (AI could not cope with trying to make a proper Python editor with syntax highlighting)    
-        class PyCodeEditor(JTextPane):
-            def __init__(self):
-                JTextPane.__init__(self)
-                # Apply theme font only (no syntax styling)
-                try:
-                    ApplyTheme(self)
-                    self.setFont(Font(THEME_FONT_FAMILY, Font.PLAIN, 13))
-                except:
-                    pass
-                # Plain UI background (match general Swing UI, not the textured paper theme)
-                try:
-                    from javax.swing import UIManager
-                    bg = UIManager.getColor("TextArea.background")
-                    if bg is not None:
-                        self.setBackground(bg)
-                    else:
-                        self.setBackground(Color(240, 240, 240))
-                except:
-                    self.setBackground(Color(240, 240, 240))
-                self.setCaretColor(Color(40, 40, 40))
-                self.setOpaque(True)
-           
-        
-        def BuildEditorPane(item):
-            # -- Create the editor and wrap in its own scroll pane --
-            editor = PyCodeEditor()
-            txtScroll = JScrollPane(editor)
-            txtScroll.setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED)
-            txtScroll.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_AS_NEEDED)
-            # Match the general UI background (not the paper theme)
-            try:
-                from javax.swing import UIManager
-                bg = UIManager.getColor("TextArea.background")
-                if bg is not None:
-                    txtScroll.getViewport().setBackground(bg)
+                p.setLayout(GridBagLayout())
             except:
                 pass
-
-            # Buttons
-            btnSave = JButton("Save")
-            btnRevert = JButton("Revert")
-            btnDelete = JButton("Delete")
-            
-            # Dynamic explanation: appears only when the current item is invalid (orange)
-            explain = MakeWrappedLabel("", widthPx=520, lineHeight=1.20, bold=False)
-            explain.setVisible(False)
-           
-            def UpdateExplain():
-                # Ghost workings: explain why they're grey even if valid
-                if getattr(item, "IsExtra", False):
-                    explain.setText(
-                        "<html>This script is not linked to any entry in the current timetable.<br/>"
-                        "It may belong to a different timetable or be kept for future use.</html>"
-                    )
-                    explain.setVisible(True)
-                    return
-                # Otherwise, show invalid reasons if any
-                reasons = ValidateWorkingScriptReasons(item.ScriptPath)
-                if len(reasons) > 0:
-                    html = "<html>" + "<br/>".join(["* " + r for r in reasons]) + "</html>"
-                    explain.setText(html)
-                    explain.setVisible(True)
-                else:
-                    explain.setText("")
-                    explain.setVisible(False)
-
-            # -- Load the file (normalize line endings), without diagnostics --
-            def LoadFromDisk():
-                try:
-                    with open(item.ScriptPath, "r") as f:
-                        raw = f.read()
-                    norm = raw.replace("\r\n", "\n").replace("\r", "\n")
-                    # Suppress "dirty" while setting text programmatically
-                    self.WorkingsSuppressDirty = True
-                    editor.setText(norm)
-                    editor.setCaretPosition(0)  # Ensure scroll starts at top
-                    def _Post():
-                        self.WorkingsSuppressDirty = False
-                        self.WorkingsDirty = False                     
-                        item.ValidScript = ValidateWorkingScript(item.ScriptPath)  # sync validity with what's on disk
-                        leftList.repaint()
-                        UpdateExplain()
-                    SwingUtilities.invokeLater(RunnableAdapter(_Post))
-                except Exception as ex:
-                    LogWarn("Failed to load working script: " + str(ex), alsoDialog=True)
-
-            # -- Save handler --           
-            def DoSave(e=None):
-                try:
-                    parentDir = os.path.dirname(item.ScriptPath)
-                    if not os.path.isdir(parentDir):
-                        os.makedirs(parentDir)
-                    with open(item.ScriptPath, "w") as f:
-                        f.write(editor.getText())
-                    self.WorkingsDirty = False
-                    item.HasScript = True
-                    item.ValidScript = ValidateWorkingScript(item.ScriptPath)
-                    UpdateExplain()
-                    leftList.repaint()
-                    # No modal dialog on save-console log only
-                    LogInfo("Saved " + item.ScriptPath, alsoDialog=False, title="Saved")
-                except Exception as ex:
-                    # Keep the error dialog for failures
-                    LogError("Save failed: " + str(ex), ex=ex, alsoDialog=True)
-
-            # -- Revert handler --
-            def DoRevert(e=None):
-                if self.WorkingsDirty:
-                    choice = JOptionPane.showConfirmDialog(
-                        self.WorkingsRightPanel,
-                        "Discard unsaved changes and reload from file?",
-                        "Confirm revert",
-                        JOptionPane.OK_CANCEL_OPTION,
-                        JOptionPane.WARNING_MESSAGE
-                    )
-                    if choice != JOptionPane.OK_OPTION:
-                        return
-                LoadFromDisk()
-
-            # -- Delete handler (with confirmation) --     
-            def DoDelete(e=None):
-                choice = JOptionPane.showConfirmDialog(
-                    self.WorkingsRightPanel,
-                    "Delete this working script file?\nThis action cannot be undone.",
-                    "Confirm delete",
-                    JOptionPane.OK_CANCEL_OPTION,
-                    JOptionPane.WARNING_MESSAGE
-                )
-                if choice != JOptionPane.OK_OPTION:
-                    return
-                try:
-                    if os.path.isfile(item.ScriptPath):
-                        os.remove(item.ScriptPath)
-                    # Update state
-                    self.WorkingsDirty = False
-                    item.HasScript = False
-                    item.ValidScript = False
-                    # If this is a ghost working, remove it from the list model
-                    if getattr(item, "IsExtra", False):
-                        leftModel.removeElement(item)
-                    else:
-                        # For timetable-linked items, switch to action pane
-                        BuildActionPane(item)
-                    leftList.repaint()
-                    LogInfo("Deleted " + item.ScriptPath, alsoDialog=False, title="Deleted")
-                except Exception as ex:
-                    LogError("Delete failed: " + str(ex), ex=ex, alsoDialog=True)
-
-            # -- Dirty only for user edits (style changes don't mark dirty) --
-            class DirtyHook(DocumentListener):
-                def insertUpdate(innerSelf, e):
-                    if getattr(self, "WorkingsSuppressDirty", False): return
-                    self.WorkingsDirty = True
-                def removeUpdate(innerSelf, e):
-                    if getattr(self, "WorkingsSuppressDirty", False): return
-                    self.WorkingsDirty = True
-                def changedUpdate(innerSelf, e):
-                    # No syntax styling; but if the LAF sets attributes, ignore them
-                    return
-            editor.getDocument().addDocumentListener(DirtyHook())
-         
-            # -- Layout on the right panel --
-            rpG = GridBagConstraints()
-            rpG.insets = Insets(6, 6, 6, 6)
-            rpG.gridx = 0
-
-            self.WorkingsRightPanel.removeAll()
-
-            # Row 0: dynamic explanation (visible only when invalid)
-            rpG.gridy = 0
-            rpG.fill = GridBagConstraints.HORIZONTAL
-            rpG.weightx = 1.0
-            rpG.weighty = 0.0
-            self.WorkingsRightPanel.add(explain, rpG)
-
-            # Row 1: editor scroll pane
-            rpG.gridy = 1
-            rpG.fill = GridBagConstraints.BOTH
-            rpG.weightx = 1.0
-            rpG.weighty = 1.0
-            self.WorkingsRightPanel.add(txtScroll, rpG)
-
-            # Row 2: buttons
-            rpG.gridy = 2
-            rpG.fill = GridBagConstraints.NONE
-            rpG.weightx = 0.0
-            rpG.weighty = 0.0     
-            btnRow = Box.createHorizontalBox()
-            btnRow.add(btnSave)
-            btnRow.add(Box.createHorizontalStrut(8))
-            btnRow.add(btnRevert)
-            btnRow.add(Box.createHorizontalStrut(8))
-            btnRow.add(btnDelete)
-            self.WorkingsRightPanel.add(btnRow, rpG)
-
-            # Wire the buttons
-            btnSave.addActionListener(lambda e: DoSave())
-            btnRevert.addActionListener(lambda e: DoRevert())
-            btnDelete.addActionListener(lambda e: DoDelete())
-
-            self.WorkingsRightPanel.revalidate()
-            self.WorkingsRightPanel.repaint()
-
-            # Initial load after UI is in place (then update explanation)
-            LoadFromDisk()
-            UpdateExplain()
-
-        def BuildActionPane(item):
-            # No script exists: show "New empty script" and "Create working..."
-            btnNew = JButton("New empty script")
-            btnCreate = JButton("Create working...")
-
-            def DoNew(e=None):
-                try:
-                    parentDir = os.path.dirname(item.ScriptPath)
-                    if not os.path.isdir(parentDir):
-                        os.makedirs(parentDir)
-                    # Create blank file with the basic elements      
-                    with open(item.ScriptPath, "w") as f:
-                        f.write(
-                            "# Working script for reporting number %s (%s)\n"
-                            "import jmri, os\n"
-                            "from jmri.util import FileUtil\n"
-                            "\n"
-                            "# Get the scripts path and load the scripts\n"
-                            "scriptsPath = jmri.util.FileUtil.getScriptsPath()\n"
-                            "execfile(os.path.join(scriptsPath, 'trainFinder.py'), globals())\n"
-                            "execfile(os.path.join(scriptsPath, 'startTrain.py'), globals())\n"
-                            "\n"
-                            "# TODO: add your logic here, e.g. startTrain(traininfoName, rosterEntry, reportingNumber, direction)\n"
-                            % (item.RN, item.Direction)
-                        )                  
-                    item.HasScript = True
-                    item.ValidScript = ValidateWorkingScript(item.ScriptPath)  # run validator now
-                    BuildEditorPane(item)
-                    leftList.repaint()
-
-                except Exception as ex:
-                    LogError("Failed to create blank working script: " + str(ex), ex=ex, alsoDialog=True)
-
-            def DoCreate(e=None):
-                try:
-                    # Look in profile's Jython folder for WorkingCreator.py
-                    wcPath = ProfileJythonFilePath("WorkingCreator.py")
-                    if os.path.isfile(wcPath):
-                        try:
-                            import imp
-                            mod = imp.load_source("WorkingCreator", wcPath)
-                            # Pass RN, Direction, RowIndex, and formsNext (if available)
-                            # formsNext should come from the timetable row; if not yet extracted, use None
-                            mod.ShowWorkingCreator(item.RN, item.Direction, item.RowIndex, item.FormsNext if hasattr(item, "FormsNext") else None)
-                            
-                            # Refresh the workings list so newly saved script appears immediately
-                            RefreshLeftList()
-                            # Try to reselect the same RN/direction row and swap to editor if script now exists
-                            try:
-                                count = leftModel.getSize()
-                                targetIndex = -1
-                                for i in range(count):
-                                    it2 = leftModel.getElementAt(i)
-                                    if it2.RN == item.RN and it2.Direction == item.Direction and int(it2.RowIndex) == int(item.RowIndex):
-                                        targetIndex = i
-                                        break
-                                if targetIndex >= 0:
-                                    leftList.setSelectedIndex(targetIndex)
-                                    self.WorkingsCurrentItem = leftModel.getElementAt(targetIndex)
-                                    if self.WorkingsCurrentItem.HasScript:
-                                        BuildEditorPane(self.WorkingsCurrentItem)
-                                    else:
-                                        BuildActionPane(self.WorkingsCurrentItem)
-                            except Exception:
-                                pass
-
-                        except Exception as exInner:
-                            LogError("WorkingCreator.py error: " + str(exInner), ex=exInner, alsoDialog=True)
-                    else:
-                        JOptionPane.showMessageDialog(
-                            panel,
-                            "WorkingCreator.py not found",
-                            "Error",
-                            JOptionPane.ERROR_MESSAGE
-                        )
-                except Exception as ex:
-                    LogError("Create working failed: " + str(ex), ex=ex, alsoDialog=True)
-
-            btnNew.addActionListener(lambda e: DoNew())
-            btnCreate.addActionListener(lambda e: DoCreate())
-
-            # Layout
-            rpG = GridBagConstraints()
-            rpG.insets = Insets(6,6,6,6)
-            rpG.fill = GridBagConstraints.NONE
-            rpG.weightx = 0.0
-            rpG.weighty = 0.0
-            rpG.gridx = 0
-            rpG.gridy = 0
-
-            self.WorkingsRightPanel.removeAll()
-            row = Box.createVerticalBox()
-            row.add(btnNew)
-            row.add(Box.createVerticalStrut(8))
-            row.add(btnCreate)
-            self.WorkingsRightPanel.add(row, rpG)
-            self.WorkingsRightPanel.revalidate()
-            self.WorkingsRightPanel.repaint()
-
-        # Selection change: confirm if dirty, then swap right pane
-        class LeftSelHook(ListSelectionListener):
-            def valueChanged(innerSelf, e):
-                if e.getValueIsAdjusting():
-                    return
-                newItem = leftList.getSelectedValue()
-                if newItem is None:
-                    return
-                if self.WorkingsDirty and self.WorkingsCurrentItem is not None:
-                    choice = JOptionPane.showConfirmDialog(
-                        panel,
-                        "You have unsaved changes. Discard and switch to another working?",
-                        "Unsaved changes",
-                        JOptionPane.OK_CANCEL_OPTION,
-                        JOptionPane.WARNING_MESSAGE
-                    )
-                    if choice != JOptionPane.OK_OPTION:
-                        # Restore previous selection
-                        try:
-                            idx = leftModel.indexOf(self.WorkingsCurrentItem)
-                            if idx >= 0: leftList.setSelectedIndex(idx)
-                        except Exception:
-                            pass
-                        return
-                    # Discard dirty flag on confirmed switch
-                    self.WorkingsDirty = False
-                self.WorkingsCurrentItem = newItem
-                if newItem.HasScript:
-                    BuildEditorPane(newItem)
-                else:
-                    BuildActionPane(newItem)
-        leftList.addListSelectionListener(LeftSelHook())     
-        
-        # Header spanning both columns; do not let it consume vertical space
-        hdr = MakeHeading("Workings (from current timetable)")
-        gbc.gridx = 0
-        gbc.gridy = 0
-        gbc.gridwidth = 2
-        gbc.fill = GridBagConstraints.HORIZONTAL
-        gbc.weightx = 1.0
-        gbc.weighty = 0.0
-        panel.add(hdr, gbc)
-        
-        # Row with left list and right editor; this row gets the vertical weight
-        gbc.gridy += 1
-        gbc.gridwidth = 1
-        gbc.fill = GridBagConstraints.BOTH
-        gbc.weighty = 1.0
-
-        # Left column: make it lighter horizontally
-        gbc.weightx = 0.40
-        gbc.gridx = 0
-        panel.add(leftScroll, gbc)
-
-        # Right column: give it more horizontal room
-        gbc.weightx = 0.60
-        gbc.gridx = 1
-        panel.add(rightPanel, gbc)
-
-        # Populate left list
-        RefreshLeftList()
-        return panel
-    
+            gbc = GridBagConstraints(); gbc.insets = Insets(10,10,10,10); gbc.gridx=0; gbc.gridy=0
+            try:
+                p.add(MakeHeading("Workings"), gbc)
+            except:
+                pass
+            gbc.gridy = 1
+            try:
+                p.add(MakeWrappedLabel("Shared Workings UI module not found: TASWorkingsUi.py", widthPx=560, lineHeight=1.25, bold=False), gbc)
+            except:
+                pass
+            return p
+        def _GetTT():
+            return _TimetableFilePath()
+        try:
+            panel, controller = mod.BuildWorkingsPanel(self, _GetTT, ProfileJythonFilePath, ApplyTheme, MakePaperPanel, MakeHeading, MakeWrappedLabel, THEME_PAPER, THEME_FONT_FAMILY, THEME_TEXT_COLOR, LIST_SEL_BG, LIST_SEL_FG, LogInfo, LogWarn, LogError)
+            self.WorkingsUiController = controller
+            return panel
+        except Exception as ex:
+            LogError("Failed to build Workings UI: " + str(ex), ex=ex, alsoDialog=True)
+            return MakePaperPanel()
     def BuildTimingPointsTab(self):
         # "Timing points" tab - dual list: left = virtual TPs from timetable,
         # right = physical TPs (blocks assigned via TimingRegister).
@@ -4327,7 +3705,13 @@ class TASSetupFrame(jmri.util.JmriJFrame):
         chkDN = JCheckBox("Enable day/night cycle (requires restart)")
         chkDN.setOpaque(False)
         chkDN.setSelected(IsDayNightEnabled())
+        self.ChkDayNight = chkDN
         def OnDN(e=None):
+            try:
+                if getattr(self, "SuppressWizardSync", False):
+                    return
+            except:
+                pass
             want = chkDN.isSelected()
             ok = _EnsureScriptEnabled("DayNight.py", want)
             chkDN.setSelected(IsDayNightEnabled())
@@ -4357,6 +3741,8 @@ class TASSetupFrame(jmri.util.JmriJFrame):
         txtWarm = JTextField(8); txtWarm.setText(TBL.SafeGetOrCreateMemoryValue(IMLowThrottleAddr, "990"))
         lblCool = JLabel(" Cool (high colour temperature):")
         txtCool = JTextField(8); txtCool.setText(TBL.SafeGetOrCreateMemoryValue(IMHighThrottleAddr, "991"))
+        self.TxtWarmAddr = txtWarm
+        self.TxtCoolAddr = txtCool
         def CommitAddrWarm():
             s = txtWarm.getText().strip()
             try: n=int(float(s)); TBL.SafeSetMemoryValue(IMLowThrottleAddr, str(n))
@@ -4381,7 +3767,13 @@ class TASSetupFrame(jmri.util.JmriJFrame):
         chkWX = JCheckBox("Use weather generator (requires restart)")
         chkWX.setOpaque(False)
         chkWX.setSelected(IsWeatherEnabled())
+        self.ChkWeatherGenerator = chkWX
         def OnWX(e=None):
+            try:
+                if getattr(self, "SuppressWizardSync", False):
+                    return
+            except:
+                pass
             want = chkWX.isSelected()
             ok = _EnsureScriptEnabled("WeatherGenerator.py", want)
             chkWX.setSelected(IsWeatherEnabled())
@@ -4409,6 +3801,7 @@ class TASSetupFrame(jmri.util.JmriJFrame):
         lblClimate = JLabel("Climate preset:")
         climateNames = self.LoadClimateNames()
         cmbClimate = JComboBox(climateNames)
+        self.CmbClimate = cmbClimate
         currentClimate = TBL.SafeGetOrCreateMemoryValue(IMWxClimate, "SouthWales_EarlySep")
         cmbClimate.setSelectedItem(currentClimate if currentClimate in climateNames else "SouthWales_EarlySep")
         def ApplyClimate():
@@ -4441,6 +3834,7 @@ class TASSetupFrame(jmri.util.JmriJFrame):
         lblCloud = JLabel("Cloud cover (%):")
         txtCloud = JTextField(3)
         txtCloud.setText(str(TBL.SafeGetOrCreateMemoryValue(IMWxCloudPct, "0")))
+        self.TxtCloudPct = txtCloud
         def ApplyCloud():
             s = txtCloud.getText().strip()
             try:
@@ -4628,6 +4022,9 @@ class TASSetupFrame(jmri.util.JmriJFrame):
         rbApp = JRadioButton("Mobile app"); rbApp.setOpaque(False)
         rbNewsO = JRadioButton("Newspaper (Old)"); rbNewsO.setOpaque(False)
         rbNewsM = JRadioButton("Newspaper (Modern)"); rbNewsM.setOpaque(False)
+        self.RbWxApp = rbApp
+        self.RbWxNewsOld = rbNewsO
+        self.RbWxNewsModern = rbNewsM
         group = ButtonGroup(); group.add(rbApp); group.add(rbNewsO); group.add(rbNewsM)
         uiChoice = TBL.SafeGetOrCreateMemoryValue(IMWxUiChoice, "Newspaper").strip()
         style = TBL.SafeGetOrCreateMemoryValue(IMWxNewsStyle, "Old").strip()
@@ -4662,6 +4059,8 @@ class TASSetupFrame(jmri.util.JmriJFrame):
         ApplyTheme(lblPaper)
 
         txtPaper = JTextField(28)
+        self.TxtPaperName = txtPaper
+        self.LblPaperName = lblPaper
         # Default template uses the active profile name token
         initPaper = TBL.SafeGetOrCreateMemoryValue("WX_NEWS_PAPERNAME", "The {PROFILE} Echo")
         txtPaper.setText(initPaper)
@@ -4689,6 +4088,7 @@ class TASSetupFrame(jmri.util.JmriJFrame):
             "Example: <i>The {PROFILE} Echo</i>"
             "</html>")
         ApplyTheme(lblExplain)
+        self.LblPaperExplain = lblExplain
         root.add(lblExplain, gbc)
         
         # (8) Forecast reliability (%)
@@ -4702,6 +4102,7 @@ class TASSetupFrame(jmri.util.JmriJFrame):
         initAcc = TBL.SafeGetOrCreateMemoryValue("WX_FORECAST_ACCURACY", "80")
         txtAcc.setText(initAcc)
 
+        self.TxtForecastAccuracy = txtAcc
         def CommitAcc():
             s = txtAcc.getText().strip()
             try:
@@ -4729,8 +4130,15 @@ class TASSetupFrame(jmri.util.JmriJFrame):
         chkSpoofAds = JCheckBox("")
         chkSpoofAds.setOpaque(False)
         chkSpoofAds.setSelected(GetMemoryBool("SPOOFADSENABLED", True))
+        self.ChkSpoofAds = chkSpoofAds
+        self.LblSpoofAds = lblAds
 
         def OnSpoofAds(e=None):
+            try:
+                if getattr(self, "SuppressWizardSync", False):
+                    return
+            except:
+                pass
             SetMemoryBool("SPOOFADSENABLED", chkSpoofAds.isSelected())
 
         chkSpoofAds.addActionListener(OnSpoofAds)
@@ -4753,6 +4161,109 @@ class TASSetupFrame(jmri.util.JmriJFrame):
 
 
     # ---- Helper: read climate names from profile:jython/config/climate.csv ----
+
+    # ---------------- Wizard UI auto-refresh (for running the wizard from this window) ----------------
+    def RefreshDayNightTabFromWizardChanges(self):
+        # Update the Day/night cycle tab controls from current memories/startup state.
+        try:
+            if not hasattr(self, "ChkDayNight"):
+                return
+        except:
+            return
+        try:
+            self.SuppressWizardSync = True
+        except:
+            pass
+        try:
+            try:
+                self.ChkDayNight.setSelected(bool(IsDayNightEnabled()))
+            except:
+                pass
+            try:
+                if hasattr(self, "ChkWeatherGenerator"):
+                    self.ChkWeatherGenerator.setSelected(bool(IsWeatherEnabled()))
+            except:
+                pass
+            try:
+                if hasattr(self, "TxtWarmAddr"):
+                    self.TxtWarmAddr.setText(str(TBL.SafeGetOrCreateMemoryValue("LOWCTTHROTTLEADDR", "990")).strip())
+                if hasattr(self, "TxtCoolAddr"):
+                    self.TxtCoolAddr.setText(str(TBL.SafeGetOrCreateMemoryValue("HIGHCTTHROTTLEADDR", "991")).strip())
+            except:
+                pass
+            try:
+                if hasattr(self, "TxtForecastAccuracy"):
+                    self.TxtForecastAccuracy.setText(str(TBL.SafeGetOrCreateMemoryValue("WX_FORECAST_ACCURACY", "80")).strip())
+            except:
+                pass
+            try:
+                uiChoice = str(TBL.SafeGetOrCreateMemoryValue("WX_UI", "Newspaper")).strip()
+            except:
+                uiChoice = "Newspaper"
+            try:
+                style = str(TBL.SafeGetOrCreateMemoryValue("WX_NEWS_STYLE", "Old")).strip()
+            except:
+                style = "Old"
+            try:
+                if hasattr(self, "RbWxApp") and hasattr(self, "RbWxNewsOld") and hasattr(self, "RbWxNewsModern"):
+                    if uiChoice.lower() == "app":
+                        self.RbWxApp.setSelected(True)
+                    else:
+                        if style.lower() == "modern":
+                            self.RbWxNewsModern.setSelected(True)
+                        else:
+                            self.RbWxNewsOld.setSelected(True)
+            except:
+                pass
+            try:
+                useNewspaper = True
+                try:
+                    useNewspaper = hasattr(self, "RbWxApp") and (not self.RbWxApp.isSelected())
+                except:
+                    useNewspaper = True
+                if hasattr(self, "TxtPaperName"):
+                    self.TxtPaperName.setEnabled(bool(useNewspaper))
+                if hasattr(self, "LblPaperName"):
+                    self.LblPaperName.setEnabled(bool(useNewspaper))
+                if hasattr(self, "LblPaperExplain"):
+                    self.LblPaperExplain.setEnabled(bool(useNewspaper))
+            except:
+                pass
+            try:
+                if hasattr(self, "ChkSpoofAds") and hasattr(self, "RbWxApp"):
+                    self.ChkSpoofAds.setEnabled(bool(self.RbWxApp.isSelected()))
+            except:
+                pass
+        finally:
+            try:
+                self.SuppressWizardSync = False
+            except:
+                pass
+
+    def RefreshFromWizardChanges(self):
+        try:
+            self.RefreshDayNightTabFromWizardChanges()
+        except:
+            pass
+        try:
+            if hasattr(self, "UpdateRunAutoControls"):
+                self.UpdateRunAutoControls()
+        except:
+            pass
+
+    def StartWizardSyncTimer(self):
+        try:
+            if getattr(self, "WizardSyncTimer", None) is not None:
+                return
+        except:
+            pass
+        try:
+            self.WizardSyncTimer = Timer(750, lambda e: self.RefreshFromWizardChanges())
+            self.WizardSyncTimer.setRepeats(True)
+            self.WizardSyncTimer.start()
+        except:
+            pass
+
     def LoadClimateNames(self):
         names = ["SouthWales_EarlySep"]
         try:
@@ -4819,7 +4330,7 @@ class TASSetupFrame(jmri.util.JmriJFrame):
         def dispose(self):
             # First, guard against unsaved edits in the Workings tab
             try:
-                if getattr(self, "WorkingsDirty", False):
+                if (hasattr(self, "WorkingsUiController") and self.WorkingsUiController is not None and self.WorkingsUiController.HasUnsavedChanges()):
                     choice = JOptionPane.showConfirmDialog(
                         self,
                         "You have unsaved changes in a working script.\nDiscard changes and close the setup window?",

@@ -385,13 +385,28 @@ class CoverPanel(JPanel):
         except:
             self.InkColor = Color(0, 0, 0)
         
+        # Cover ink colour (main menu text/lines/button outlines) from TASCOVERINKCOLOUR.
+        # This allows the cover (main menu) ink to differ from the general interface ink.
+        # If not set or invalid, fall back to TASINKCOLOUR.
+        self.CoverInkColor = self.InkColor
+        memRgbCoverInk = TBL.SafeGetOrCreateMemoryValue("TASCOVERINKCOLOUR", "")
+        try:
+            if memRgbCoverInk is not None and len(str(memRgbCoverInk).strip()) > 0:
+                parts = [p.strip() for p in str(memRgbCoverInk).split(",")]
+                if len(parts) == 3:
+                    r = max(0, min(255, int(float(parts[0]))))
+                    g = max(0, min(255, int(float(parts[1]))))
+                    b = max(0, min(255, int(float(parts[2]))))
+                    self.CoverInkColor = Color(r, g, b)
+        except:
+            self.CoverInkColor = self.InkColor
         # Helper: if ink changes at runtime, apply to all buttons
         def _ApplyInkToButtons():
             try:
                 for b in (self.BtnShowTimetable, self.BtnTimeWarp, self.BtnPublic, self.BtnSignallers,
                           self.BtnWeather, self.BtnSetup, self.BtnHelp, self.BtnAbout):
-                    b.setForeground(self.InkColor)
-                    b.setBorder(BorderFactory.createLineBorder(self.InkColor, 1))
+                    b.setForeground(getattr(self, 'CoverInkColor', self.InkColor))
+                    b.setBorder(BorderFactory.createLineBorder(getattr(self, 'CoverInkColor', self.InkColor), 1))
             except:
                 pass
 
@@ -446,8 +461,8 @@ class CoverPanel(JPanel):
         btn.setContentAreaFilled(False)
         btn.setOpaque(False)
         # Use ink colour for the button text AND outline
-        btn.setForeground(self.InkColor)
-        btn.setBorder(BorderFactory.createLineBorder(self.InkColor, 1))
+        btn.setForeground(getattr(self, 'CoverInkColor', self.InkColor))
+        btn.setBorder(BorderFactory.createLineBorder(getattr(self, 'CoverInkColor', self.InkColor), 1))
         return btn
 
     def ShowStub(self, name):
@@ -553,7 +568,7 @@ class CoverPanel(JPanel):
         innerPad = 14
         g.setColor(self.InnerBgColor)
         g.fillRect(margin, margin, w - 2 * margin, h - 2 * margin)
-        g.setColor(self.InkColor)
+        g.setColor(self.CoverInkColor)
         g.setStroke(BasicStroke(1.5))
         g.drawRect(margin, margin, w - 2 * margin, h - 2 * margin)
         g.drawRect(margin + innerPad, margin + innerPad, w - 2 * (margin + innerPad), h - 2 * (margin + innerPad))
