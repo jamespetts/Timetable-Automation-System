@@ -659,6 +659,7 @@ class TASWizardDialog(JDialog):
         self.CompanyOtherField = None
         self.CompanyOtherLabel = None
         self.RegionCombo = None 
+        self.RegionLabel = None
         self.RegionOtherField = None 
         self.RegionOtherLabel = None 
         self.SectionField = None 
@@ -1094,7 +1095,35 @@ class TASWizardDialog(JDialog):
         elif nm == 'Southern Railway':
             regions = ['Western Division', 'Central Division', 'Eastern Division']
         elif nm in ['London Transport', 'Transport for London']:
-            regions = ['Bakerloo line', 'Central line', 'Circle line', 'District line', 'Hammersmith & City line', 'Jubilee line', 'Metropolitan line', 'Northern line', 'Piccadilly line', 'Victoria line', 'Waterloo & City line']
+            y = None
+            try:
+                y = int(self.LayoutYear) if self.LayoutYear is not None else None
+            except:
+                y = None
+            if y is None:
+                y = 2000
+            regions = []
+            # Sub-surface lines
+            regions.append('District line')
+            regions.append('Metropolitan line')
+            if y < 1936:
+                regions.append('Inner Circle')
+            else:
+                regions.append('Circle line')
+            # The Hammersmith & City line was redesignated as a separate line on 30 July 1990.
+            if y >= 1990:
+                regions.append('Hammersmith & City line')
+            # Deep-level lines
+            regions.append('Bakerloo line')
+            regions.append('Central line')
+            regions.append('Northern line')
+            regions.append('Piccadilly line')
+            if y >= 1968:
+                regions.append('Victoria line')
+            if y >= 1979:
+                regions.append('Jubilee line')
+            if y >= 1994:
+                regions.append('Waterloo & City line')
         regions.append('Other...')
         return ['Select...'] + regions
 
@@ -1239,6 +1268,14 @@ class TASWizardDialog(JDialog):
         s = '' if sel is None else str(sel)
         isOther = (s == 'Other...')
         isPrompt = (s == 'Select...')
+        try:
+            if self.RegionLabel is not None:
+                if s in ['London Transport', 'Transport for London']:
+                    self.RegionLabel.setText('Line:')
+                else:
+                    self.RegionLabel.setText('Region/division:')
+        except:
+            pass
         try:
             if self.CompanyOtherField is not None:
                 self.CompanyOtherField.setEnabled(isOther)
@@ -1563,10 +1600,20 @@ class TASWizardDialog(JDialog):
             timingLoadLabel = None 
             if companyLower in ['british rail', 'railtrack', 'network rail']: 
                 timingLoadLabel = 'Timing load' 
-            elif companyLower in ['london transport', 'metropolitan railway']: 
-                timingLoadLabel = 'Make Up' 
-            elif companyLower in ['underground electric railways of london', 'metropolitan district railway']: 
-                timingLoadLabel = 'No. Cars' 
+            elif companyLower in ['london transport', 'transport for london']:
+                # For London Transport/TfL, REGION is treated as the Underground line.
+                subsurface = set(['district line', 'metropolitan line', 'circle line', 'inner circle', 'hammersmith & city line'])
+                deeplevel = set(['bakerloo line', 'central line', 'jubilee line', 'northern line', 'piccadilly line', 'victoria line', 'waterloo & city line'])
+                if regionLower in subsurface:
+                    timingLoadLabel = 'Make Up'
+                elif regionLower in deeplevel:
+                    timingLoadLabel = 'No. Cars'
+                else:
+                    timingLoadLabel = 'Make Up'
+            elif companyLower in ['metropolitan railway']:
+                timingLoadLabel = 'Make Up'
+            elif companyLower in ['underground electric railways of london', 'metropolitan district railway']:
+                timingLoadLabel = 'No. Cars'
             elif companyLower == 'southern railway': 
                 timingLoadLabel = 'Electric Head Code' 
             elif companyLower == 'british railways' and regionLower == 'southern region': 
@@ -1673,6 +1720,7 @@ class TASWizardDialog(JDialog):
                         lineInk = {
                             'bakerloo line': '178,99,0',
                             'central line': '220,36,31',
+                            'inner circle': '0,0,0',
                             'circle line': '0,0,0',
                             'district line': '0,125,50',
                             'hammersmith & city line': '245,137,166',
@@ -4090,7 +4138,8 @@ class TASWizardDialog(JDialog):
         rg.gridx = 0
         rg.weightx = 0.0
         rg.fill = GridBagConstraints.NONE
-        rowR.add(JLabel('Region/division:'), rg)
+        self.RegionLabel = JLabel('Region/division:')
+        rowR.add(self.RegionLabel, rg)
         rg.gridx = 1
         rg.weightx = 1.0
         rg.fill = GridBagConstraints.HORIZONTAL
