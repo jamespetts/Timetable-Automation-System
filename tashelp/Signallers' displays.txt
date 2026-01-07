@@ -6,7 +6,7 @@
 
 The Timetable Automation System can simulate displays (other than the working timetable itself: see under "Timetable" for that) used by signallers to obtain information about the timetable or where trains are (such as the British Rail/Network Rail "TRUST" system). These are not intended to simulate the signalling interface itself (e.g. an IECC or Westcad system): that requires working directly with the JMRI Layout Editor panel and Dispatcher.
 
-The signallers' displays button can also be used to show displays intended for operators of manually operated model railway layouts to explain what train should run next in sequence.
+One of the displays, "Station working", is intended to able to be used with manually operated layouts. The current working is highlighted and it is possible to see previous and subsequent workings. The "remarks" column can be configured, when creating the timetable, to contain useful information for operators (e.g. "shunt to siding", "detach milk van", "turn off saloon lights to run ECS", etc.) or alternatively to mimic a real station working book (giving the calling pattern with times where available). See the timetable help for more details on how to configure this.
 
 To view the currently configured signallers' or operators' displays, choose "Signallers' displays" from the Timetable Automation System main menu.
 

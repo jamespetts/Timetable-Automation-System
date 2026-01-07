@@ -1,0 +1,94 @@
+***Timetable Automation System***
+
+**Disruption**
+
+*Overview*
+
+Real trains do not always run to time, so the Timetable Automation System has a means of simulating this. This is an optional feature: it is possible to run without any disruption.
+
+Disruption will be generated and reported realistically: if you have timing points defined, once a working reaches its first timing point, further reports of delays or early running will only happen at subsequent timing points. Reports of cancellation will occur immediately. 
+
+Disruption is shown in the various signallers' displays (other than the station working book) and additionally on some public information displays (although the signallers' displays normally give more detail, e.g., what timing point at which the disruption was reported). 
+
+Delays (which includes early running) and cancellations can be enabled and disabled independently from each other. These features can be enabled and disabled in the general setup tab of the setup window.
+
+Disruption needs to be configured before it can be used.
+
+*Configuration*
+
+To set up disruption, you need a file called Disruption.csv located in the same folder as your timetable. It must be a CSV file with the following headings:
+
+* Disruption group
+* Delay probability
+* Max delay
+* Early probability
+* Max early
+* Cancellation probability
+* Minutes before to check max
+* Minutes before to check min
+* Cancel if later than
+* Max recovery mins/min
+
+How to set up each column is set out below.
+
+*Disruption group*
+
+Data format: string (e.g. "Local", "Express").
+
+This defines to what disruption group that the remaining settings in the column pertain. Use this exact string in the Disruption Group column in the timetable to define the group to which individual workings belong.
+
+*Delay probability*
+
+Data format: floating point number between 0 and 1 (e.g. 0, 0.1, 0.25; that equaets to 0%, 10% and 25% respectively)
+
+This defines how likely that it is that any train in this group will be delayed at all. This is in the 0-1 format for probability, so, to convert from a percentage, divide or multiply by 100: e.g. 0.1 = 10%; 0.25 = 25%.
+
+*Max delay*
+
+Data format: integral number representing minutes (e.g. 30, 60, 120)
+
+This is the maximum amount of time in minutes by which any train in this disruption group can be delayed.
+
+*Early probability*
+
+Data format: floating point number between 0 and 1 (e.g. 0, 0.1, 0.25; that equaets to 0%, 10% and 25% respectively)
+
+This defines how likely that it is that any train in this group will run early at all. This is in the 0-1 format for probability, so, to convert from a percentage, divide or multiply by 100: e.g. 0.1 = 10%; 0.25 = 25%.
+
+*Max early*
+
+Data format: integral number representing minutes (e.g. 30, 60, 120)
+
+This is the maximum amount of time in minutes by which any train in this disruption group can run early.
+
+*Cancellation probability*
+
+Data format: floating point number between 0 and 1 (e.g. 0, 0.1, 0.25; that equaets to 0%, 10% and 25% respectively)
+
+This defines how likely that it is that any train in this group will be cancelled. This is in the 0-1 format for probability, so, to convert from a percentage, divide or multiply by 100: e.g. 0.1 = 10%; 0.25 = 25%.
+
+*Minutes before to check max*
+
+Data format: integral number representing minutes (e.g. 30, 60, 120)
+
+This is one of two numbers that defines when a train's delay or cancellation may first be reported. Set this longer for trains that have a longer journey: generally, a train is not delayed or cancelled hours before it is due to start its journey. This number defines the *earliest* time before its timetable time (Trigger, Arr or Dep, whichever is earlier) that the train in question will report a delay or cancellation. 
+
+*Minutes before to check min*
+
+Data format: integral number representing minutes (e.g. 30, 60, 120)
+
+This is one of two numbers that defines when a train's delay or cancellation may first be reported. Set this longer for trains that have a longer journey: generally, a train is not delayed or cancelled hours before it is due to start its journey. This number defines the *latest* time before its timetable time (Trigger, Arr or Dep, whichever is earlier) that the train in question will report a delay or cancellation. 
+
+*Cancel if later than*
+
+Data format: integral number representing minutes (e.g. 30, 60, 120)
+
+Often, trains running later than a certain amount are cancelled. When a train is already running late, the Timetable Automation System's disruption generator will often slowly make it get later, as sometimes happens in reality. Use this threshold to set a delay so high that the train will be cancelled rather than run late.
+
+0 or blank will mean that a delay will never turn into a cancellation for this disruption gruop. 
+
+*Max recovery mins/min*
+
+Data format: floating point number (e.g. 0.025, 0.02, 0.03)
+
+Sometimes, delayed trains can recover lost time. This can occur if they have a long pause at timing points, but can also occur between timing points. This setting defines how quickly that trains can recover between timing points. This is the number of minutes that a train can recover between timing points for every minute of their journey. The more tightly that the train is timed, the lower that this number should be. The number should generally be quite low. If you are unsure, 0.02 is a good default.

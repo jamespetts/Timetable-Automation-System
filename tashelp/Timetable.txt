@@ -41,12 +41,15 @@ Other optional columns include
 
 * Platform;
 * Timing load;
+* Disruption group;
 * Notes;
 * Origin;
 * Destination; 
-* Calling pattern; 
+* Calling pattern;
+* Via;
+* Special;
 * Company;
-* Operator notes; and
+* Remarks; and
 * Timing point columns (see below).
 
 The meaning of each of the columns is set out below.
@@ -115,11 +118,14 @@ Not yet implemented but planned is a system that will allow platform alterations
 
 *Timing load*
 
+Column format: "Timing load" OR an alternative string specified in the "Timing load label" box in the "Timetable" tab of the setup window
 Data format: string (e.g. "D350" or "150" or "EMU")
 
-This column is only used in the timetable display to replicate this information on a real timetable. This is useful if you are trying to recreate a real world timetable or someting like it.
+This column is used in the timetable display to replicate this information on a real timetable. This is useful if you are trying to recreate a real world timetable or someting like it.
 
-In reality, these were used to specify the type of train to be used on a particular service.
+In reality, these were used to specify the type of train to be used on a particular service. 
+
+"Timing load" is principally associated with British Rail, Railtrack and Network Rail. For other railway companies, such as the Southern Railway or London Underground, the timetable would often have different data in this position, such as "Electric headcode", "No. cars" or "Make up". To replicate this, these alternative labels can be used instead by changing the setting in the "Timing load label" box in the "Timetable" tab of the setup window. If you specify something other than "Timing point" here (e.g. "Make up"), that alternative text will be recognised instead of "Timing point" as a header for the column in the timetable file.
 
 *Notes*
 
@@ -141,21 +147,49 @@ Data format: string (e.g. "Ealing Broadway, Southall, Hayes & Harlington, Slough
 
 This column is used in some passenger information displays to show where the train calls. Different types of passenger information displays expect different kinds of information; in the UK, modern Network Rail displays typically show every station at which the train calls, whereas London Underground displays tend to show either nothing or "via...". 
 
+*Via*
+
+Data format: string (e.g. "Bank", "Charing Cross")
+
+This column is used for various public information displays either in place of or in addition to the calling pattern. Typically, the "via" is used on London Underground displays instead of the calling pattern, although some modern displays will also show the "via" in addition to the calling pattern.
+
+*Special*
+
+Data format: string (e.g. "The Pines Express", "Buffet service", "Restaurant car", "Charter service")
+
+This column is used on some public information displays to display additional information about a train such as catering provision or a special named train. Some public information displays (such as the Solari displays) will show special text containing certain keywords (e.g. "buffet" or "restaurant") in a different colour. This can be customised per display.
+
 *Company*
 
 Data format: string (e.g. "First Great Western", "Intercity", "Southern Railway")
 
 This column is intended for use in future passenger information displays that display the railway company (or "operator") of a particular working.
 
-* Operator notes*
+*Remarks*
 
-Data format: string (e.g. "Collect coal empties", "Non-stop", "Attach carriages for the 11.45 local", "Wait for express to pass")
+Data format: string including special data (e.g. "Collect coal empties", "Non-stop", "Wait for express to pass", {Calling pattern}, {Forms})
 
-This column is intended for use in a future display intended for the operators of a manually or semi-automatically operated model railway to explain to them the steps that they need to take for any given working.
+This column is used for the station working signallers' display. That display is intended to mimic a real station working book, but is also intended to be used for manually operated layouts to guide operators as to which move is next. The "Remarks" column in that display can show a lot of text, so much detail can be given here.
+
+To make it easier to add common sorts of information, there are a number of special fields that can be added to the "Remarks" column in the timetable that will automatically be filled in with other information in the station working display. Thse fields are as follows.
+
+{Calling pattern} - This shows the calling pattern together with (if available) the times at which the trains call at the stations if this information can be extracted from the timing points with matching names to stations in the calling pattern. 
+
+{Via} - This shows the contents of the "Via" column of the timetable in this working's row.
+
+{Forms} - This shows the reporting number of the working formed from the stock of this working as specified in the Forms column of the timetable.
+
+{Notes} - This shows the contents of the "Notes" column of the timetable in this working's row.
+
+{Special} - This shows the contents of the "Special" column of the timetable in this working's row.
+
+{\n} - This gives a line break in the "Remarks" column in the station working display.
+
+The above are case insensitive.
 
 *Timing points*
 
-Column format: "TPArr <<NAME>>" "TPDep <<NAME>>" where "<<NAME>>" is the particular name of a timing point, such a a station or junction.
+Column format: "TPArr <<NAME>>" "TPDep <<NAME>>" OR "TP<<x>>Arr <<NAME>>", "TP<<x>>Dep <<NAME>>" where "<<NAME>>"  is the particular name of a timing point, such a a station or junction and <<x>> is the timing point group to which this timing point belongs (e.g. "TPArr Cardiff Central", "TP1Dep Cross Keys", "TP1Arr Ebbw Vale", "TP2Dep Lydney")
 Data format: time, either 12h or 24h (e.g. 13:37 or 1:37 PM)
 
 Timing points allow for a more immersive way of providing information on train disruption by simulating real life signalling and passenger information displays. On real railways, trains are timed at certain fixed points along their routes, known as timing points. Whether trains are running on time, late or early (and how late or early) is reported back to control from these timing points. 
@@ -173,3 +207,5 @@ Virtual timing points make delay handling more realistic and immersive. Trains m
 Physical timing points work in the same way, except, instead of a train being deemed to have passed the point at a certain time by the Timetable Automation System, it is only logged as having passed the timing point if and when it actually passes the physical block on the layout that you have specified. Passenger information systems and signallers' displays showing a delay can be updated accordingly. Note that, in theory, it should also be possible to use "physical" timing points with simulated trains run into blocks using a script, but this has not been tested.
 
 Without timing points, the delay handling will still work, but will be free-floating and not tied to any given timing points.
+
+Timing points may be grouped by adding a number between "TP" and "Arr" or "Dep" as shown in the column format above. Timing points without this number are treated as belonging to group 0. The only effect of the groups is to organise the timing points in the working timetable display. For example, if you have timing points on different lines that diverge, put the timing points on one line into group 1 and the other line into group 2. These will then be grouped rather than interleaved in the timetable, giving a more realistic and comprehensible display.
