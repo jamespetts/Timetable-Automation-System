@@ -1058,6 +1058,18 @@ class TASSetupFrame(jmri.util.JmriJFrame):
         # Wizard sync: allow UI to refresh if a setup wizard changes preferences while this window is open.
         self.SuppressWizardSync = False
         self.WizardSyncTimer = None
+        # Optional callback provided by TimetableAutomation.py to refresh the main menu theme when this window closes.
+        self.MainMenuThemeRefreshCallback = None
+        try:
+            self.MainMenuThemeRefreshCallback = globals().get('TAS_MAINMENU_THEME_REFRESH_CALLBACK', None)
+        except:
+            self.MainMenuThemeRefreshCallback = None
+        # Snapshot theme at open so we can detect changes on close.
+        try:
+            self.InitialThemeSnapshot = self._GetThemeSnapshot()
+        except:
+            self.InitialThemeSnapshot = None
+
 
         # --- Build tabs AFTER initial/current state is ready ---
         tabs = JTabbedPane()
@@ -4531,40 +4543,93 @@ class TASSetupFrame(jmri.util.JmriJFrame):
         except Exception as ex:
             LogWarn("Could not read day/night presets: " + str(ex))
         return names
+        
+    # --------------------- Set callback on close ---------------------- 
+    def _GetThemeSnapshot(self):
+        # Returns a tuple of theme-related memory values used by TimetableAutomation main menu.
+        try:
+            return (
+                str(TBL.SafeGetOrCreateMemoryValue('TAS_FONT_FAMILY', '')).strip(),
+                str(TBL.SafeGetOrCreateMemoryValue('TASPAPERCOLOUR', '')).strip(),
+                str(TBL.SafeGetOrCreateMemoryValue('TASCOVERCOLOUR', '')).strip(),
+                str(TBL.SafeGetOrCreateMemoryValue('TASINNERCOLOUR', '')).strip(),
+                str(TBL.SafeGetOrCreateMemoryValue('TASINKCOLOUR', '')).strip(),
+                str(TBL.SafeGetOrCreateMemoryValue('TASCOVERINKCOLOUR', '')).strip(),
+                str(TBL.SafeGetOrCreateMemoryValue('CURRENTTIMETABLE', '')).strip(),
+                str(TBL.SafeGetOrCreateMemoryValue('RAILWAYCO', '')).strip(),
+                str(TBL.SafeGetOrCreateMemoryValue('REGION', '')).strip(),
+                str(TBL.SafeGetOrCreateMemoryValue('SECTION', '')).strip()
+            )
+        except:
+            return None
 
+    def _NotifyMainMenuThemeIfChanged(self):
+        # If theme memories changed while this window was open, notify the main menu (if it provided a callback).
+        cb = None
+        try:
+            cb = getattr(self, 'MainMenuThemeRefreshCallback', None)
+        except:
+            cb = None
+        if cb is None:
+            return
+        oldSnap = None
+        try:
+            oldSnap = getattr(self, 'InitialThemeSnapshot', None)
+        except:
+            oldSnap = None
+        newSnap = None
+        try:
+            newSnap = self._GetThemeSnapshot()
+        except:
+            newSnap = None
+        try:
+            if oldSnap is not None and newSnap is not None and tuple(oldSnap) == tuple(newSnap):
+                return
+        except:
+            pass
+        try:
+            cb()
+        except:
+            pass
 
-        # --------------------- Restart prompt on close ---------------------- 
-        def dispose(self):
-            # First, guard against unsaved edits in the Workings tab
+    # --------------------- Restart prompt on close ---------------------- 
+    def dispose(self):
+        # First, guard against unsaved edits in the Workings tab
+        try:
+            if (hasattr(self, "WorkingsUiController") and self.WorkingsUiController is not None and self.WorkingsUiController.HasUnsavedChanges()):
+                choice = JOptionPane.showConfirmDialog(
+                    self,
+                    "You have unsaved changes in a working script.\nDiscard changes and close the setup window?",
+                    "Unsaved changes",
+                    JOptionPane.OK_CANCEL_OPTION,
+                    JOptionPane.WARNING_MESSAGE
+                )
+                if choice != JOptionPane.OK_OPTION:
+                    return  # abort closing; user wants to keep editing
+        except Exception:
+            pass
+
+        # If this window was opened from the main menu, refresh the main menu theme if needed.
+        try:
+            self._NotifyMainMenuThemeIfChanged()
+        except:
+            pass
+
+        # Then apply your existing restart-needed prompt logic           
+        changed = (self.InitialTimeActions != self.CurrentTimeActions or
+                   self.InitialDayNight != self.CurrentDayNight or
+                   self.InitialWeather != self.CurrentWeather or
+                   self.InitialDirectionSensing != self.CurrentDirectionSensing)
+        if changed:
             try:
-                if (hasattr(self, "WorkingsUiController") and self.WorkingsUiController is not None and self.WorkingsUiController.HasUnsavedChanges()):
-                    choice = JOptionPane.showConfirmDialog(
-                        self,
-                        "You have unsaved changes in a working script.\nDiscard changes and close the setup window?",
-                        "Unsaved changes",
-                        JOptionPane.OK_CANCEL_OPTION,
-                        JOptionPane.WARNING_MESSAGE
-                    )
-                    if choice != JOptionPane.OK_OPTION:
-                        return  # abort closing; user wants to keep editing
-            except Exception:
-                pass
-
-            # Then apply your existing restart-needed prompt logic           
-            changed = (self.InitialTimeActions != self.CurrentTimeActions or
-                       self.InitialDayNight != self.CurrentDayNight or
-                       self.InitialWeather != self.CurrentWeather or
-                       self.InitialDirectionSensing != self.CurrentDirectionSensing)
-            if changed:
-                try:
-                    JOptionPane.showMessageDialog(
-                        self,
-                        "Some changes require a restart to take effect.\nPlease close and restart JMRI manually.",
-                        "Restart Required",
-                        JOptionPane.INFORMATION_MESSAGE
-                    )
-                except Exception as ex:
-                    LogWarn("Please restart JMRI manually to apply changes.", alsoDialog=False)
+                JOptionPane.showMessageDialog(
+                    self,
+                    "Some changes require a restart to take effect.\nPlease close and restart JMRI manually.",
+                    "Restart Required",
+                    JOptionPane.INFORMATION_MESSAGE
+                )
+            except Exception as ex:
+                LogWarn("Please restart JMRI manually to apply changes.", alsoDialog=False)
         
         # Actively dispose any owned child dialogs (e.g., Block Picker) so nothing lingers
         try:

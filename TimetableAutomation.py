@@ -174,6 +174,11 @@ def RunExternalScript(FileName, FriendlyName, Arg=None):
 
         # Fresh globals to avoid stale state between runs (prevents leaking names into the caller)
         SafeGlobals = {"__name__": "__main__", "jmri": jmri}
+        try:
+            if str(FileName) == 'TASSetup.py':
+                SafeGlobals['TAS_MAINMENU_THEME_REFRESH_CALLBACK'] = RefreshMainMenuTheme
+        except:
+            pass
         execfile(fullPath, SafeGlobals)
 
         # If the loaded script defines an entrypoint Show(...), invoke it.
@@ -557,6 +562,93 @@ class CoverPanel(JPanel):
         except:
             return Fallback
 
+
+    # Refresh theme values (colours/fonts) from memories and repaint.
+    def RefreshThemeFromMemories(self):
+        # Re-read all theme-related memories used by the main menu.
+        try:
+            memRgb = TBL.SafeGetOrCreateMemoryValue('TASCOVERCOLOUR', '240,238,220')
+            parts = [p.strip() for p in str(memRgb).split(',')]
+            if len(parts) == 3:
+                r = max(0, min(255, int(float(parts[0]))))
+                g = max(0, min(255, int(float(parts[1]))))
+                b = max(0, min(255, int(float(parts[2]))))
+                self.setBackground(Color(r, g, b))
+        except:
+            pass
+        try:
+            memRgbInner = TBL.SafeGetOrCreateMemoryValue('TASINNERCOLOUR', '220,235,220')
+            parts = [p.strip() for p in str(memRgbInner).split(',')]
+            if len(parts) == 3:
+                r = max(0, min(255, int(float(parts[0]))))
+                g = max(0, min(255, int(float(parts[1]))))
+                b = max(0, min(255, int(float(parts[2]))))
+                self.InnerBgColor = Color(r, g, b)
+        except:
+            pass
+        try:
+            memRgbInk = TBL.SafeGetOrCreateMemoryValue('TASINKCOLOUR', '0,0,0')
+            parts = [p.strip() for p in str(memRgbInk).split(',')]
+            if len(parts) == 3:
+                r = max(0, min(255, int(float(parts[0]))))
+                g = max(0, min(255, int(float(parts[1]))))
+                b = max(0, min(255, int(float(parts[2]))))
+                self.InkColor = Color(r, g, b)
+        except:
+            pass
+        # Cover ink colour may differ; fall back to TASINKCOLOUR if missing/invalid.
+        try:
+            self.CoverInkColor = getattr(self, 'InkColor', Color(0,0,0))
+            memRgbCoverInk = TBL.SafeGetOrCreateMemoryValue('TASCOVERINKCOLOUR', '')
+            if memRgbCoverInk is not None and len(str(memRgbCoverInk).strip()) > 0:
+                parts = [p.strip() for p in str(memRgbCoverInk).split(',')]
+                if len(parts) == 3:
+                    r = max(0, min(255, int(float(parts[0]))))
+                    g = max(0, min(255, int(float(parts[1]))))
+                    b = max(0, min(255, int(float(parts[2]))))
+                    self.CoverInkColor = Color(r, g, b)
+        except:
+            try:
+                self.CoverInkColor = getattr(self, 'InkColor', Color(0,0,0))
+            except:
+                pass
+        try:
+            memFont = TBL.SafeGetOrCreateMemoryValue('TAS_FONT_FAMILY', PreferredFontFamily())
+            self.FontFamily = memFont if memFont else PreferredFontFamily()
+        except:
+            pass
+        # Apply ink and font to buttons if they exist.
+        try:
+            fam = getattr(self, 'FontFamily', PreferredFontFamily())
+            ink = getattr(self, 'CoverInkColor', getattr(self, 'InkColor', Color(0,0,0)))
+            for b in (self.BtnShowTimetable, self.BtnTimeWarp, self.BtnPublic, self.BtnSignallers,
+                self.BtnWeather, self.BtnSetup, self.BtnHelp, self.BtnAbout):
+                try:
+                    b.setFont(Font(fam, Font.BOLD, 14))
+                except:
+                    pass
+                try:
+                    b.setForeground(ink)
+                    b.setBorder(BorderFactory.createLineBorder(ink, 1))
+                except:
+                    pass
+        except:
+            pass
+        # Refresh cached profile and timetable names (these are not re-read in paintComponent).
+        try:
+            self.ProfileName = GetActiveProfileName()
+        except:
+            pass
+        try:
+            self.TimetableName = GetTimetableName()
+        except:
+            pass
+        try:
+            self.repaint()
+        except:
+            pass
+
+
     def paintComponent(self, g):
         super(CoverPanel, self).paintComponent(g)
         g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
@@ -685,6 +777,7 @@ class CoverPanel(JPanel):
         g.drawString("This system is subject to the GNU GPL v3.0. See About for details.", innerLeft, h - margin - innerPad - 20)
 
 # ------------------ About dialog (external Licence.txt or concise GPL summary) ------------------
+
 
 class AboutDialog(JDialog):
     def __init__(self, Parent, FontFamily):
@@ -835,13 +928,61 @@ class AboutDialog(JDialog):
 
 # ------------------ Main frame ------------------
 
+
+# ---------------- Main menu theme refresh callback ----------------
+# TASSetup can call this (when launched from the main menu) to apply any theme changes immediately.
+_TASMainMenuFrame = None
+
+def RefreshMainMenuTheme():
+    # Refresh the main menu UI (if open) from current memory values.
+    def _Do():
+        f = None
+        try:
+            f = _TASMainMenuFrame
+        except:
+            f = None
+        if f is None:
+            return
+        try:
+            if not f.isDisplayable():
+                return
+        except:
+            pass
+        p = None
+        try:
+            p = getattr(f, 'Cover', None)
+        except:
+            p = None
+        if p is None:
+            return
+        try:
+            if hasattr(p, 'RefreshThemeFromMemories'):
+                p.RefreshThemeFromMemories()
+        except:
+            pass
+        try:
+            p.repaint()
+        except:
+            pass
+        try:
+            f.repaint()
+        except:
+            pass
+    try:
+        SwingUtilities.invokeLater(_Do)
+    except:
+        try:
+            _Do()
+        except:
+            pass
 class TASWTTStartup(JFrame):
     def __init__(self):
         JFrame.__init__(self, "Timetable Automation System")
         self.setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE)
         self.setLayout(BorderLayout())
-        self.add(CoverPanel(), BorderLayout.CENTER)
-        self.setSize(600, 980)  # portrait (height fixed per your preference)
+        self.Cover = CoverPanel()
+        self.add(self.Cover, BorderLayout.CENTER)
+        self.setSize(600, 980)  # portrait (height fixed)
         self.setLocationByPlatform(True)
       
         # Set window icon using TASIcon utility
@@ -858,6 +999,8 @@ def Run():
         pass
     def Create():
         f = TASWTTStartup()
+        global _TASMainMenuFrame
+        _TASMainMenuFrame = f
         f.setVisible(True)
     SwingUtilities.invokeLater(Create)
 
