@@ -810,6 +810,16 @@ class TASWizardDialog(JDialog):
         except:
             pass
         self.setVisible(True)
+        # Optional: callback provided by TASSetup when it launches the wizard.
+        self._WizardClosedCallback = None
+        try:
+            self._WizardClosedCallback = globals().get('TAS_SETUP_WIZARD_CLOSED_CALLBACK', None)
+        except:
+            self._WizardClosedCallback = None
+        try:
+            self._WizardClosedCallbackDone = False
+        except:
+            pass
 
     def _BuildSidebar(self):
         sidebarW = 220
@@ -4864,6 +4874,45 @@ class TASWizardDialog(JDialog):
             self.dispose()
         except:
             pass
+
+
+
+    def _CallWizardClosedCallbackOnce(self):
+        # Called when the wizard closes (Finish, Cancel or window close).
+        try:
+            if bool(getattr(self, '_WizardClosedCallbackDone', False)):
+                return
+        except:
+            pass
+        try:
+            self._WizardClosedCallbackDone = True
+        except:
+            pass
+        cb = None
+        try:
+            cb = getattr(self, '_WizardClosedCallback', None)
+        except:
+            cb = None
+        if cb is None:
+            return
+        try:
+            cb()
+        except:
+            pass
+
+    def dispose(self):
+        # Ensure that any caller (e.g. TASSetup) is notified when the wizard closes.
+        try:
+            self._CallWizardClosedCallbackOnce()
+        except:
+            pass
+        try:
+            JDialog.dispose(self)
+        except:
+            try:
+                super(TASWizardDialog, self).dispose()
+            except:
+                pass
 
 
 

@@ -70,13 +70,19 @@ def LogError(msg, ex=None, alsoDialog=True, title="Error"):
         
         
 # Helper: run the Setup wizard if present (safe wrapper)
-def RunSetupWizard():
+def RunSetupWizard(onClosed=None):
     try:
         path = ProfileJythonFilePath("TASWiz.py")
         if not os.path.isfile(path):
             LogWarn("Setup wizard not found: " + str(path), alsoDialog=True)
             return False
-        execfile(path, {})
+        g = {}
+        try:
+            if onClosed is not None:
+                g['TAS_SETUP_WIZARD_CLOSED_CALLBACK'] = onClosed
+        except:
+            pass
+        execfile(path, g)
         return True
     except Exception as ex:
         LogError("Setup wizard failed: " + str(ex), ex=ex, alsoDialog=True)
@@ -1153,7 +1159,7 @@ class TASSetupFrame(jmri.util.JmriJFrame):
             choice = JOptionPane.CANCEL_OPTION
 
         if choice == JOptionPane.OK_OPTION:
-            if not RunSetupWizard():
+            if not RunSetupWizard(onClosed=lambda: self.OnWizardClosedRefreshSetupUi()):
                 LogWarn("Could not run the Setup wizard.", alsoDialog=True)
     
     def PackAndCenter(self):
@@ -1216,7 +1222,7 @@ class TASSetupFrame(jmri.util.JmriJFrame):
                 if not os.path.isfile(path):
                     LogWarn("TASWiz.py not found at: " + path, alsoDialog=True)
                     return
-                execfile(path, {})
+                RunSetupWizard(onClosed=(lambda: self.OnWizardClosedRefreshSetupUi()))
             except Exception as ex:
                 LogError("Setup wizard failed: " + str(ex), ex=ex, alsoDialog=True)
 
@@ -1366,19 +1372,19 @@ class TASSetupFrame(jmri.util.JmriJFrame):
         gbc.gridy += 1  # place heading just after the second checkbox row
         panel.add(MakeHeading("Current timetable"), gbc)
 
-        txt = JTextField(28)
-        txt.setToolTipText("Select the timetable used for this layout")
-        txt.setText(TBL.SafeGetOrCreateMemoryValue(IMCurrentTimetable, ""))
+        self.TxtCurrentTimetable = JTextField(28)
+        self.TxtCurrentTimetable.setToolTipText("Select the timetable used for this layout")
+        self.TxtCurrentTimetable.setText(TBL.SafeGetOrCreateMemoryValue(IMCurrentTimetable, ""))
 
         def CommitText():
-            name = StripCsvExt(txt.getText().strip())
+            name = StripCsvExt(self.TxtCurrentTimetable.getText().strip())
             TBL.SafeSetMemoryValue(IMCurrentTimetable, name)
             self.UpdateRunAutoControls()
             # No Start-Up change for auto-run now; validations still inform status
-        txt.addActionListener(lambda e: CommitText())
+        self.TxtCurrentTimetable.addActionListener(lambda e: CommitText())
         class CommitOnFocusLost(FocusAdapter):
             def focusLost(self, e): CommitText()
-        txt.addFocusListener(CommitOnFocusLost())
+        self.TxtCurrentTimetable.addFocusListener(CommitOnFocusLost())
 
         btnBrowse = JButton("Browse...")
         btnBrowse.setToolTipText("Select the timetable used for this layout")
@@ -1386,7 +1392,7 @@ class TASSetupFrame(jmri.util.JmriJFrame):
             try:
                 dirFile = GetTimetableDirFile()
                 chooser = RestrictedCsvChooser(dirFile)
-                memName = StripCsvExt(txt.getText().strip())
+                memName = StripCsvExt(self.TxtCurrentTimetable.getText().strip())
                 if memName != "":
                     pre = File(dirFile, memName + ".csv")
                     chooser.setSelectedFile(pre)
@@ -1394,14 +1400,14 @@ class TASSetupFrame(jmri.util.JmriJFrame):
                 if result == JFileChooser.APPROVE_OPTION:
                     sel = chooser.getSelectedFile()
                     bare = StripCsvExt(sel.getName())
-                    txt.setText(bare)
+                    self.TxtCurrentTimetable.setText(bare)
                     CommitText()
             except Exception as ex:
                 LogError("Browse failed: " + str(ex), ex=ex, alsoDialog=True)
         btnBrowse.addActionListener(lambda e: DoBrowse(e))
         
         gbc.gridx = 1; gbc.weightx = 1.0
-        panel.add(txt, gbc)
+        panel.add(self.TxtCurrentTimetable, gbc)
         gbc.gridx = 2; gbc.weightx = 0.0
         panel.add(btnBrowse, gbc)
 
@@ -3419,7 +3425,7 @@ class TASSetupFrame(jmri.util.JmriJFrame):
             try:
                 path = ProfileJythonFilePath("HardwareDirectionConfig.py")
                 if os.path.isfile(path):
-                    execfile(path, {})
+                    RunSetupWizard(onClosed=(lambda: self.OnWizardClosedRefreshSetupUi()))
                 else:
                     JOptionPane.showMessageDialog(
                         panel,
@@ -4319,6 +4325,125 @@ class TASSetupFrame(jmri.util.JmriJFrame):
         finally:
             try:
                 self.SuppressWizardSync = False
+            except:
+                pass
+
+    def RefreshThemeFromMemories(self):
+        # Refresh theme globals and apply to existing components after TASWiz changes.
+        try:
+            global THEME_FONT_FAMILY
+            global THEME_PAPER
+        except:
+            pass
+        oldPaper = None
+        try:
+            oldPaper = THEME_PAPER
+        except:
+            oldPaper = None
+        try:
+            THEME_FONT_FAMILY = str(TBL.SafeGetOrCreateMemoryValue('TAS_FONT_FAMILY', 'Gill Sans MT')).strip()
+        except:
+            THEME_FONT_FAMILY = 'Gill Sans MT'
+        try:
+            rgb = TBL.SafeGetOrCreateMemoryValue('TASPAPERCOLOUR', '249,246,238')
+            THEME_PAPER = _RgbStrToColorOrDefault(rgb, Color(249, 246, 238))
+        except:
+            try:
+                THEME_PAPER = Color(249, 246, 238)
+            except:
+                pass
+        # Re-apply fonts recursively to all controls.
+        try:
+            cp = self.getContentPane()
+            if cp is not None:
+                _ApplyFontRecursive(cp, THEME_FONT_FAMILY)
+        except:
+            pass
+        # Update PaperPanel background/texture and any components using the old paper background.
+        try:
+            from java.awt import Container
+            def _Walk(comp):
+                try:
+                    if comp is None:
+                        return
+                except:
+                    return
+                try:
+                    if hasattr(comp, 'texture') and hasattr(comp, '_makeTexture'):
+                        try:
+                            comp.setBackground(THEME_PAPER)
+                        except:
+                            pass
+                        try:
+                            comp.texture = comp._makeTexture()
+                        except:
+                            pass
+                    else:
+                        try:
+                            if oldPaper is not None and comp.getBackground() == oldPaper:
+                                comp.setBackground(THEME_PAPER)
+                        except:
+                            pass
+                except:
+                    pass
+                try:
+                    if isinstance(comp, Container):
+                        for ch in comp.getComponents():
+                            _Walk(ch)
+                except:
+                    pass
+            _Walk(self.getContentPane())
+        except:
+            pass
+        try:
+            self.revalidate()
+            self.repaint()
+        except:
+            pass
+
+    def RefreshGeneralTabFromWizard(self):
+        # Refresh General-tab controls that the wizard may have changed.
+        try:
+            if hasattr(self, 'ChkTASMenu') and self.ChkTASMenu is not None:
+                actual = bool(_IsScriptEnabled('TimetableAutomation.py'))
+                self.CurrentTASMenu = actual
+                self.ChkTASMenu.setSelected(actual)
+        except:
+            pass
+        try:
+            if hasattr(self, 'ChkTimeActions') and self.ChkTimeActions is not None:
+                actual = bool(IsTimeActionsEnabled())
+                self.CurrentTimeActions = actual
+                self.ChkTimeActions.setSelected(actual)
+        except:
+            pass
+        try:
+            if hasattr(self, 'TxtCurrentTimetable') and self.TxtCurrentTimetable is not None:
+                val = str(TBL.SafeGetOrCreateMemoryValue(IMCurrentTimetable, '')).strip()
+                self.TxtCurrentTimetable.setText(val)
+        except:
+            pass
+
+    def OnWizardClosedRefreshSetupUi(self):
+        # Called by TASWiz via callback when the wizard closes (Finish/Cancel/window close).
+        def _Do():
+            try:
+                self.RefreshThemeFromMemories()
+            except:
+                pass
+            try:
+                self.RefreshGeneralTabFromWizard()
+            except:
+                pass
+            try:
+                self.RefreshFromWizardChanges()
+            except:
+                pass
+        try:
+            SwingUtilities.invokeLater(RunnableAdapter(_Do))
+        except:
+            try:
+                _Do()
             except:
                 pass
 
