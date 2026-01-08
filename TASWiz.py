@@ -4848,11 +4848,7 @@ class TASWizardDialog(JDialog):
                     _after = bool(self._IsStartupScriptEnabled('TimetableAutomation.py'))
                 except:
                     _after = False
-                try:
-                    if _after != _before:
-                        self.RestartNeeded = True
-                except:
-                    pass
+                # NOTE: Do not prompt for restart when only enabling TimetableAutomation.py on start-up.
                 if (not _after):
                     try:
                         LogWarn('Could not enable TimetableAutomation.py on startup')

@@ -4426,8 +4426,7 @@ class TASSetupFrame(jmri.util.JmriJFrame):
                 pass
 
             # Then apply your existing restart-needed prompt logic           
-            changed = (self.InitialTASMenu != self.CurrentTASMenu or
-                       self.InitialTimeActions != self.CurrentTimeActions or
+            changed = (self.InitialTimeActions != self.CurrentTimeActions or
                        self.InitialDayNight != self.CurrentDayNight or
                        self.InitialWeather != self.CurrentWeather or
                        self.InitialDirectionSensing != self.CurrentDirectionSensing)
