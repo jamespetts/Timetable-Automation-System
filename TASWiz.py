@@ -430,8 +430,10 @@ def ProfileJythonFilePath(name):
     try:
         return FileUtil.getExternalFilename("profile:jython/" + str(name))
     except:
-        return None
-
+        try:
+            return "jython/" + str(name)
+        except:
+            return None
 def _LoadNamedPresetsFromConfigCsv(fileName, defaultNames):
 # Read preset names from profile:jython/config/<fileName> (tab-delimited, ASCII).
     names = list(defaultNames or [])
@@ -4832,6 +4834,30 @@ class TASWizardDialog(JDialog):
             except:
                 pass
 
+            # Ensure that the Timetable Automation System menu is shown on startup (matches TASSetup).
+            try:
+                _before = bool(self._IsStartupScriptEnabled('TimetableAutomation.py'))
+            except:
+                _before = False
+            if not _before:
+                try:
+                    ok = bool(self._EnsureStartupScriptEnabled('TimetableAutomation.py', True))
+                except:
+                    ok = False
+                try:
+                    _after = bool(self._IsStartupScriptEnabled('TimetableAutomation.py'))
+                except:
+                    _after = False
+                try:
+                    if _after != _before:
+                        self.RestartNeeded = True
+                except:
+                    pass
+                if (not _after):
+                    try:
+                        LogWarn('Could not enable TimetableAutomation.py on startup')
+                    except:
+                        pass
             try:
                 if bool(getattr(self, 'RestartNeeded', False)):
                     JOptionPane.showMessageDialog(self, 'One or more changes require a restart to take effect\n\nPlease close and restart JMRI now.', 'Restart recommended', JOptionPane.INFORMATION_MESSAGE)
