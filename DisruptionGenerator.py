@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 # This file is part of the Timetable Automation System by James E. Petts
 #
 # The Timetable Automation System is free software: you can redistribute it and/or modify it under the terms of the 
@@ -557,13 +556,13 @@ def _publish_at_virtual_tp(tpEvent, row, rn, dayName, actualMinute, curDelay):
     try:
         existing = getDisruption(rn)
         if isinstance(curDelay, int) and curDelay == 1442:
-            # Promote to cancelled (1441) at this TP       
-        if existing is None:
-            try: 
-                PAR.deregisterPlatform(rn)
-            except Exception: 
-                pass
-            registerDisruption(rn, 1441)
+            # Promote to cancelled (1441) at this TP
+            if existing is None:
+                try:
+                    PAR.deregisterPlatform(rn)
+                except Exception:
+                    pass
+                registerDisruption(rn, 1441)
             else:
                 updateDisruption(rn, 1441)
             try:
@@ -573,9 +572,9 @@ def _publish_at_virtual_tp(tpEvent, row, rn, dayName, actualMinute, curDelay):
         else:
             val = int(curDelay or 0)
             if existing is None:
-                try: 
+                try:
                     PAR.deregisterPlatform(rn)
-                except Exception: 
+                except Exception:
                     pass
                 registerDisruption(rn, val)
             else:
@@ -860,7 +859,7 @@ def updateDisruptions():
                     if trigger is None:
                         trigger = nowMins
                     if nowMins >= trigger:
-                        _backfill_missed_pre_virtuals(st, row, rn, dayName)
+                        _backfill_missed_pre_virtuals(st, row, rn, dayName, allowDelays)
                         continue
         _advance_internal(nowMins, row, rn, st, groups, allowDelays, allowCancel)
         _publish_due_virtuals(nowMins, row, rn, dayName, st, segment="pre", allowDelays=allowDelays)
@@ -1050,10 +1049,10 @@ def _init_state_for_train(row, rn, groups, ttName, dayName, mainTimes, klass, se
     st["lastSimMinute"] = firstRelevant
     # Window-gated initialisation
     if getDisruption(rn) is None and firstRelevant is not None:    
-            # Clear platform allocation from the previous working just before we first register disruption
-            try: 
+        # Clear platform allocation from the previous working just before we first register disruption
+        try: 
                 PAR.deregisterPlatform(rn)
-            except Exception: 
+        except Exception: 
                 pass
         if g:
             a = max(0, int(g.get("checkMax", 60))); b = max(0, int(g.get("checkMin", 30)))
@@ -1132,24 +1131,24 @@ def _publish_due_virtuals(nowMins, row, rn, dayName, st, segment, allowDelays):
                 mag = int(st["planned"].get("mag") or 0)
             except Exception:
                 mag = 0          
-        if pType == "delay" and mag > 0 and allowDelays:
-            if getDisruption(rn) is None:
-                try: PAR.deregisterPlatform(rn)
-                except Exception: pass
-                registerDisruption(rn, mag)
-            else:
-                updateDisruption(rn, mag)
-            curInt = mag
-        elif pType == "early" and mag > 0 and allowDelays:
-            val = -mag
-            if getDisruption(rn) is None:
-                try: PAR.deregisterPlatform(rn)
-                except Exception: pass
-                registerDisruption(rn, val)
-            else:
-                updateDisruption(rn, val)
-            curInt = val
-
+            if pType == "delay" and mag > 0 and allowDelays:
+                if getDisruption(rn) is None:
+                    try: PAR.deregisterPlatform(rn)
+                    except Exception: pass
+                    registerDisruption(rn, mag)
+                else:
+                    updateDisruption(rn, mag)
+                curInt = mag
+            elif pType == "early" and mag > 0 and allowDelays:
+                val = -mag
+                if getDisruption(rn) is None:
+                    try: PAR.deregisterPlatform(rn)
+                    except Exception: pass
+                    registerDisruption(rn, val)
+                else:
+                    updateDisruption(rn, val)
+                curInt = val
+    
         # --- Materialise planned at_tp outcome exactly once, if not yet manifested ---
         if st.get("planned") and st["planned"].get("manifest") == "at_tp" and not st.get("manifestedAtTP", False):
             pType = st["planned"].get("type")
@@ -1227,7 +1226,7 @@ def _check_crossed_into_layout(nowMins, st):
     main = st["mainTimes"]["main"]
     if main is not None and nowMins >= main:
         st["postedPreSegmentDone"] = True
-def _backfill_missed_pre_virtuals(st, row, rn, dayName):
+def _backfill_missed_pre_virtuals(st, row, rn, dayName, allowDelays):
     pre = st["tpList"]["pre"]
     idx = st["nextIndexPre"]
     if idx < len(pre):
