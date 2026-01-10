@@ -2948,6 +2948,10 @@ class TASSetupFrame(jmri.util.JmriJFrame):
         ApplyTheme(txtArea)
         txtArea.setLineWrap(True); txtArea.setWrapStyleWord(True)
         rawMatch = TBL.SafeGetOrCreateMemoryValue(IMWTT_EcsMatch, "empty to depot,empty,ety.,ecs")
+        if rawMatch is None:
+            rawMatch = "empty to depot,empty,ety.,ecs"
+        else:
+            rawMatch = str(rawMatch)
         preload = [t.strip() for t in rawMatch.split(",") if len(t.strip()) > 0]
         txtArea.setText("\n".join(preload))
         def ApplyEcsMatch():
