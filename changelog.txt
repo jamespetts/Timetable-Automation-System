@@ -1,3 +1,10 @@
+Version 1.2
+
+* Fix crashes in the setup
+* Fix possible file corruption
+* Fix crashes with the disruption generator
+
+
 Verion 1.1
 
 * Fix an error whereby the setup would crash if the user were not running a Loconet connexion
