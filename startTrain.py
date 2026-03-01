@@ -15,6 +15,7 @@
 import jmri, os, sys, formationRegister, enqueuedWorkings, DisruptionRegister, time, OrientationRegister
 from jmri.jmrit.dispatcher import TrainInfoFile, ActiveTrain, AutoActiveTrain
 from jmri import InstanceManager
+import TASPathResolver as TPR
 import xml.etree.ElementTree as ET
 import java
 import TimingRegister as TR
@@ -61,7 +62,8 @@ def addMinutesToTime(minutes_to_add):
 
 def checkEndBlock(traininfoName):
     # Read traininfo file
-    filename = jmri.util.FileUtil.getProfilePath() + "/dispatcher/traininfo/" + traininfoName + ".xml"
+    profilePath = jmri.util.FileUtil.getProfilePath()
+    filename = os.path.join(profilePath, "dispatcher", "traininfo", traininfoName + ".xml")
 
     if not os.path.isfile(filename):
         print("Error: traininfo file not found:", filename)
@@ -714,8 +716,13 @@ def startTrain(traininfoName, rosterEntry, reportingNumber, direction, formsNext
                             # cannot time warp to the next working afterwards if there is an enqueued working
                             # waiting for this train.
                             scriptsPath = jmri.util.FileUtil.getScriptsPath()
+                        try:
+                            scriptName = TPR.ResolveScriptReadPath("retryEnqueuedWorkings.py")
+                        except Exception:
+                            scriptName = None
+                        if scriptName is None:
                             scriptName = os.path.join(scriptsPath, "retryEnqueuedWorkings.py")
-                            execfile(scriptName)                            
+                        execfile(scriptName)                            
 
             atlisten = ATListener()
             activeTrain.addPropertyChangeListener(atlisten)

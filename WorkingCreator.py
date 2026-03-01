@@ -27,6 +27,11 @@ from java.lang import Runnable
 from javax.swing import SwingUtilities
 from jmri.util import FileUtil
 
+# Optional resolver (profile-first script lookup and profile-based writes)
+try:
+    import TASPathResolver as TPR
+except Exception:
+    TPR = None
 # Theme helpers (reuse TASSetup style) -- ASCII only
 from java.awt import Color
 
@@ -775,8 +780,16 @@ def ShowWorkingCreator(rn, direction, rowIndex, formsNext=None):
         scriptLines.append("")
         scriptLines.append("# Get the scripts path and load the scripts")
         scriptLines.append("scriptsPath = jmri.util.FileUtil.getScriptsPath()")
-        scriptLines.append("execfile(os.path.join(scriptsPath, 'startTrain.py'), globals())")
-        scriptLines.append("execfile(os.path.join(scriptsPath, 'trainFinder.py'), globals())")
+        scriptLines.append("try:")
+        scriptLines.append("    import TASPathResolver as TPR")
+        scriptLines.append("    def _TasRead(n):")
+        scriptLines.append("        p = TPR.ResolveScriptReadPath(n)")
+        scriptLines.append("        return p if p is not None else os.path.join(scriptsPath, n)")
+        scriptLines.append("except:")
+        scriptLines.append("    def _TasRead(n):")
+        scriptLines.append("        return os.path.join(scriptsPath, n)")
+        scriptLines.append("execfile(_TasRead('startTrain.py'), globals())")
+        scriptLines.append("execfile(_TasRead('trainFinder.py'), globals())")
 
         # Determine if roster search will be needed based on multi-token selectors
         idHasTokens = idTokensModel.size() > 0
@@ -784,9 +797,9 @@ def ShowWorkingCreator(rn, direction, rowIndex, formsNext=None):
         commentHasTokens = commentTokensModel.size() > 0
 
         if not chkUseTI.isSelected() and (idHasTokens or modelHasTokens or commentHasTokens):
-            scriptLines.append("execfile(os.path.join(scriptsPath, 'RosterSearch.py'), globals())")
+            scriptLines.append("execfile(_TasRead('RosterSearch.py'), globals())")
         else:
-            scriptLines.append("# execfile(os.path.join(scriptsPath, 'RosterSearch.py'), globals()) # Uncomment if using rosterSearch")
+            scriptLines.append("# execfile(_TasRead('RosterSearch.py'), globals()) # Uncomment if using rosterSearch")
 
         scriptLines.append("")
         scriptLines.append("traininfoNames = %s" % trainInfoNamesList)
@@ -873,9 +886,19 @@ def ShowWorkingCreator(rn, direction, rowIndex, formsNext=None):
             return
 
         scriptsPath = jmri.util.FileUtil.getScriptsPath()
-        targetDir = os.path.join(scriptsPath, "workings", direction)
+        targetDir = None
+        try:
+            if TPR is not None:
+                targetDir = TPR.GetWorkingsWriteDir(direction)
+        except Exception:
+            targetDir = None
+        if targetDir is None:
+            targetDir = os.path.join(scriptsPath, "workings", direction)
         if not os.path.isdir(targetDir):
-            os.makedirs(targetDir)
+            try:
+                os.makedirs(targetDir)
+            except Exception:
+                pass
         targetFile = os.path.join(targetDir, rn + ".py")
 
         try:

@@ -28,9 +28,14 @@ from jmri import ShutDownManager
 _dirMap = {}
 
 # Persist to the active profile folder (no absolute paths)
-_SAVE_PATH = os.path.join(FileUtil.getProfilePath(), "normalDirectionRegister.json")
-
-
+_SAVE_PATH = None
+try:
+    # Use JMRI scheme resolution (still profile-root; non-breaking)
+    _SAVE_PATH = FileUtil.getExternalFilename("profile:normalDirectionRegister.json")
+except Exception:
+    _SAVE_PATH = None
+if not _SAVE_PATH:
+    _SAVE_PATH = os.path.join(FileUtil.getProfilePath(), "normalDirectionRegister.json")
 # --- Helpers -----------------------------------------------------------------
 
 def _NormId(s):

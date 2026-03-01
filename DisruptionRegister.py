@@ -27,8 +27,14 @@ except Exception:
     _Lock = None
 
 register = Hashtable()
-_SAVE_PATH = os.path.join(FileUtil.getProfilePath(), "disruption_register.json")
-
+_SAVE_PATH = None
+try:
+    # Use JMRI scheme resolution (still profile-root; non-breaking)
+    _SAVE_PATH = FileUtil.getExternalFilename("profile:disruption_register.json")
+except Exception:
+    _SAVE_PATH = None
+if not _SAVE_PATH:
+    _SAVE_PATH = os.path.join(FileUtil.getProfilePath(), "disruption_register.json")
 def registerDisruption(reportingNumber, delayMinutes):
     print("Registering", delayMinutes, "delay to", reportingNumber)
     if _Lock:

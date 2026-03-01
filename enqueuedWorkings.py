@@ -21,8 +21,14 @@ from jmri import ShutDownManager
 
 workings = []
 
-_SAVE_PATH = os.path.join(FileUtil.getProfilePath(), "enqueuedWorkings.json")
-
+_SAVE_PATH = None
+try:
+    # Use JMRI scheme resolution (still profile-root; non-breaking)
+    _SAVE_PATH = FileUtil.getExternalFilename("profile:enqueuedWorkings.json")
+except Exception:
+    _SAVE_PATH = None
+if not _SAVE_PATH:
+    _SAVE_PATH = os.path.join(FileUtil.getProfilePath(), "enqueuedWorkings.json")
 def enqueueWorking(reportingNumber, direction):
     if (reportingNumber, direction) not in workings:
         workings.append((reportingNumber, direction))

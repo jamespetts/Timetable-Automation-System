@@ -26,8 +26,14 @@ _rlock = _rwlock.readLock()
 _wlock = _rwlock.writeLock()
 
 timingRegister = Hashtable()
-_SAVE_PATH = os.path.join(FileUtil.getProfilePath(), "timingRegister.json")
-
+_SAVE_PATH = None
+try:
+    # Use JMRI scheme resolution (still profile-root; non-breaking)
+    _SAVE_PATH = FileUtil.getExternalFilename("profile:timingRegister.json")
+except Exception:
+    _SAVE_PATH = None
+if not _SAVE_PATH:
+    _SAVE_PATH = os.path.join(FileUtil.getProfilePath(), "timingRegister.json")
 try:
     _meta  # if already defined, don't overwrite
 except NameError:
@@ -77,8 +83,14 @@ def _ttPath():
     ttName = str(TBL.SafeGetMemoryValue("CURRENTTIMETABLE", "")).strip()
     if not ttName:
         return None
-    return os.path.join(FileUtil.getProfilePath(), "timetable", ttName + ".csv")
-
+    ttPath = None
+    try:
+        ttPath = FileUtil.getExternalFilename("profile:timetable/" + str(ttName) + ".csv")
+    except Exception:
+        ttPath = None
+    if not ttPath:
+        ttPath = os.path.join(FileUtil.getProfilePath(), "timetable", ttName + ".csv")
+    return ttPath
 def _todayName():
     # DAYOFWEEK stores the current day name as the Memory value (suffix-based lookup).
     return str(TBL.SafeGetMemoryValue("DAYOFWEEK", "")).strip()

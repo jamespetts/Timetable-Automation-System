@@ -46,6 +46,7 @@ from jmri.util import FileUtil
 # TAS helpers
 import TASBeanLookup as TBL
 
+import TASPathResolver as TPR
 # Image loading
 from javax.imageio import ImageIO
 from java.io import File
@@ -2873,14 +2874,18 @@ class TASWizardDialog(JDialog):
 
     def _WorkingScriptPath(self, direction, rn):
         try:
+            return TPR.ResolveWorkingScriptReadPath(direction, rn)
+        except Exception:
+            pass
+        try:
             scriptsPath = jmri.util.FileUtil.getScriptsPath()
-        except:
+        except Exception:
             scriptsPath = None
         if not scriptsPath:
             return None
         try:
             return os.path.join(str(scriptsPath), "workings", str(direction), str(rn) + ".py")
-        except:
+        except Exception:
             return None
 
 

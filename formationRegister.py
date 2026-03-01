@@ -23,9 +23,14 @@ from java.lang import Runtime, Thread, Runnable
 from jmri import ShutDownManager
 
 register = Hashtable()
-
-_SAVE_PATH = os.path.join(FileUtil.getProfilePath(), "formation_register.json")
-
+_SAVE_PATH = None
+try:
+    # Use JMRI scheme resolution (still profile-root; non-breaking)
+    _SAVE_PATH = FileUtil.getExternalFilename("profile:formation_register.json")
+except Exception:
+    _SAVE_PATH = None
+if not _SAVE_PATH:
+    _SAVE_PATH = os.path.join(FileUtil.getProfilePath(), "formation_register.json")
 def registerNextFormation(nextReportingNumber, rosterId):
     register.put(nextReportingNumber, rosterId)
 

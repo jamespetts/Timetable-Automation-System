@@ -20,6 +20,7 @@ import os
 import csv
 import re
 import jmri
+from jmri.util import FileUtil
 from jmri import InstanceManager
 from jmri.util import JmriJFrame
 
@@ -399,7 +400,10 @@ def ResolveTimetableCsvPath():
             pass
     if profilePath is None:
         profilePath = os.getcwd()
-    return os.path.join(profilePath, "timetable", timetableName + ".csv")
+    try:
+        return FileUtil.getExternalFilename("profile:timetable/" + timetableName + ".csv")
+    except Exception:
+        return os.path.join(profilePath, "timetable", timetableName + ".csv")
 
 # ---------------- Time helpers ----------------
 _sdf_parse_12 = SimpleDateFormat("h:mm a")

@@ -18,7 +18,7 @@
 # Working Timetable-style startup UI for the Timetable Automation System (TAS)
 # JMRI 5.12 / Jython 2.7. ASCII only. Thread-safe. No absolute paths.
 
-VERSION = "1.2"
+VERSION = "1.3"
 from javax.swing import JFrame
 from javax.swing import JPanel
 from javax.swing import JButton
@@ -41,6 +41,11 @@ import jmri
 from java.io import File  # needed for canonical path comparison
 import TASBeanLookup as TBL
 
+# Optional resolver (profile-first script lookup)
+try:
+    import TASPathResolver as TPR
+except Exception:
+    TPR = None
 # ------------------ Helpers - profile & memory (JMRI API validated) ------------------
 
 def _IsStartUpScriptEnabled(scriptFileName):
@@ -163,7 +168,15 @@ def RunExternalScript(FileName, FriendlyName, Arg=None):
     # Execute another script located in the JMRI scripts directory (portable path).
     # Log errors to console (with traceback) and also show a dialog.
     try:
-        fullPath = jmri.util.FileUtil.getExternalFilename("scripts:" + FileName)  # portable to external
+        # Resolve script location (prefer profile:jython, then scripts:)
+        fullPath = None
+        try:
+            if TPR is not None:
+                fullPath = TPR.ResolveScriptReadPath(FileName)
+        except Exception:
+            fullPath = None
+        if fullPath is None:
+            fullPath = jmri.util.FileUtil.getExternalFilename("scripts:" + FileName)  # portable to external
         import java.io as jio
         f = jio.File(fullPath)
         if (not f.exists()) or (not f.isFile()):
@@ -280,7 +293,14 @@ def BuildTitleLines(g, family, style, maxPt, minPt, text, maxWidth):
 
 def LoadLicenceText():
     try:
-        stream = jmri.util.FileUtil.findInputStream("scripts:Licence.txt")
+        stream = None
+        try:
+            if TPR is not None:
+                stream = TPR.FindInputStreamFor("Licence.txt")
+        except Exception:
+            stream = None
+        if stream is None:
+            stream = jmri.util.FileUtil.findInputStream("scripts:Licence.txt")
         if stream is None:
             return None
         try:
@@ -306,7 +326,14 @@ def ReadMemStr(Name, Default=""):
 
 def LoadChangeLogText():
     try:
-        stream = jmri.util.FileUtil.findInputStream("scripts:changelog.txt")
+        stream = None
+        try:
+            if TPR is not None:
+                stream = TPR.FindInputStreamFor("changelog.txt")
+        except Exception:
+            stream = None
+        if stream is None:
+            stream = jmri.util.FileUtil.findInputStream("scripts:changelog.txt")
         if stream is None:
             return None
         try:
@@ -858,6 +885,7 @@ class AboutDialog(JDialog):
             "Acknowledgements\n\n"
             "- David Sand (JMRI scripting assistance)\n"
             "- Torben (early testting and bug reporting)\n"
+            "- Jean-Louis (early testing and bug reporting)\n"
             "- Jennifer E. Kirk (use of 'Billy's Replacement Speakers')\n"
             "- Microsoft Copilot (doing most of the actual work)\n"
         )

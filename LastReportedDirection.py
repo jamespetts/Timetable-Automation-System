@@ -37,8 +37,14 @@ DEBUG = True  # Set to False to disable debug output
 lastReportedDirection = {}
 
 # Persistence path (relative to profile path)
-_SAVE_PATH = os.path.join(FileUtil.getProfilePath(), "LastReportedDirection.json")
-
+_SAVE_PATH = None
+try:
+    # Use JMRI scheme resolution (still profile-root; non-breaking)
+    _SAVE_PATH = FileUtil.getExternalFilename("profile:LastReportedDirection.json")
+except Exception:
+    _SAVE_PATH = None
+if not _SAVE_PATH:
+    _SAVE_PATH = os.path.join(FileUtil.getProfilePath(), "LastReportedDirection.json")
 def debug(msg):
     if DEBUG:
         try:

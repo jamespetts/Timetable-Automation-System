@@ -63,8 +63,14 @@ def sync_timing_points_from_timetable(verbose=True):
         return
 
     # 2) Build full path to timetable (TSV)
-    profile_path = FileUtil.getProfilePath()
-    tt_path = os.path.join(profile_path, "timetable", str(timetable_name) + ".csv")
+    tt_path = None
+    try:
+        tt_path = FileUtil.getExternalFilename("profile:timetable/" + str(timetable_name) + ".csv")
+    except Exception:
+        tt_path = None
+    if not tt_path:
+        profile_path = FileUtil.getProfilePath()
+        tt_path = os.path.join(profile_path, "timetable", str(timetable_name) + ".csv")
     if not os.path.exists(tt_path):
         if verbose: print("[TPSync] Timetable file not found: {}".format(tt_path))
         # We still do day-roll maintenance if needed

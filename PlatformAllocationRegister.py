@@ -27,8 +27,14 @@ from jmri.beans import PropertyChangeSupport  # thread-safe event helper
 
 register = Hashtable()
 
-_SAVE_PATH = os.path.join(FileUtil.getProfilePath(), "platform_allocation_register.json")
-
+_SAVE_PATH = None
+try:
+    # Use JMRI scheme resolution (still profile-root; non-breaking)
+    _SAVE_PATH = FileUtil.getExternalFilename("profile:platform_allocation_register.json")
+except Exception:
+    _SAVE_PATH = None
+if not _SAVE_PATH:
+    _SAVE_PATH = os.path.join(FileUtil.getProfilePath(), "platform_allocation_register.json")
 # Event helper for property-change listeners (thread-safe)
 _pcs = PropertyChangeSupport()
 

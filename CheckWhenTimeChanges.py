@@ -20,10 +20,20 @@ from jmri.profile import ProfileManager
 from java.beans import PropertyChangeListener
 import TASBeanLookup as TBL
 
+import TASPathResolver as TPR
 class CheckWhenTimeChanges(PropertyChangeListener):
     def propertyChange(self, event):
         if event.getPropertyName() == "value":
             scriptsPath = jmri.util.FileUtil.getScriptsPath()
+            # Prefer TAS profile scripts via resolver
+            try:
+                _RunWttPath = TPR.ResolveScriptReadPath("RunWTT.py")
+                _RetryPath = TPR.ResolveScriptReadPath("retryEnqueuedWorkings.py")
+                _CheckTpPath = TPR.ResolveScriptReadPath("CheckTimingPoints.py")
+            except Exception:
+                _RunWttPath = None
+                _RetryPath = None
+                _CheckTpPath = None
             
             memoryManager = jmri.InstanceManager.getDefault(jmri.MemoryManager)
             memAutoWorking = TBL.FindMemoryBySuffix("TASAUTOWORKING")
@@ -37,17 +47,17 @@ class CheckWhenTimeChanges(PropertyChangeListener):
     
             if autoWorking:
                 try:          
-                    scriptName = os.path.join(scriptsPath, "RunWTT.py")
+                    scriptName = _RunWttPath if _RunWttPath is not None else os.path.join(scriptsPath, "RunWTT.py")
                     execfile(scriptName)
                 except Exception as e:
                     print("Error executing:", scriptName, e)
                 try:
-                    scriptName = os.path.join(scriptsPath, "retryEnqueuedWorkings.py")
+                    scriptName = _RetryPath if _RetryPath is not None else os.path.join(scriptsPath, "retryEnqueuedWorkings.py")
                     execfile(scriptName)
                 except Exception as e:
                     print("Error executing:", scriptName, e)
             try:
-                scriptName = os.path.join(scriptsPath, "CheckTimingPoints.py")
+                scriptName = _CheckTpPath if _CheckTpPath is not None else os.path.join(scriptsPath, "CheckTimingPoints.py")
                 execfile(scriptName)
             except Exception as e:
                 print("Error executing:", scriptName, e)

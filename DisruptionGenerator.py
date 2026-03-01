@@ -124,10 +124,19 @@ def timetablePathFromMemory():
     name = _readMemStr("CURRENTTIMETABLE")
     if not name:
         return None
-    return os.path.join(profilePath, "timetable", name + ".csv")
+    try:
+        return FileUtil.getExternalFilename("profile:timetable/" + name + ".csv")
+    except Exception:
+        return os.path.join(profilePath, "timetable", name + ".csv")
 def loadDisruptionGroups():
     profilePath = jmri.profile.ProfileManager.getDefault().getActiveProfile().getPath().toString()
-    path = os.path.join(profilePath, "timetable", "Disruption.csv")
+    path = None
+    try:
+        path = FileUtil.getExternalFilename("profile:timetable/Disruption.csv")
+    except Exception:
+        path = None
+    if not path:
+        path = os.path.join(profilePath, "timetable", "Disruption.csv")
     groups = {}
     if not os.path.exists(path):
         return groups

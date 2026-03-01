@@ -17,6 +17,7 @@ from jmri.profile import ProfileManager
 import TASUtil as TU
 import TASBeanLookup as TBL
 
+import TASPathResolver as TPR
 def get_forms_for(reporting_number):
     try:     
         memTimetable = TBL.ProvideMemoryBySuffix("CURRENTTIMETABLE", "")
@@ -24,7 +25,7 @@ def get_forms_for(reporting_number):
             return ""
         timetable_name = memTimetable.getValue()
         profile = ProfileManager.getDefault().getActiveProfile()
-        timetable_file = os.path.join(profile.getPath().toString(), "timetable", timetable_name + ".csv")
+        timetable_file = TPR.GetTimetableCsvPath(timetable_name)
         if not os.path.exists(timetable_file):
             return ""
         with open(timetable_file, "r") as f:
@@ -52,6 +53,8 @@ else:
     for reportingNumber, direction in workingsCopy:    
         if not reportingNumber:
             continue
+        scriptName = TPR.ResolveWorkingScriptReadPath(direction, reportingNumber)
+    if scriptName is None:
         scriptName = os.path.join(scriptsPath, "workings", direction, reportingNumber + ".py")
         print("Retrying ", scriptName)
         formsNext = get_forms_for(reportingNumber)

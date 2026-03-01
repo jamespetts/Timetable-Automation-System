@@ -21,6 +21,7 @@ from java.util import Calendar, Date
 from java.text import SimpleDateFormat
 from jmri.profile import ProfileManager
 
+from jmri.util import FileUtil
 # ---- Profile + timetable path (relative to active profile) ----
 profile = ProfileManager.getDefault().getActiveProfile()
 profilePath = profile.getPath()
@@ -54,8 +55,13 @@ def ReadMemBool(name, defaultFalse):
     return s in ("true", "1", "yes", "on")
 
 timetableName = ReadMemStr("CURRENTTIMETABLE", "")
-timetablePath = os.path.join(profile_str, "timetable", timetableName + ".csv")
-
+timetablePath = None
+try:
+    timetablePath = FileUtil.getExternalFilename("profile:timetable/" + str(timetableName) + ".csv")
+except Exception:
+    timetablePath = None
+if not timetablePath:
+    timetablePath = os.path.join(profile_str, "timetable", timetableName + ".csv")
 # ---- Memories ----
 currentTimeString = ReadMemStr("CURRENTTIME", "")
 currentDay = ReadMemStr("DAYOFWEEK", "Monday")
@@ -297,7 +303,14 @@ if timeWarpEnabled:
     # Ensure any due enqueued working is retried before deciding where to warp
     try:
         scriptsPath = jmri.util.FileUtil.getScriptsPath()
-        execfile(os.path.join(scriptsPath, "retryEnqueuedWorkings.py"))
+        retryScript = None
+        try:
+            retryScript = FileUtil.getExternalFilename("profile:jython/retryEnqueuedWorkings.py")
+        except Exception:
+            retryScript = None
+        if not retryScript:
+            retryScript = os.path.join(scriptsPath, "retryEnqueuedWorkings.py")
+        execfile(retryScript)
     except Exception as e:
         print("Warning: retryEnqueuedWorkings failed:", e)
 

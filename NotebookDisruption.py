@@ -36,6 +36,7 @@
 # JMRI 5.14, Jython (Python 2.7). ASCII-only.
 
 import jmri
+from jmri.util import FileUtil
 import os
 import csv
 import re
@@ -313,7 +314,10 @@ def _TimetablePathFromMemory():
     name = _ReadMemStr('CURRENTTIMETABLE', '')
     if not name:
         return None
-    return os.path.join(profilePath, 'timetable', name + '.csv')
+    try:
+        return FileUtil.getExternalFilename("profile:timetable/" + name + ".csv")
+    except Exception:
+        return os.path.join(profilePath, 'timetable', name + '.csv')
 
 
 def _LoadTimetableIndex(hub, dayName):

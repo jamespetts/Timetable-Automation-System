@@ -39,8 +39,13 @@ elif memTimetable.getValue() is None:
     print("Error: CURRENTTIMETABLE has no value.")
 else:
     timetableName = memTimetable.getValue()
-    timetableFile = os.path.join(profilePath.toString(), "timetable", timetableName + ".csv")
-
+    timetableFile = None
+    try:
+        timetableFile = FileUtil.getExternalFilename("profile:timetable/" + str(timetableName) + ".csv")
+    except Exception:
+        timetableFile = None
+    if not timetableFile:
+        timetableFile = os.path.join(profilePath.toString(), "timetable", timetableName + ".csv")
     # --- Proceed only if timetableFile is valid ---
     if not os.path.exists(timetableFile):
         print("Error: Timetable file does not exist:", timetableFile)
@@ -170,7 +175,14 @@ else:
             # --- Trigger script if match found ---
             if reportingNumber:
                 scriptsPath = jmri.util.FileUtil.getScriptsPath()
-                scriptName = os.path.join(scriptsPath, "workings", direction, reportingNumber + ".py")
+                scriptName = None
+                try:
+                    # Prefer profile:jython workings via scheme resolution (non-breaking fallback)
+                    scriptName = FileUtil.getExternalFilename("profile:jython/workings/" + str(direction) + "/" + str(reportingNumber) + ".py")
+                except Exception:
+                    scriptName = None
+                if not scriptName:
+                    scriptName = os.path.join(scriptsPath, "workings", direction, reportingNumber + ".py")
                 if not os.path.isfile(scriptName):
                     print("No working script found for {} at {} (skipping)".format(reportingNumber, scriptName))
                 else:

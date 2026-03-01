@@ -3083,6 +3083,11 @@ class TASSetupFrame(jmri.util.JmriJFrame):
                 name = TBL.SafeGetOrCreateMemoryValue(IMCurrentTimetable, "").strip()
                 if name == "":
                     return None
+                # Prefer JMRI scheme resolution for portability
+                try:
+                    return FileUtil.getExternalFilename("profile:timetable/" + name + ".csv")
+                except Exception:
+                    pass
                 prof = jmri.profile.ProfileManager.getDefault().getActiveProfile().getPath().toString()
                 return os.path.join(prof, "timetable", name + ".csv")
             except Exception:
@@ -3441,7 +3446,7 @@ class TASSetupFrame(jmri.util.JmriJFrame):
             try:
                 path = ProfileJythonFilePath("HardwareDirectionConfig.py")
                 if os.path.isfile(path):
-                    RunSetupWizard(onClosed=(lambda: self.OnWizardClosedRefreshSetupUi()))
+                    execfile(path, {"__name__": "__main__", "__file__": path})
                 else:
                     JOptionPane.showMessageDialog(
                         panel,
