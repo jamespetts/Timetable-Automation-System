@@ -13,12 +13,14 @@
 #
 #
 import jmri, java, csv, random
+import os
 from java.awt import Color, Font, BasicStroke, RenderingHints, Dimension, GridLayout, BorderLayout
 from java.awt.geom import Area, Ellipse2D, RoundRectangle2D
 from javax.swing import JPanel, JLabel, BoxLayout, BorderFactory, JTextArea, JEditorPane, JScrollPane, ScrollPaneConstants
 from javax.swing.border import EmptyBorder
 import TASBeanLookup as TBL
 
+import TASPathResolver
 # ------------------------------ SIZING & STYLES ------------------------------
 PAGE_H_MARGIN = 8  # left/right padding
 COL_GAP = 8        # gap between day columns (modern)
@@ -91,11 +93,17 @@ def _active_preset_name():
     return 'Maesteg_Sep2017'
 
 def _sun_csv_path():
+    # Use TASPathResolver for profile-portable access to daynight.csv
+    try:
+        pj = TASPathResolver.GetProfileJythonDir()
+        if pj:
+            return os.path.join(str(pj), "config", "daynight.csv")
+    except Exception:
+        pass
     try:
         return jmri.util.FileUtil.getExternalFilename("profile:jython/config/daynight.csv")
     except Exception:
         return "jython/config/daynight.csv"
-
 FALLBACK_SUN = {
     'Monday':    {'civil_dawn': 303, 'sunrise': 401, 'sunset': 1200, 'civil_dusk': 1298},
     'Tuesday':   {'civil_dawn': 305, 'sunrise': 402, 'sunset': 1198, 'civil_dusk': 1296},

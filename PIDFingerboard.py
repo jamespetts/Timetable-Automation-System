@@ -83,6 +83,7 @@ import java.text.SimpleDateFormat as SimpleDateFormat
 from java.awt.geom import Area, RoundRectangle2D, Ellipse2D
 import TimingRegister as TR  # read-only tuples (reportingNumber, direction, time, day)
 import TASBeanLookup as TBL
+import TASPathResolver
 import PlatformAllocationRegister as PAR  # allocation takes precedence over timetable/overrides
 from DisruptionRegister import getDisruption
 
@@ -560,8 +561,7 @@ def FBP_ReadHideClocksWhenEmpty():
 def FBP_TimetablePath():
     name = FBP_TimetableMem.getValue() or ""
     profilePath = jmri.profile.ProfileManager.getDefault().getActiveProfile().getPath().toString()
-    return os.path.join(profilePath, "timetable", name + ".csv")
-
+    return TASPathResolver.GetTimetableCsvPath(name)
 def FBP_CsvRows():
     path = FBP_TimetablePath()
     if not os.path.exists(path): return []

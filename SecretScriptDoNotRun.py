@@ -12,6 +12,7 @@
 # If not, see <https://www.gnu.org/licenses/>. 
 
 import jmri
+import TASPathResolver
 import os
 import java
 from java.awt import Color, Font, BasicStroke, RenderingHints, Dimension, Rectangle, Polygon
@@ -146,11 +147,23 @@ CLR_SHIELD = Color(80, 255, 80)
 # High score file path (profile-relative, no absolute paths)
 # ----------------------------------------------------------------------
 def GetHighScorePath():
+    # Use TASPathResolver to keep write locations centralized and profile-portable
     try:
-        return jmri.util.FileUtil.getExternalFilename("profile:jython/config/" + HS_FILE_NAME)
-    except:
-        return HS_FILE_NAME
-
+        pj = TASPathResolver.GetProfileJythonDir()
+    except Exception:
+        pj = None
+    if pj:
+        try:
+            d = os.path.join(str(pj), "config")
+            try:
+                TASPathResolver.EnsureDir(d)
+            except Exception:
+                pass
+            return os.path.join(str(d), HS_FILE_NAME)
+        except Exception:
+            pass
+    # Fallback: local file name (current working directory)
+    return HS_FILE_NAME
 # ----------------------------------------------------------------------
 # Helpers
 # ----------------------------------------------------------------------
@@ -337,10 +350,23 @@ def LoadHighScores():
 def SaveHighScores(scores):
     path = GetHighScorePath()
     try:
+
         d = os.path.dirname(path)
-        if d and not os.path.exists(d):
-            os.makedirs(d)
+
+        if d:
+
+            try:
+
+                TASPathResolver.EnsureDir(d)
+
+            except Exception:
+
+                if not os.path.exists(d):
+
+                    os.makedirs(d)
+
     except:
+
         pass
     try:
         f = open(path, "w")

@@ -41,6 +41,7 @@ import java.text.SimpleDateFormat as SimpleDateFormat
 # TAS helpers
 import TASBeanLookup as TBL
 
+import TASPathResolver
 # Optional TAS registers
 try:
     import TimingRegister as TR
@@ -327,9 +328,7 @@ def TimetablePathFromMemory():
     prof = ActiveProfilePath()
     if not prof:
         return None
-    return os.path.join(prof, "timetable", name + ".csv")
-
-
+    return TASPathResolver.GetTimetableCsvPath(name)
 def CsvRows():
     # Returns list of dict rows from the timetable (tab-delimited), or [].
     path = TimetablePathFromMemory()

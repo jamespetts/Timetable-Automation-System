@@ -39,6 +39,7 @@ import java.text.SimpleDateFormat as SimpleDateFormat
 from DisruptionRegister import getDisruption
 import TimingRegister as TR  # read-only access to timing tuples
 import TASBeanLookup as TBL
+import TASPathResolver
 import PlatformAllocationRegister as PAR  # allocation takes precedence over timetable/overrides 
 
 # -------------------- THEME / UI CONFIG --------------------
@@ -174,8 +175,7 @@ def getPlatformOverride(reportingNumber):
 def timetable_path():
     name = timetableMem.getValue() or ""
     profilePath = jmri.profile.ProfileManager.getDefault().getActiveProfile().getPath().toString()
-    return os.path.join(profilePath, "timetable", name + ".csv")
-
+    return TASPathResolver.GetTimetableCsvPath(name)
 def csv_rows():
     """Return all rows from the timetable CSV (tab-delimited). Shadowing-safe (no list())."""
     path = timetable_path()

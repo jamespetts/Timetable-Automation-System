@@ -59,6 +59,7 @@ import os, csv, random
 
 # TAS helpers and registers (same contracts as PIDLarge.py)
 import TASBeanLookup as TBL
+import TASPathResolver
 import TimingRegister as TR
 import PlatformAllocationRegister as PAR
 from DisruptionRegister import getDisruption
@@ -982,8 +983,7 @@ def TimetablePath():
         prof = jmri.profile.ProfileManager.getDefault().getActiveProfile().getPath().toString()
     except:
         return None
-    return os.path.join(prof, "timetable", name + ".csv")
-
+    return TASPathResolver.GetTimetableCsvPath(name)
 def CsvRows():
     path = TimetablePath()
     if not (path and os.path.exists(path)): return []

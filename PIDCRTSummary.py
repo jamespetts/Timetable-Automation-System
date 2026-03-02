@@ -24,6 +24,7 @@ import javax.swing as swing
 import java.awt as awt
 from java.awt import Color, Font, GradientPaint, RenderingHints, BasicStroke, Dimension
 import jmri
+from jmri.util import FileUtil
 from jmri import InstanceManager
 import os, csv
 import TASBeanLookup as TBL
@@ -129,7 +130,11 @@ def CRTSUM_MinutesToHHmm(total):
 def CRTSUM_TimetablePath():
     name = CRTSUM_TimetableMem.getValue() or ""
     profilePath = jmri.profile.ProfileManager.getDefault().getActiveProfile().getPath().toString()
-    return os.path.join(profilePath, "timetable", name + ".csv")
+    # Prefer JMRI scheme resolution for portability
+    try:
+        return FileUtil.getExternalFilename("profile:timetable/" + str(name) + ".csv")
+    except Exception:
+        return os.path.join(profilePath, "timetable", name + ".csv")
 
 def CRTSUM_CsvRows():
     path = CRTSUM_TimetablePath()

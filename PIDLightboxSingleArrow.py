@@ -48,6 +48,7 @@ from jmri import InstanceManager
 import os, csv, math
 
 import TASBeanLookup as TBL
+import TASPathResolver
 import TimingRegister as TR
 import PlatformAllocationRegister as PAR
 from DisruptionRegister import getDisruption
@@ -309,9 +310,7 @@ def TimetablePath():
         profilePath = jmri.profile.ProfileManager.getDefault().getActiveProfile().getPath().toString()
     except:
         return None
-    return os.path.join(profilePath, "timetable", name + ".csv")
-
-
+    return TASPathResolver.GetTimetableCsvPath(name)
 def CsvRows():
     path = TimetablePath()
     if not (path and os.path.exists(path)):

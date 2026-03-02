@@ -36,6 +36,7 @@ from javax.swing.event import TableColumnModelListener
 from java.lang import System
 
 import TASBeanLookup as TBL
+import TASPathResolver
 import TASUtil as TU  # IsDefaultReportingNumber(s), MakeDefaultReportingNumberFromRow(rowNumber)
 from DisruptionRegister import getDisruption
 
@@ -221,25 +222,15 @@ _TP_HEADER_PAT = re.compile(r"^TP(\d*)(Arr|Dep)\s+(.+)$", re.IGNORECASE)
 
 def ResolveTimetableCsvPath():
     timetableName = _ReadMemStr("CURRENTTIMETABLE", "Default timetable")
-    profilePath = None
+    # Use TASPathResolver so timetable paths are centralized and profile-portable
+    p = TASPathResolver.GetTimetableCsvPath(timetableName)
+    if p is not None:
+        return p
+    # Fallback: maintain legacy behavior if profile is unavailable
     try:
-        from jmri.profile import ProfileManager
-        p = ProfileManager.getDefault().getActiveProfile()
-        if p is not None:
-            profilePath = p.getPath().toString()
-    except:
-        try:
-            from apps import Apps
-            p = Apps.getProfileManager().getActiveProfile()
-            if p is not None:
-                profilePath = p.getPath().toString()
-        except:
-            pass
-    if profilePath is None:
-        profilePath = os.getcwd()
-    return os.path.join(profilePath, "timetable", timetableName + ".csv")
-
-
+        return os.path.join(os.getcwd(), "timetable", str(timetableName) + ".csv")
+    except Exception:
+        return None
 def LoadServicesMaster(csvPath):
     services = []
     if not os.path.exists(csvPath):

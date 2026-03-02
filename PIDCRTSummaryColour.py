@@ -28,6 +28,7 @@ import jmri
 from jmri import InstanceManager
 import os, csv
 import TASBeanLookup as TBL
+import TASPathResolver
 import java.text.SimpleDateFormat as SimpleDateFormat
 from java.beans import PropertyChangeListener
 from java.awt.event import WindowAdapter
@@ -157,9 +158,7 @@ def CRTCOL_MinutesToHHmm(total):
 def CRTCOL_TimetablePath():
     name = CRTCOL_TimetableMem.getValue() or ""
     profilePath = jmri.profile.ProfileManager.getDefault().getActiveProfile().getPath().toString()
-    return os.path.join(profilePath, "timetable", name + ".csv")
-
-
+    return TASPathResolver.GetTimetableCsvPath(name)
 def CRTCOL_CsvRows():
     path = CRTCOL_TimetablePath()
     if not os.path.exists(path):

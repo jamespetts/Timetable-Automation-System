@@ -30,11 +30,13 @@
 # Start style preserved at bottom:
 # ui = WeatherForecastUI(); ui.setName('Weather forecast UI'); ui.start()
 import jmri, java, csv
+import os
 from java.awt import Color, Font, BasicStroke, RenderingHints, Dimension, GridLayout
 from java.awt.geom import RoundRectangle2D
 from javax.swing import JPanel, JLabel, BoxLayout, BorderFactory, Timer, JButton
 from javax.swing.border import EmptyBorder
 import TASBeanLookup as TBL
+import TASPathResolver
 from java.awt.event import WindowAdapter
 from javax.swing import WindowConstants
 
@@ -59,11 +61,13 @@ CLOUD_GRAY = Color(150,155,165)
 
 # Sunrise/Sunset CSV (reuse your other scripts' location)
 try:
-    DAYNIGHT_CSV_PATH = jmri.util.FileUtil.getExternalFilename("profile:jython/config/daynight.csv")
+    pj = TASPathResolver.GetProfileJythonDir()
+    if pj:
+        DAYNIGHT_CSV_PATH = os.path.join(str(pj), "config", "daynight.csv")
+    else:
+        DAYNIGHT_CSV_PATH = jmri.util.FileUtil.getExternalFilename("profile:jython/config/daynight.csv")
 except Exception:
-    DAYNIGHT_CSV_PATH = "jython/config/daynight.csv"
-
-# (Removed hard-coded DAYNIGHT_PRESET; use Memory instead)
+    DAYNIGHT_CSV_PATH = "jython/config/daynight.csv"# (Removed hard-coded DAYNIGHT_PRESET; use Memory instead)
 
 # ------------------------------ Memory bindings ------------------------------
 mm = jmri.InstanceManager.getDefault(jmri.MemoryManager)

@@ -46,6 +46,7 @@ from java.util import Date
 import java.text.SimpleDateFormat as SimpleDateFormat
 
 import jmri
+from jmri.util import FileUtil
 from jmri import InstanceManager
 
 import os, csv
@@ -239,7 +240,11 @@ def CRTSPC_GetFieldCI(row, desiredName):
 def CRTSPC_TimetablePath():
     name = CRTSPC_TimetableMem.getValue() or ""
     profilePath = jmri.profile.ProfileManager.getDefault().getActiveProfile().getPath().toString()
-    return os.path.join(profilePath, "timetable", name + ".csv")
+    # Prefer JMRI scheme resolution for portability
+    try:
+        return FileUtil.getExternalFilename("profile:timetable/" + str(name) + ".csv")
+    except Exception:
+        return os.path.join(profilePath, "timetable", name + ".csv")
 
 
 def CRTSPC_CsvRows():

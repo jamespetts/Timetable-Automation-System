@@ -45,6 +45,7 @@ import java.text.SimpleDateFormat as SimpleDateFormat
 
 import TimingRegister as TR  # read-only tuples (reportingNumber, direction, time, day)
 import TASBeanLookup as TBL
+import TASPathResolver
 import PlatformAllocationRegister as PAR  # allocation takes precedence over timetable/overrides
 from DisruptionRegister import getDisruption
 
@@ -174,9 +175,7 @@ def BR_ReadWithinMinutes():
 def BR_TimetablePath():
     name = BR_TimetableMem.getValue() or ""
     profilePath = jmri.profile.ProfileManager.getDefault().getActiveProfile().getPath().toString()
-    return os.path.join(profilePath, "timetable", name + ".csv")
-
-
+    return TASPathResolver.GetTimetableCsvPath(name)
 def BR_CsvRows():
     path = BR_TimetablePath()
     if not os.path.exists(path):

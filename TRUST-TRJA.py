@@ -25,6 +25,7 @@ import os
 import csv
 import re
 import TASBeanLookup as TBL
+import TASPathResolver
 from java.text import SimpleDateFormat
 from jmri.profile import ProfileManager
 from DisruptionRegister import getDisruption
@@ -49,9 +50,26 @@ TRJA_CurrentTimeStr = TRJA_TimeMem.getValue() or ""
 TRJA_CurrentDay = TRJA_DayMem.getValue() or ""
 TRJA_TimetableName = TRJA_TimetableMem.getValue() or ""
 TRJA_Profile = ProfileManager.getDefault().getActiveProfile()
-TRJA_ProfilePath = TRJA_Profile.getPath().toString()
-TRJA_TimetableFile = os.path.join(TRJA_ProfilePath, "timetable", TRJA_TimetableName + ".csv")
 TRJA_BaseTPName = (TRJA_Profile.getName() or "").strip()
+# ------ Timetable path (use TASPathResolver; do not cache because CURRENTTIMETABLE can change) ------
+def TRJA_GetTimetableFile():
+    try:
+        name = TRJA_TimetableMem.getValue() or ""
+    except:
+        name = ""
+    name = ("" if name is None else str(name)).strip()
+    if name == "":
+        return None
+    try:
+        return TASPathResolver.GetTimetableCsvPath(name)
+    except Exception:
+        # Fallback to legacy join under profile path
+        try:
+            pp = TRJA_Profile.getPath().toString()
+            return os.path.join(str(pp), "timetable", name + ".csv")
+        except:
+            return None
+
 
 # ------ Day/Time helpers ------
 TRJA_DaysOfWeek = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
@@ -709,11 +727,11 @@ def TRJA_RebuildFilteredData():
     currentMinutes = TRJA_MinutesNow()
     TRJA_NextDay = TRJA_GetNextDay(currentDay_local)
 
-    if not os.path.exists(TRJA_TimetableFile):
+    if not ((TRJA_GetTimetableFile() is not None) and os.path.exists(TRJA_GetTimetableFile())):
         TRJA_UpdatePageIndicator()
         return
 
-    with open(TRJA_TimetableFile, "r") as f:
+    with open(TRJA_GetTimetableFile(), "r") as f:
         reader = csv.DictReader(f, delimiter="\t")
         rows = list(reader)
 

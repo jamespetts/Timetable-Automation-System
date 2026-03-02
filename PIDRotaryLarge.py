@@ -41,6 +41,7 @@ import csv
 # TAS helpers
 import TASBeanLookup as TBL
 
+import TASPathResolver
 # Optional TAS registers
 try:
     import TimingRegister as TR
@@ -153,9 +154,7 @@ def TimetablePathFromMemory():
     Prof = ActiveProfilePath()
     if not Prof:
         return None
-    return os.path.join(Prof, "timetable", Name + ".csv")
-
-
+    return TASPathResolver.GetTimetableCsvPath(Name)
 def CsvRows():
     Path = TimetablePathFromMemory()
     if not (Path and os.path.exists(Path)):
