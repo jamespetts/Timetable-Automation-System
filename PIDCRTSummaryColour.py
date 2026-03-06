@@ -156,9 +156,8 @@ def CRTCOL_MinutesToHHmm(total):
 # CSV access
 
 def CRTCOL_TimetablePath():
-    name = CRTCOL_TimetableMem.getValue() or ""
-    profilePath = jmri.profile.ProfileManager.getDefault().getActiveProfile().getPath().toString()
-    return TASPathResolver.GetTimetableCsvPath(name)
+    name = (TBL.SafeGetMemoryValue("CURRENTTIMETABLE", "") or "").strip()
+    return TASPathResolver.GetTimetableCsvPath(name) or ""
 def CRTCOL_CsvRows():
     path = CRTCOL_TimetablePath()
     if not os.path.exists(path):

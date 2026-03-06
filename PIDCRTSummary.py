@@ -28,6 +28,7 @@ from jmri.util import FileUtil
 from jmri import InstanceManager
 import os, csv
 import TASBeanLookup as TBL
+import TASPathResolver
 import java.text.SimpleDateFormat as SimpleDateFormat
 from java.beans import PropertyChangeListener
 from java.awt.event import WindowAdapter
@@ -128,14 +129,8 @@ def CRTSUM_MinutesToHHmm(total):
 
 # CSV access
 def CRTSUM_TimetablePath():
-    name = CRTSUM_TimetableMem.getValue() or ""
-    profilePath = jmri.profile.ProfileManager.getDefault().getActiveProfile().getPath().toString()
-    # Prefer JMRI scheme resolution for portability
-    try:
-        return FileUtil.getExternalFilename("profile:timetable/" + str(name) + ".csv")
-    except Exception:
-        return os.path.join(profilePath, "timetable", name + ".csv")
-
+    name = (TBL.SafeGetMemoryValue("CURRENTTIMETABLE", "") or "").strip()
+    return TASPathResolver.GetTimetableCsvPath(name) or ""
 def CRTSUM_CsvRows():
     path = CRTSUM_TimetablePath()
     if not os.path.exists(path): return []

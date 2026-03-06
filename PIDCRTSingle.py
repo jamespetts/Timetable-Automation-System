@@ -39,6 +39,7 @@ from java.awt.event import WindowAdapter
 from DisruptionRegister import getDisruption
 import TimingRegister as TR  # read-only access to timing tuples (reportingNumber, direction, time, day)
 import TASBeanLookup as TBL
+import TASPathResolver
 import PlatformAllocationRegister as PAR   # allocation takes precedence over timetable/overrides
 
 # ---- Cross-script: locate the summary PID frame so this script can match its on-screen size.
@@ -257,14 +258,8 @@ def CRTS_MinutesToHHmm(total):
 
 # -- Timetable access --
 def CRTS_TimetablePath():
-    name = CRTS_TimetableMem.getValue() or ""
-    profilePath = jmri.profile.ProfileManager.getDefault().getActiveProfile().getPath().toString()
-    # Prefer JMRI scheme resolution for portability
-    try:
-        return FileUtil.getExternalFilename("profile:timetable/" + str(name) + ".csv")
-    except Exception:
-        return os.path.join(profilePath, "timetable", name + ".csv")
-
+    name = (TBL.SafeGetMemoryValue("CURRENTTIMETABLE", "") or "").strip()
+    return TASPathResolver.GetTimetableCsvPath(name) or ""
 def CRTS_CsvRows():
     path = CRTS_TimetablePath()
     if not os.path.exists(path):

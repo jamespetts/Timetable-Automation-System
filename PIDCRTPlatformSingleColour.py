@@ -51,6 +51,7 @@ from jmri import InstanceManager
 
 import os, csv
 import TASBeanLookup as TBL
+import TASPathResolver
 import TimingRegister as TR
 import PlatformAllocationRegister as PAR
 from DisruptionRegister import getDisruption
@@ -238,15 +239,8 @@ def CRTSPC_GetFieldCI(row, desiredName):
 # ---- Timetable access ----
 
 def CRTSPC_TimetablePath():
-    name = CRTSPC_TimetableMem.getValue() or ""
-    profilePath = jmri.profile.ProfileManager.getDefault().getActiveProfile().getPath().toString()
-    # Prefer JMRI scheme resolution for portability
-    try:
-        return FileUtil.getExternalFilename("profile:timetable/" + str(name) + ".csv")
-    except Exception:
-        return os.path.join(profilePath, "timetable", name + ".csv")
-
-
+    name = (TBL.SafeGetMemoryValue("CURRENTTIMETABLE", "") or "").strip()
+    return TASPathResolver.GetTimetableCsvPath(name) or ""
 def CRTSPC_CsvRows():
     path = CRTSPC_TimetablePath()
     if not os.path.exists(path):
