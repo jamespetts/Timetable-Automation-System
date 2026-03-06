@@ -422,7 +422,13 @@ class AdBanner(Card):
             if br == "spice inveiglers":
                 from jmri.util import FileUtil
                 import os
-                execfile(os.path.join(FileUtil.getScriptsPath(), 'SecretScriptDoNotRun.py'), globals())
+                try:
+                    p = TASPathResolver.ResolveScriptReadPath('SecretScriptDoNotRun.py')
+                except Exception:
+                    p = None
+                if p is None:
+                    p = os.path.join(FileUtil.getScriptsPath(), 'SecretScriptDoNotRun.py')
+                execfile(p, globals())
                 return
         except:
             pass

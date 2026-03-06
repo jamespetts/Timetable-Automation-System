@@ -23,6 +23,27 @@ import TASUtil as TU
 import TrainLocatorRegister as TLR
 import TASBeanLookup as TBL
 
+# Helper: resolve TrainInfo XML path (portable profile scheme, fallback to legacy profile path)
+def _TrainInfoXmlPath(nameOrFile):
+    try:
+        nm = "" if nameOrFile is None else str(nameOrFile).strip()
+    except Exception:
+        nm = ""
+    if nm == "":
+        return None
+    # Accept either bare name or full file name ending with .xml
+    if not nm.lower().endswith(".xml"):
+        nm = nm + ".xml"
+    try:
+        return jmri.util.FileUtil.getExternalFilename("profile:dispatcher/traininfo/" + nm)
+    except Exception:
+        try:
+            base = jmri.util.FileUtil.getProfilePath()
+            return os.path.join(str(base), "dispatcher", "traininfo", nm)
+        except Exception:
+            return None
+
+
 def IsDefaultReportingNumber(s):
     # Treat as "default" only if it is exactly 'TAS' (uppercase) followed by digits
     try:
@@ -62,8 +83,7 @@ def addMinutesToTime(minutes_to_add):
 
 def checkEndBlock(traininfoName):
     # Read traininfo file
-    profilePath = jmri.util.FileUtil.getProfilePath()
-    filename = os.path.join(profilePath, "dispatcher", "traininfo", traininfoName + ".xml")
+    filename = _TrainInfoXmlPath(traininfoName)
 
     if not os.path.isfile(filename):
         print("Error: traininfo file not found:", filename)
@@ -403,8 +423,7 @@ def startTrain(traininfoName, rosterEntry, reportingNumber, direction, formsNext
     
     # Best-effort cleanup: remove the per-attempt traininfo file we just used
     try:
-        profilePath = jmri.util.FileUtil.getProfilePath()
-        tiPath = os.path.join(profilePath, "dispatcher", "traininfo", cloneName)
+        tiPath = _TrainInfoXmlPath(cloneName)
         if os.path.isfile(tiPath):
             os.remove(tiPath)
     except Exception:

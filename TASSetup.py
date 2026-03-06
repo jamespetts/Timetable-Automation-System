@@ -305,10 +305,16 @@ def StripCsvExt(name):
 
 def ProfileJythonFilePath(name):
     try:
+        if TPR is not None:
+            pj = TPR.GetProfileJythonDir()
+            if pj:
+                return os.path.join(str(pj), str(name))
+    except Exception:
+        pass
+    try:
         return FileUtil.getExternalFilename("profile:jython/" + name)
     except:
         return "jython/" + name
-
 def _NormRN(s):
     # Case-insensitive matching for reporting numbers; blank -> ""
     try:
@@ -452,9 +458,14 @@ def _ParseTimeToMinutes(timeStr):
 def _TimetableFilePath():
     name = TBL.SafeGetOrCreateMemoryValue(IMCurrentTimetable, "").strip()
     if not name: return None
+    try:
+        if TPR is not None:
+            p = TPR.GetTimetableCsvPath(name)
+            if p: return p
+    except Exception:
+        pass
     ttDir = FileUtil.getExternalFilename("profile:timetable")
     return os.path.join(ttDir, name + ".csv")
-
 def _ValidateTimetable():
     """
     Returns (isValid, firstMessage, headerInfo)
@@ -905,7 +916,14 @@ def ScanDisplayOptions():
     """
     settingsMap = {}
     try:
-        jdir = FileUtil.getExternalFilename("profile:jython")
+        jdir = None
+        try:
+            if TPR is not None:
+                jdir = TPR.GetProfileJythonDir()
+        except:
+            jdir = None
+        if not jdir:
+            jdir = FileUtil.getExternalFilename("profile:jython")
     except:
         jdir = None
     if not jdir or not os.path.isdir(jdir):
@@ -986,7 +1004,14 @@ def ScanDisplayScripts():
     descMap = {}
 
     try:
-        jdir = FileUtil.getExternalFilename("profile:jython")
+        jdir = None
+        try:
+            if TPR is not None:
+                jdir = TPR.GetProfileJythonDir()
+        except:
+            jdir = None
+        if not jdir:
+            jdir = FileUtil.getExternalFilename("profile:jython")
     except:
         jdir = None
 

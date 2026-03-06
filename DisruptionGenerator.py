@@ -16,6 +16,11 @@
 import os, csv, random, re, math
 import jmri
 from jmri.util import FileUtil
+# Optional resolver (preferred)
+try:
+    import TASPathResolver as TPR
+except Exception:
+    TPR = None
 # Registers
 from DisruptionRegister import registerDisruption, updateDisruption, getDisruption, deregisterDisruption
 import DisruptionRegister as DR # enumerate all registered reporting numbers safely
@@ -125,9 +130,16 @@ def timetablePathFromMemory():
     if not name:
         return None
     try:
-        return FileUtil.getExternalFilename("profile:timetable/" + name + ".csv")
+        if TPR is not None:
+            p = TPR.GetTimetableCsvPath(name)
+            if p:
+                return p
     except Exception:
-        return os.path.join(profilePath, "timetable", name + ".csv")
+        pass
+    try:
+        return FileUtil.getExternalFilename("profile:timetable/" + str(name) + ".csv")
+    except Exception:
+        return os.path.join(profilePath, "timetable", str(name) + ".csv")
 def loadDisruptionGroups():
     profilePath = jmri.profile.ProfileManager.getDefault().getActiveProfile().getPath().toString()
     path = None

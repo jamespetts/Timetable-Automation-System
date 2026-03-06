@@ -23,6 +23,7 @@ from jmri.profile import ProfileManager
 from jmri.util import FileUtil
 import TASUtil as TU
 import TASBeanLookup as TBL
+import TASPathResolver as TPR
 
 # --- Memory manager ---
 memoryManager = jmri.InstanceManager.getDefault(jmri.MemoryManager)
@@ -41,11 +42,19 @@ else:
     timetableName = memTimetable.getValue()
     timetableFile = None
     try:
-        timetableFile = FileUtil.getExternalFilename("profile:timetable/" + str(timetableName) + ".csv")
+        timetableFile = TPR.GetTimetableCsvPath(timetableName)
     except Exception:
         timetableFile = None
     if not timetableFile:
-        timetableFile = os.path.join(profilePath.toString(), "timetable", timetableName + ".csv")
+        try:
+            timetableFile = FileUtil.getExternalFilename("profile:timetable/" + str(timetableName) + ".csv")
+        except Exception:
+            timetableFile = None
+    if not timetableFile:
+        try:
+            timetableFile = os.path.join(profilePath.toString(), "timetable", str(timetableName) + ".csv")
+        except Exception:
+            timetableFile = None
     # --- Proceed only if timetableFile is valid ---
     if not os.path.exists(timetableFile):
         print("Error: Timetable file does not exist:", timetableFile)
@@ -177,10 +186,14 @@ else:
                 scriptsPath = jmri.util.FileUtil.getScriptsPath()
                 scriptName = None
                 try:
-                    # Prefer profile:jython workings via scheme resolution (non-breaking fallback)
-                    scriptName = FileUtil.getExternalFilename("profile:jython/workings/" + str(direction) + "/" + str(reportingNumber) + ".py")
+                    scriptName = TPR.ResolveWorkingScriptReadPath(direction, reportingNumber)
                 except Exception:
                     scriptName = None
+                if not scriptName:
+                    try:
+                        scriptName = FileUtil.getExternalFilename("profile:jython/workings/" + str(direction) + "/" + str(reportingNumber) + ".py")
+                    except Exception:
+                        scriptName = None
                 if not scriptName:
                     scriptName = os.path.join(scriptsPath, "workings", direction, reportingNumber + ".py")
                 if not os.path.isfile(scriptName):

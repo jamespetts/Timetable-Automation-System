@@ -30,7 +30,7 @@ def trainFinder(traininfoNames, rosterIds=None, reportingNumber=None):
     from jmri import InstanceManager
     from jmri.util import FileUtil
     import formationRegister 
-    
+
     # Helper: check if Transit is idle
     def isTransitIdle(traininfoName):
         try:
@@ -52,12 +52,12 @@ def trainFinder(traininfoNames, rosterIds=None, reportingNumber=None):
         except Exception:
             return True  # Fail-safe: assume available
         return True
-    
+
     for passNum in [1, 2]:
         for traininfoName in traininfoNames:          
             if passNum == 1 and not isTransitIdle(traininfoName):
-                        continue  # Skip busy Transit in first pass
-                        
+                continue  # Skip busy Transit in first pass
+
             # Read traininfo file
             filename = FileUtil.getProfilePath() + "/dispatcher/traininfo/" + traininfoName + ".xml"
             if not os.path.isfile(filename):

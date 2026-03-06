@@ -21,6 +21,7 @@ from jmri import ShutDownManager
 from java.util.concurrent.locks import ReentrantReadWriteLock
 import TASBeanLookup as TBL
 
+import TASPathResolver
 _rwlock = ReentrantReadWriteLock()
 _rlock = _rwlock.readLock()
 _wlock = _rwlock.writeLock()
@@ -80,17 +81,14 @@ def _activeProfileBaseTP():
 
 def _ttPath():
     # CURRENTTIMETABLE stores the timetable name as the Memory value (suffix-based lookup).
-    ttName = str(TBL.SafeGetMemoryValue("CURRENTTIMETABLE", "")).strip()
+    ttName = (TBL.SafeGetMemoryValue("CURRENTTIMETABLE", "") or "").strip()
     if not ttName:
         return None
-    ttPath = None
     try:
-        ttPath = FileUtil.getExternalFilename("profile:timetable/" + str(ttName) + ".csv")
+        p = TASPathResolver.GetTimetableCsvPath(ttName)
+        return None if not p else p
     except Exception:
-        ttPath = None
-    if not ttPath:
-        ttPath = os.path.join(FileUtil.getProfilePath(), "timetable", ttName + ".csv")
-    return ttPath
+        return None
 def _todayName():
     # DAYOFWEEK stores the current day name as the Memory value (suffix-based lookup).
     return str(TBL.SafeGetMemoryValue("DAYOFWEEK", "")).strip()

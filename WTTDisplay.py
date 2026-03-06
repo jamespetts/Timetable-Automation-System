@@ -43,6 +43,7 @@ from java.lang import String, Math, System
 from java.text import SimpleDateFormat
 import TASBeanLookup as TBL
 
+import TASPathResolver
 # -- TAS default RN rule --
 import TASUtil as TU  # IsDefaultReportingNumber(s)
 
@@ -383,28 +384,8 @@ model = DefaultTableModel(_blank_rows_for_start(True), columns)  # temp; rebuilt
 
 # ---------------- CSV path ----------------
 def ResolveTimetableCsvPath():
-    timetableName = _ReadMemStr("CURRENTTIMETABLE", "Default timetable")
-    profilePath = None
-    try:
-        from jmri.profile import ProfileManager
-        p = ProfileManager.getDefault().getActiveProfile()
-        if p is not None:
-            profilePath = p.getPath().toString()
-    except:
-        try:
-            from apps import Apps
-            p = Apps.getProfileManager().getActiveProfile()
-            if p is not None:
-                profilePath = p.getPath().toString()
-        except:
-            pass
-    if profilePath is None:
-        profilePath = os.getcwd()
-    try:
-        return FileUtil.getExternalFilename("profile:timetable/" + timetableName + ".csv")
-    except Exception:
-        return os.path.join(profilePath, "timetable", timetableName + ".csv")
-
+    timetableName = (_ReadMemStr("CURRENTTIMETABLE", "") or "").strip()
+    return TASPathResolver.GetTimetableCsvPath(timetableName) or ""
 # ---------------- Time helpers ----------------
 _sdf_parse_12 = SimpleDateFormat("h:mm a")
 _sdf_parse_24 = SimpleDateFormat("H:mm")

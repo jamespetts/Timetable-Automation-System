@@ -854,7 +854,7 @@ class AboutDialog(JDialog):
         Info.setWrapStyleWord(True)
         Info.setFont(Font(FontFamily, Font.PLAIN, 13))
         Info.setText(
-            "By James E. Petts 2025. Written with the assistance of AI.\n\n"
+            "By James E. Petts 2025-6. Written with the assistance of AI.\n\n"
             "This software is a suite of scripts written for JMRI to allow easy set up and maintenance of realistic U. K. "
             "timetable based model railway operation, including accurate displays of timetables, signallers' interfaces (e.g. TRUST) "
             "and public information displays.\n\n"

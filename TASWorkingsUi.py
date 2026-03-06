@@ -33,6 +33,12 @@ from javax.swing.event import DocumentListener, ListSelectionListener
 # JMRI
 import jmri
 
+# Optional resolver (profile-first working script lookup)
+try:
+    import TASPathResolver as TPR
+except Exception:
+    TPR = None
+
 TAG = "[TASWorkingsUi] "
 
 def _SafeStr(x):
@@ -402,7 +408,14 @@ def BuildWorkingsPanel(hostFrame,
                     continue
                 rnCell = (_SafeStr(row.get('Reporting number', ''))).strip()
                 rn = rnCell if rnCell != '' else _MakeDefaultRN(rowIndex)
-                scriptPath = os.path.join(str(scriptsPath), 'workings', str(direction), str(rn) + '.py')
+                scriptPath = None
+                try:
+                    if TPR is not None:
+                        scriptPath = TPR.ResolveWorkingScriptReadPath(direction, rn)
+                except Exception:
+                    scriptPath = None
+                if not scriptPath:
+                    scriptPath = os.path.join(str(scriptsPath), 'workings', str(direction), str(rn) + '.py')
                 hasScript = os.path.isfile(scriptPath)
                 valid = ValidateWorkingScript(scriptPath) if hasScript else False
 

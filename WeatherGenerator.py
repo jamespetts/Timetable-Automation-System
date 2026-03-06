@@ -24,18 +24,23 @@
 # weather = WeatherGenerator(); weather.setName('Weather generator'); weather.start()
 import java
 import jmri
+import os
 import math
 import csv # for loading the tab-delimited climate.csv
 import TASBeanLookup as TBL
 
+import TASPathResolver
 # ============================== CONSTANT PARAMETERS ==============================
 # >>> Tab-delimited climate CSV <<<
 try:
-    CLIMATE_CSV_PATH = jmri.util.FileUtil.getExternalFilename("profile:jython/config/climate.csv")
+    pj = TASPathResolver.GetProfileJythonDir()
+    if pj:
+        CLIMATE_CSV_PATH = os.path.join(str(pj), "config", "climate.csv")
+    else:
+        CLIMATE_CSV_PATH = jmri.util.FileUtil.getExternalFilename("profile:jython/config/climate.csv")
 except Exception:
-    CLIMATE_CSV_PATH = "jython/config/climate.csv"
-
 # Read climate preset from memory (IMWX_CLIMATE) if present, else default
+    CLIMATE_CSV_PATH = "jython/config/climate.csv"# Read climate preset from memory (IMWX_CLIMATE) if present, else default
 try:
     v = TBL.SafeGetMemoryValue("WX_CLIMATE", "SouthWales_EarlySep")
     CLIMATE_NAME = str(v).strip() if v is not None else 'SouthWales_EarlySep'

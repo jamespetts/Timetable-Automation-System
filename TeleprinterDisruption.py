@@ -45,6 +45,7 @@ from javax.swing import Timer
 from java.util.concurrent.locks import ReentrantLock
 
 import TASBeanLookup as TBL
+import TASPathResolver
 import TASUtil as TU
 
 import DisruptionRegister as DR
@@ -305,15 +306,19 @@ def _ActiveProfilePath():
 
 
 def _TimetablePathFromMemory():
-    profilePath = _ActiveProfilePath()
-    if not profilePath:
-        return None
     name = _ReadMemStr('CURRENTTIMETABLE', '')
     if not name:
         return None
-    return os.path.join(profilePath, 'timetable', name + '.csv')
-
-
+    try:
+        p = TASPathResolver.GetTimetableCsvPath(str(name))
+        if p:
+            return p
+    except Exception:
+        p = None
+    profilePath = _ActiveProfilePath()
+    if not profilePath:
+        return None
+    return os.path.join(profilePath, 'timetable', str(name) + '.csv')
 def _LoadTimetableIndex(hub, dayName):
     path = _TimetablePathFromMemory()
     if not path or not os.path.exists(path):

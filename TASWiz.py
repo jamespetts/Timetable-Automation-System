@@ -439,7 +439,15 @@ def _LoadNamedPresetsFromConfigCsv(fileName, defaultNames):
 # Read preset names from profile:jython/config/<fileName> (tab-delimited, ASCII).
     names = list(defaultNames or [])
     try:
-        path = FileUtil.getExternalFilename('profile:jython/config/' + str(fileName))
+        pj = None
+        try:
+            pj = TPR.GetProfileJythonDir() if TPR is not None else None
+        except:
+            pj = None
+        if pj:
+            path = os.path.join(str(pj), "config", str(fileName))
+        else:
+            path = FileUtil.getExternalFilename("profile:jython/config/" + str(fileName))
     except:
         return names
     try:
@@ -2832,22 +2840,29 @@ class TASWizardDialog(JDialog):
             return "TAS"
 
     def _CurrentTimetableCsvPath(self):
-    # Returns filesystem path to CURRENTTIMETABLE.csv under profile:timetable, or None.
+
+        # Returns filesystem path to CURRENTTIMETABLE.csv using TASPathResolver, or None.
+
         try:
-            name = str(TBL.SafeGetOrCreateMemoryValue("CURRENTTIMETABLE", "")).strip()
+
+            name = str(TBL.SafeGetOrCreateMemoryValue('CURRENTTIMETABLE', '')).strip()
+
         except:
-            name = ""
-        if name == "":
+
+            name = ''
+
+        if name == '':
+
             return None
+
         try:
-            d = FileUtil.getExternalFilename("profile:timetable")
+
+            p = TPR.GetTimetableCsvPath(name) if TPR is not None else None
+
+            return None if not p else p
+
         except:
-            d = None
-        if not d:
-            return None
-        try:
-            return os.path.join(str(d), str(name) + ".csv")
-        except:
+
             return None
 
     def _DetermineWorkingDirection(self, rowDict):
@@ -4575,21 +4590,27 @@ class TASWizardDialog(JDialog):
             return None
 
     def _GetTimetablePath(self):
+
         try:
+
             name = str(TBL.SafeGetOrCreateMemoryValue('CURRENTTIMETABLE', '')).strip()
+
         except:
+
             name = ''
+
         if not name:
+
             return None
+
         try:
-            ttDir = FileUtil.getExternalFilename('profile:timetable')
+
+            p = TPR.GetTimetableCsvPath(name) if TPR is not None else None
+
+            return None if not p else p
+
         except:
-            ttDir = None
-        if not ttDir:
-            return None
-        try:
-            return os.path.join(str(ttDir), name + '.csv')
-        except:
+
             return None
 
     def _DisruptionGroupsUsedByTimetable(self):
