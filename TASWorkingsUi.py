@@ -277,6 +277,109 @@ def BuildWorkingsPanel(hostFrame,
             return 'Dep'
         return None
 
+
+    # ---------------- Workings folder selection (no mixing) ----------------
+    # Policy: use profile:jython/workings if it contains ANY .py scripts.
+    # Only if it contains NONE do we fall back to scriptsPath/workings.
+    # Never mix between locations in a single refresh.
+    def _HasAnyPyUnder(dirPath):
+        try:
+            if dirPath is None:
+                return False
+            p = str(dirPath)
+            if (not os.path.isdir(p)):
+                return False
+            for root, dirs, files in os.walk(p):
+                for fn in files:
+                    try:
+                        if str(fn).lower().endswith('.py'):
+                            return True
+                    except:
+                        pass
+            return False
+        except:
+            return False
+
+    def _GetWorkingsDirsReport():
+        # Returns dict: newDir, legacyDir, newHasAny, legacyHasAny, chosenDir, chosenIsLegacy
+        newDir = None
+        try:
+            # Prefer resolver for profile path if available
+            if TPR is not None and hasattr(TPR, 'GetProfileJythonDir'):
+                pj = TPR.GetProfileJythonDir()
+                if pj:
+                    newDir = os.path.join(str(pj), 'workings')
+        except:
+            newDir = None
+        if not newDir:
+            try:
+                from jmri.util import FileUtil as _FU
+                newDir = _FU.getExternalFilename('profile:jython/workings')
+            except:
+                newDir = None
+        legacyDir = None
+        try:
+            rep = _GetWorkingsDirsReport()
+            baseDir = rep.get('chosenDir')
+            if baseDir is None or str(baseDir).strip() == '':
+                return items
+            baseDir = str(baseDir)
+            if scriptsPath:
+                legacyDir = os.path.join(str(scriptsPath), 'workings')
+        except:
+            legacyDir = None
+        newHasAny = _HasAnyPyUnder(newDir)
+        legacyHasAny = _HasAnyPyUnder(legacyDir)
+        if newHasAny:
+            chosenDir = newDir
+            chosenIsLegacy = False
+        else:
+            chosenDir = legacyDir
+            chosenIsLegacy = True
+        return {
+            'newDir': newDir,
+            'legacyDir': legacyDir,
+            'newHasAny': newHasAny,
+            'legacyHasAny': legacyHasAny,
+            'chosenDir': chosenDir,
+            'chosenIsLegacy': chosenIsLegacy,
+        }
+
+    def _WorkingsLocationNoteLines():
+        # User-facing lines explaining where workings are read from.
+        try:
+            r = _GetWorkingsDirsReport()
+        except:
+            r = {}
+        newDir = r.get('newDir', None)
+        legacyDir = r.get('legacyDir', None)
+        newHasAny = bool(r.get('newHasAny', False))
+        legacyHasAny = bool(r.get('legacyHasAny', False))
+        chosenDir = r.get('chosenDir', None)
+        chosenIsLegacy = bool(r.get('chosenIsLegacy', False))
+        lines = []
+        if chosenDir is None or str(chosenDir).strip() == '':
+            lines.append('No workings folder could be found.')
+            if newDir and str(newDir).strip() != '':
+                lines.append('Main workings folder: ' + str(newDir))
+            if legacyDir and str(legacyDir).strip() != '':
+                lines.append('Legacy workings folder: ' + str(legacyDir))
+            return lines
+        if chosenIsLegacy:
+            lines.append('Workings are being read from the legacy folder: ' + str(chosenDir))
+            if newDir and str(newDir).strip() != '':
+                if newHasAny:
+                    lines.append('Note: workings were also found in the main folder: ' + str(newDir))
+                else:
+                    lines.append('This is because no workings were found in the main folder: ' + str(newDir))
+        else:
+            lines.append('Working scripts are being read from the main folder: ' + str(chosenDir))
+            if legacyDir and str(legacyDir).strip() != '' and legacyHasAny:
+                lines.append('Working scripts were also found in the legacy folder: ' + str(legacyDir))
+                lines.append('Those legacy workings are ignored to avoid mixing files from two places.')
+            elif legacyDir and str(legacyDir).strip() != '':
+                lines.append('No workings were found in the legacy folder: ' + str(legacyDir))
+        return lines
     def ValidateWorkingScriptReasons(path):
         # Return a list of specific validation failures for this script.
         # If list is empty, the script is valid.
@@ -388,7 +491,11 @@ def BuildWorkingsPanel(hostFrame,
         if path is None or not os.path.isfile(path):
             return items
         try:
-            scriptsPath = jmri.util.FileUtil.getScriptsPath()
+            rep = _GetWorkingsDirsReport()
+            baseDir = rep.get('chosenDir')
+            if baseDir is None or str(baseDir).strip() == '':
+                return
+            baseDir = str(baseDir)
             with open(path, 'r') as f:
                 reader = csv.DictReader(f, delimiter='\t')
                 header = reader.fieldnames or []
@@ -408,14 +515,7 @@ def BuildWorkingsPanel(hostFrame,
                     continue
                 rnCell = (_SafeStr(row.get('Reporting number', ''))).strip()
                 rn = rnCell if rnCell != '' else _MakeDefaultRN(rowIndex)
-                scriptPath = None
-                try:
-                    if TPR is not None:
-                        scriptPath = TPR.ResolveWorkingScriptReadPath(direction, rn)
-                except Exception:
-                    scriptPath = None
-                if not scriptPath:
-                    scriptPath = os.path.join(str(scriptsPath), 'workings', str(direction), str(rn) + '.py')
+                scriptPath = os.path.join(str(baseDir), str(direction), str(rn) + '.py')
                 hasScript = os.path.isfile(scriptPath)
                 valid = ValidateWorkingScript(scriptPath) if hasScript else False
 
@@ -532,12 +632,17 @@ def BuildWorkingsPanel(hostFrame,
             except:
                 pass
 
+        try:
+            RefreshWorkingsLocationNote()
+        except:
+            pass
+
         # Also scan for extra scripts not in timetable
         try:
             scriptsPath = jmri.util.FileUtil.getScriptsPath()
             timetableRNs = set([_NormRN(it.RN) for it in items])
             for direction in ['Trigger', 'Arr', 'Dep']:
-                dirPath = os.path.join(str(scriptsPath), 'workings', direction)
+                dirPath = os.path.join(str(baseDir), direction)
                 if not os.path.isdir(dirPath):
                     continue
                 for fname in os.listdir(dirPath):
@@ -555,6 +660,11 @@ def BuildWorkingsPanel(hostFrame,
                         leftModel.addElement(extraItem)
         except Exception as ex:
             LogWarn('Extra script scan failed: ' + _SafeStr(ex), alsoDialog=False)
+
+    try:
+        RefreshWorkingsLocationNote()
+    except:
+        pass
 
     def BuildEditorPane(item):
         editor = PyCodeEditor(themeFontFamily, applyThemeFunc=applyThemeFunc)
@@ -919,7 +1029,43 @@ def BuildWorkingsPanel(hostFrame,
     gbc.weighty = 0.0
     panel.add(hdr, gbc)
 
-    # Row with left and right
+    # Subtle note explaining which workings folder is being used (and if legacy workings are ignored).
+    noteLbl = None
+    try:
+        noteLbl = MakeWrappedLabel('', widthPx=640, lineHeight=1.20, bold=False)
+        try:
+            noteLbl.setFont(Font(themeFontFamily, Font.PLAIN, 11))
+            noteLbl.setForeground(Color(128, 128, 128))
+        except:
+            pass
+    except:
+        noteLbl = None
+
+    def RefreshWorkingsLocationNote():
+        try:
+            if noteLbl is None:
+                return
+            lines = _WorkingsLocationNoteLines()
+            html = '<html>' + '<br/>'.join([_SafeStr(x) for x in lines]) + '</html>'
+            noteLbl.setText(html)
+        except:
+            pass
+
+
+    
+    try:
+        if noteLbl is not None:
+            gbc.gridy = 2
+            gbc.gridwidth = 2
+            gbc.fill = GridBagConstraints.HORIZONTAL
+            gbc.weightx = 1.0
+            gbc.weighty = 0.0
+            panel.add(noteLbl, gbc)
+    except:
+        pass
+    RefreshWorkingsLocationNote()
+
+# Row with left and right
     gbc.gridy = 1
     gbc.gridwidth = 1
     gbc.fill = GridBagConstraints.BOTH

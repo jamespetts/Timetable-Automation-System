@@ -315,6 +315,63 @@ def ProfileJythonFilePath(name):
         return FileUtil.getExternalFilename("profile:jython/" + name)
     except:
         return "jython/" + name
+
+# -------------------- Workings path policy (profile-first with legacy fallback) --------------------
+# Policy: Use profile:jython/workings if it contains ANY .py working scripts.
+# Only if profile:jython/workings has NO scripts do we fall back to the legacy scriptsPath/workings.
+# Never mix between locations in a single session to avoid confusion.
+def _HasAnyWorkingScriptsUnder(baseDir):
+    try:
+        if baseDir is None:
+            return False
+        p = str(baseDir)
+        if (not os.path.isdir(p)):
+            return False
+        for root, dirs, files in os.walk(p):
+            for fn in files:
+                try:
+                    if str(fn).lower().endswith('.py'):
+                        return True
+                except:
+                    pass
+        return False
+    except:
+        return False
+
+def _GetWorkingsBaseDirInfo():
+    """
+    Returns (baseDir, isLegacy) for workings scripts.
+    baseDir is the resolved 'workings' directory, i.e. .../workings.
+    isLegacy is True iff we are using the legacy scripts directory location.
+    """
+    # New canonical location: profile:jython/workings
+    newBase = None
+    try:
+        # Prefer resolver if available
+        if TPR is not None:
+            pj = TPR.GetProfileJythonDir()
+            if pj:
+                newBase = os.path.join(str(pj), 'workings')
+    except:
+        newBase = None
+    if not newBase:
+        try:
+            newBase = FileUtil.getExternalFilename('profile:jython/workings')
+        except:
+            newBase = None
+    # Legacy location: scriptsPath/workings
+    legacyBase = None
+    try:
+        scriptsPath = jmri.util.FileUtil.getScriptsPath()
+        if scriptsPath:
+            legacyBase = os.path.join(str(scriptsPath), 'workings')
+    except:
+        legacyBase = None
+    # Decide without mixing: if ANY scripts exist under newBase, always use newBase.
+    if _HasAnyWorkingScriptsUnder(newBase):
+        return (newBase, False)
+    # Otherwise fall back to legacy.
+    return (legacyBase, True)
 def _NormRN(s):
     # Case-insensitive matching for reporting numbers; blank -> ""
     try:
@@ -532,45 +589,49 @@ def _ValidateTimetable():
 
 def _CheckWorkingScripts():
     """
-    Returns (isValid, firstMessage)
-    For each row:
-    - If Trigger present -> require scripts/workings/Trigger/<RN>.py
-    - Else if Arr present -> require scripts/workings/Arr/<RN>.py
-    - Else if Dep present -> require scripts/workings/Dep/<RN>.py
-    RN = explicit 'Reporting number' or default TAS<rowNumber>.
+    Returns (isValid, firstMessage, baseDir, isLegacy)
+    For each row: determine direction (Trigger/Arr/Dep) and require
+    <baseDir>/<direction>/<RN>.py where baseDir is the chosen 'workings' directory.
+
+    Path policy: use profile:jython/workings if it contains ANY .py scripts;
+    otherwise fall back to legacy scriptsPath/workings. Never mix.
     """
     path = _TimetableFilePath()
     if path is None or not os.path.isfile(path):
-        return (False, "No valid timetable file to check working scripts.")
-    scriptsPath = jmri.util.FileUtil.getScriptsPath()
+        return (False, 'No valid timetable file to check working scripts.', None, False)
+    baseDir, isLegacy = _GetWorkingsBaseDirInfo()
+    if baseDir is None or str(baseDir).strip() == '':
+        return (False, 'Workings folder location could not be resolved.', None, isLegacy)
+    baseDir = str(baseDir)
     try:
-        with open(path, "r") as f:
-            reader = csv.DictReader(f, delimiter="\t")
+        with open(path, 'r') as f:
+            reader = csv.DictReader(f, delimiter='\t')
             header = reader.fieldnames or []
-            hasTrigger = ("Trigger" in header); hasArr = ("Arr" in header); hasDep = ("Dep" in header)
+            hasTrigger = ('Trigger' in header)
+            hasArr = ('Arr' in header)
+            hasDep = ('Dep' in header)
             for rowIndex, row in enumerate(reader, start=2):
-                direction = None               
-                triggerPresent = hasTrigger and (row.get("Trigger","") or "").strip() != ""
-                arrPresent = hasArr and (row.get("Arr","") or "").strip() != ""
-                depPresent = hasDep and (row.get("Dep","") or "").strip() != ""
-
-                # If trigger and dep present but no arr > require only trigger script
+                direction = None
+                triggerPresent = hasTrigger and (row.get('Trigger','') or '').strip() != ''
+                arrPresent = hasArr and (row.get('Arr','') or '').strip() != ''
+                depPresent = hasDep and (row.get('Dep','') or '').strip() != ''
+                # If trigger and dep present but no arr -> require only trigger script
                 if triggerPresent:
-                    direction = "Trigger"
+                    direction = 'Trigger'
                 elif arrPresent:
-                    direction = "Arr"
+                    direction = 'Arr'
                 elif depPresent:
-                    direction = "Dep"
+                    direction = 'Dep'
                 else:
-                    return (False, "Row %d: no time in Trigger/Arr/Dep; cannot determine working script directory." % rowIndex)
-                rnCell = (row.get("Reporting number","") or "").strip()
-                rn = rnCell if rnCell != "" else _MakeDefaultRN(rowIndex)
-                scriptPath = os.path.join(scriptsPath, "workings", direction, rn + ".py")
+                    return (False, 'Row %d: no time in Trigger/Arr/Dep; cannot determine working script directory.' % rowIndex, baseDir, isLegacy)
+                rnCell = (row.get('Reporting number','') or '').strip()
+                rn = rnCell if rnCell != '' else _MakeDefaultRN(rowIndex)
+                scriptPath = os.path.join(baseDir, direction, rn + '.py')
                 if not os.path.isfile(scriptPath):
-                    return (False, "Row %d: missing working script for RN %s in %s directory." % (rowIndex, rn, direction))
-            return (True, "")
+                    return (False, 'Row %d: missing working script for RN %s in %s directory.' % (rowIndex, rn, direction), baseDir, isLegacy)
+            return (True, '', baseDir, isLegacy)
     except Exception as ex:
-        return (False, "Error checking working scripts: " + str(ex))
+        return (False, 'Error checking working scripts: ' + str(ex), baseDir, isLegacy)
 
 # ------------------------- Dual-list panel -----------------------------
 class RestrictedCsvChooser(JFileChooser):
@@ -1392,9 +1453,19 @@ class TASSetupFrame(jmri.util.JmriJFrame):
             self.ChkRunAuto.setEnabled(False)
 
         self.LblRunAutoStatus = JLabel("")  # concise, wrapped status (HTML)
+
+        self.LblWorkingsPathHint = JLabel("")
+        try:
+            self.LblWorkingsPathHint.setForeground(Color(128, 128, 128))
+            self.LblWorkingsPathHint.setFont(Font(THEME_FONT_FAMILY, Font.PLAIN, 11))
+        except:
+            pass
         runRow.add(self.ChkRunAuto)
         runRow.add(Box.createHorizontalStrut(12))
-        runRow.add(self.LblRunAutoStatus)
+        statusBox = Box.createVerticalBox()
+        statusBox.add(self.LblRunAutoStatus)
+        statusBox.add(self.LblWorkingsPathHint)
+        runRow.add(statusBox)
         panel.add(runRow, gbc)
         
         # Disable second checkbox if first is disabled
@@ -1610,7 +1681,7 @@ class TASSetupFrame(jmri.util.JmriJFrame):
 
         # 2) Run validations (unchanged) for informative status only
         ttOK, ttMsg, hdr = _ValidateTimetable()
-        wsOK, wsMsg = _CheckWorkingScripts()
+        wsOK, wsMsg, wsBaseDir, wsIsLegacy = _CheckWorkingScripts()
 
         # 3) Concise, wrapped status: general explanation + first issue only
         statusHtml = ""
@@ -1621,6 +1692,21 @@ class TASSetupFrame(jmri.util.JmriJFrame):
         else:
             statusHtml = ""
         self.LblRunAutoStatus.setText(statusHtml)
+
+        # Subtle hint: show where workings are being checked, and whether this is a legacy location.
+        try:
+            hint = ''
+            if wsBaseDir is not None and str(wsBaseDir).strip() != '':
+                hint = 'Workings location: ' + str(wsBaseDir)
+                if wsIsLegacy:
+                    hint = hint + ' (legacy)'
+            self.LblWorkingsPathHint.setText('<html><span style="color:#808080;">%s</span></html>' % hint)
+        except:
+            try:
+                self.LblWorkingsPathHint.setText('')
+            except:
+                pass
+
 
         # 4) Checkbox mirrors memory
         self.ChkRunAuto.setSelected(isEnabled)
