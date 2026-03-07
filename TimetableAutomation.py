@@ -139,6 +139,248 @@ def _DebugPrintStartUp():
     except Exception as ex:
         print("[TAS] Debug Start-Up print failed: " + str(ex))
 
+
+# ------------------ Start-Up path mismatch detection & fix ------------------
+# Detect when Start-Up actions point at a different copy of a TAS script than the profile:jython copy.
+# Offer the user a modal dialog to fix this by disabling the wrong entries and enabling the correct ones.
+
+# Scripts that TAS commonly installs as Start-Up actions.
+_TASStartUpScriptNames = [
+    'TimetableAutomation.py',
+    'CheckWhenTimeChanges.py',
+    'DayTracker.py',
+    'TimeWarpChecker.py',
+    'DayNight.py',
+    'WeatherGenerator.py',
+    'LastReportedDirection.py',
+]
+
+_StartupPathCheckDone = False
+
+def _CanonLower(p):
+    try:
+        return File(str(p)).getCanonicalPath().lower()
+    except:
+        try:
+            return str(p).lower()
+        except:
+            return ''
+
+def _StartupMgr():
+    try:
+        return jmri.InstanceManager.getDefault(jmri.util.startup.StartupActionsManager)
+    except:
+        return None
+
+def _ActiveProfile():
+    try:
+        pm = jmri.profile.ProfileManager.getDefault()
+        if pm is None:
+            return None
+        return pm.getActiveProfile()
+    except:
+        return None
+
+def _ProfileJythonScriptPath(scriptFileName):
+    try:
+        return jmri.util.FileUtil.getExternalFilename('profile:jython/' + str(scriptFileName))
+    except:
+        return None
+
+def _FindPerformScriptModelsByBaseName(baseLower):
+    models = []
+    mgr = _StartupMgr()
+    if mgr is None:
+        return models
+    try:
+        actions = mgr.getActions()
+    except:
+        return models
+    for m in actions:
+        try:
+            if not isinstance(m, jmri.util.startup.PerformScriptModel):
+                continue
+            p = m.getFileName()
+            if p is None:
+                continue
+            b = File(str(p)).getName().lower()
+            if b == baseLower:
+                models.append(m)
+        except:
+            continue
+    return models
+
+def _BuildStartUpPathMismatchReport():
+    # Returns a list of dicts describing mismatches for scripts that are ENABLED from a non-profile path.
+    mismatches = []
+    for fn in _TASStartUpScriptNames:
+        try:
+            target = _ProfileJythonScriptPath(fn)
+            if target is None:
+                continue
+            # Only attempt auto-fix if the profile copy actually exists.
+            try:
+                if not File(str(target)).exists():
+                    continue
+            except:
+                continue
+            targetCanon = _CanonLower(target)
+            baseLower = File(fn).getName().lower()
+            models = _FindPerformScriptModelsByBaseName(baseLower)
+            wrongEnabled = []
+            correctModel = None
+            for m in models:
+                try:
+                    p = m.getFileName()
+                    pCanon = _CanonLower(p)
+                    if pCanon == targetCanon:
+                        correctModel = m
+                    else:
+                        if m.isEnabled():
+                            wrongEnabled.append({'model': m, 'path': str(p)})
+                except:
+                    continue
+            if wrongEnabled:
+                mismatches.append({
+                    'file': fn,
+                    'target': str(target),
+                    'targetCanon': targetCanon,
+                    'wrongEnabled': wrongEnabled,
+                    'hasCorrect': (correctModel is not None),
+                    'correctEnabled': (correctModel.isEnabled() if correctModel is not None else False),
+                })
+        except:
+            continue
+    return mismatches
+
+def _ApplyStartUpPathFix(mismatches):
+    # Disable wrong enabled entries and ensure a correct entry is enabled for each script.
+    mgr = _StartupMgr()
+    if mgr is None:
+        return (False, 'StartupActionsManager unavailable')
+    changed = False
+    for rec in (mismatches or []):
+        try:
+            fn = rec.get('file')
+            target = rec.get('target')
+            if fn is None or target is None:
+                continue
+            try:
+                if not File(str(target)).exists():
+                    continue
+            except:
+                continue
+            targetCanon = _CanonLower(target)
+            baseLower = File(str(fn)).getName().lower()
+            models = _FindPerformScriptModelsByBaseName(baseLower)
+            correctModel = None
+            for m in models:
+                try:
+                    p = m.getFileName()
+                    if _CanonLower(p) == targetCanon:
+                        correctModel = m
+                        break
+                except:
+                    continue
+            for w in rec.get('wrongEnabled', []):
+                try:
+                    m = w.get('model')
+                    if m is not None and m.isEnabled():
+                        m.setEnabled(False)
+                        changed = True
+                except:
+                    continue
+            if correctModel is None:
+                try:
+                    correctModel = jmri.util.startup.PerformScriptModel()
+                    correctModel.setFileName(str(target))
+                    correctModel.setEnabled(True)
+                    mgr.addAction(correctModel)
+                    changed = True
+                except:
+                    correctModel = None
+            else:
+                try:
+                    if not correctModel.isEnabled():
+                        correctModel.setEnabled(True)
+                        changed = True
+                except:
+                    pass
+        except:
+            continue
+    if changed:
+        try:
+            prof = _ActiveProfile()
+            if prof is not None:
+                mgr.savePreferences(prof)
+        except:
+            pass
+        try:
+            mgr.setRestartRequired()
+        except:
+            pass
+    return (True, 'ok' if changed else 'nochange')
+
+def _ShowStartUpPathMismatchDialog(mismatches):
+    # Returns True if user chose to fix.
+    try:
+        if not mismatches:
+            return False
+        lines = []
+        lines.append('Some Timetable Automation System start-up scripts are enabled from an unexpected folder.')
+        lines.append('This can cause older versions of scripts to run even after you install an update.')
+        lines.append('')
+        for rec in mismatches:
+            try:
+                fn = rec.get('file')
+                target = rec.get('target')
+                lines.append('Script: ' + str(fn))
+                lines.append('Expected: ' + str(target))
+                for w in rec.get('wrongEnabled', []):
+                    try:
+                        lines.append('Currently enabled from: ' + str(w.get('path')))
+                    except:
+                        pass
+                lines.append('')
+            except:
+                continue
+        lines.append('Fixing this will disable the wrong entries and enable the correct ones.')
+        lines.append('A restart of JMRI will be required for the change to take full effect.')
+        msg = '\n'.join(lines)
+        options = ['Fix now', 'Ignore']
+        choice = JOptionPane.showOptionDialog(None, msg, 'TAS start-up scripts location',
+            JOptionPane.DEFAULT_OPTION, JOptionPane.WARNING_MESSAGE, None, options, options[0])
+        return (choice == 0)
+    except:
+        return False
+
+def _CheckStartUpPathsOnce():
+    global _StartupPathCheckDone
+    if _StartupPathCheckDone:
+        return
+    _StartupPathCheckDone = True
+    try:
+        mismatches = _BuildStartUpPathMismatchReport()
+    except:
+        mismatches = []
+    if not mismatches:
+        return
+    doFix = _ShowStartUpPathMismatchDialog(mismatches)
+    if not doFix:
+        return
+    ok, status = _ApplyStartUpPathFix(mismatches)
+    if ok:
+        try:
+            if status == 'ok':
+                JOptionPane.showMessageDialog(None, 'Start-up script paths updated. Please restart JMRI.', 'TAS', JOptionPane.INFORMATION_MESSAGE)
+        except:
+            pass
+    else:
+        try:
+            JOptionPane.showMessageDialog(None, 'Could not update start-up script paths: ' + str(status), 'TAS', JOptionPane.ERROR_MESSAGE)
+        except:
+            pass
+
 def GetActiveProfileName():
     try:
         pm = jmri.profile.ProfileManager.getDefault()
@@ -1026,6 +1268,13 @@ def Run():
     except:
         pass
     def Create():
+        try:
+            _CheckStartUpPathsOnce()
+        except Exception as ex:
+            try:
+                print('[TAS] Start-Up path check failed: ' + str(ex))
+            except:
+                pass
         f = TASWTTStartup()
         global _TASMainMenuFrame
         _TASMainMenuFrame = f
