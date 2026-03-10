@@ -38,6 +38,7 @@ from java.awt import Color, Font, RenderingHints, BasicStroke, Dimension
 from java.awt import GraphicsEnvironment
 from java.io import BufferedReader, InputStreamReader
 import jmri
+import os
 from java.io import File  # needed for canonical path comparison
 import TASBeanLookup as TBL
 
@@ -381,6 +382,151 @@ def _CheckStartUpPathsOnce():
         except:
             pass
 
+
+# ------------------ Dual-install (both locations) detection ------------------
+# Backwards compatibility: TAS can run from the legacy scripts directory OR from profile:jython.
+# However, having TAS scripts in BOTH places is an error condition, because it can cause mixed versions
+# to be loaded unpredictably.
+# This check warns the user and explains how to fix it.
+
+_TASDualInstallCheckDone = False
+
+_TASCoreScriptNamesForLocationCheck = [
+    'TimetableAutomation.py',
+    'TASSetup.py',
+    'TASWiz.py',
+    'RunWTT.py',
+    'CheckWhenTimeChanges.py',
+    'WorkingCreator.py',
+    'DisruptionGenerator.py',
+]
+
+def _DirContainsAnyOf(dirPath, fileNames):
+    try:
+        if dirPath is None:
+            return False
+        d = str(dirPath)
+        if d.strip() == '':
+            return False
+        for fn in (fileNames or []):
+            try:
+                p = os.path.join(d, str(fn))
+                if File(p).exists() and File(p).isFile():
+                    return True
+            except:
+                pass
+        return False
+    except:
+        return False
+
+def _DirHasAnyPyUnder(dirPath):
+    try:
+        if dirPath is None:
+            return False
+        d = str(dirPath)
+        if d.strip() == '' or (not os.path.isdir(d)):
+            return False
+        for root, dirs, files in os.walk(d):
+            for fn in files:
+                try:
+                    if str(fn).lower().endswith('.py'):
+                        return True
+                except:
+                    pass
+        return False
+    except:
+        return False
+
+def _CheckForDualInstallAndWarnOnce():
+    global _TASDualInstallCheckDone
+    if _TASDualInstallCheckDone:
+        return
+    _TASDualInstallCheckDone = True
+
+    profJython = None
+    legacyScripts = None
+    try:
+        profJython = jmri.util.FileUtil.getExternalFilename('profile:jython')
+    except:
+        profJython = None
+    try:
+        legacyScripts = jmri.util.FileUtil.getScriptsPath()
+    except:
+        legacyScripts = None
+
+    if profJython is None or legacyScripts is None:
+        return
+
+    try:
+        profCanon = File(str(profJython)).getCanonicalPath()
+    except:
+        profCanon = str(profJython)
+    try:
+        legCanon = File(str(legacyScripts)).getCanonicalPath()
+    except:
+        legCanon = str(legacyScripts)
+
+    try:
+        if profCanon is not None and legCanon is not None and profCanon.lower() == legCanon.lower():
+            return
+    except:
+        pass
+
+    profHas = _DirContainsAnyOf(profCanon, _TASCoreScriptNamesForLocationCheck)
+    legHas = _DirContainsAnyOf(legCanon, _TASCoreScriptNamesForLocationCheck)
+
+    if not (profHas and legHas):
+        return
+
+    profWorkings = None
+    legWorkings = None
+    try:
+        profWorkings = os.path.join(str(profCanon), 'workings')
+    except:
+        profWorkings = None
+    try:
+        legWorkings = os.path.join(str(legCanon), 'workings')
+    except:
+        legWorkings = None
+
+    profWorkHas = _DirHasAnyPyUnder(profWorkings)
+    legWorkHas = _DirHasAnyPyUnder(legWorkings)
+
+    lines = []
+    lines.append('TAS has been found in two different folders.')
+    lines.append('This is a problem because it can cause mixed versions of scripts to run.')
+    lines.append('')
+    lines.append('Main (recommended) folder:')
+    lines.append('  ' + str(profCanon))
+    lines.append('Legacy folder:')
+    lines.append('  ' + str(legCanon))
+    lines.append('')
+    lines.append('How to fix this:')
+    lines.append('1) Close JMRI.')
+    lines.append('2) Delete or rename the legacy TAS script files in the legacy folder above.')
+    lines.append('   (If that folder is under Program Files, you may need administrator rights.)')
+    if legWorkHas:
+        lines.append('3) Move your working scripts from the legacy workings folder to the main folder:')
+        lines.append('   From: ' + str(legWorkings))
+        lines.append('   To:   ' + str(profWorkings))
+        if profWorkHas:
+            lines.append('   Note: working scripts already exist in the main folder; do not mix - choose one set to keep.')
+    else:
+        lines.append('3) No working scripts were found in the legacy workings folder.')
+    lines.append('4) Restart JMRI after cleaning up.')
+    lines.append('')
+    lines.append('If you are unsure, keep the main folder and remove the legacy one.')
+
+    msg = '\n'.join(lines)
+
+    try:
+        JOptionPane.showMessageDialog(None, msg, 'TAS installation problem', JOptionPane.WARNING_MESSAGE)
+    except:
+        try:
+            print('[TAS] Dual-install warning dialog failed')
+            print(msg)
+        except:
+            pass
 def GetActiveProfileName():
     try:
         pm = jmri.profile.ProfileManager.getDefault()
@@ -1273,6 +1419,13 @@ def Run():
         except Exception as ex:
             try:
                 print('[TAS] Start-Up path check failed: ' + str(ex))
+            except:
+                pass
+        try:
+            _CheckForDualInstallAndWarnOnce()
+        except Exception as ex:
+            try:
+                print('[TAS] Dual-install check failed: ' + str(ex))
             except:
                 pass
         f = TASWTTStartup()

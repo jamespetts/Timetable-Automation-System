@@ -136,14 +136,29 @@ def _BuildFormationMap(rows):
     return formedBy
 
 def _WorkingScriptPath(direction, rn):
+    # Return filesystem path for a working script.
+    # IMPORTANT: Workings are written under profile:jython (writable). Do not use getScriptsPath() here,
+    # because it may point to a non-writable directory (e.g. Program Files on Windows).
     try:
-        scriptsPath = jmri.util.FileUtil.getScriptsPath()
+        d = '' if direction is None else str(direction).strip()
+        r = '' if rn is None else str(rn).strip()
     except:
-        scriptsPath = None
-    if not scriptsPath:
+        d = ''
+        r = ''
+    if d == '' or r == '':
         return None
+    # Prefer resolver if available
     try:
-        return os.path.join(str(scriptsPath), 'workings', str(direction), str(rn) + '.py')
+        if TPR is not None and hasattr(TPR, 'GetProfileJythonDir'):
+            pj = TPR.GetProfileJythonDir()
+            if pj:
+                return os.path.join(str(pj), 'workings', d, r + '.py')
+    except:
+        pass
+    # Fallback to JMRI profile scheme
+    try:
+        base = FileUtil.getExternalFilename('profile:jython/workings/' + d)
+        return os.path.join(str(base), r + '.py')
     except:
         return None
 
@@ -884,22 +899,32 @@ def ShowWorkingCreator(rn, direction, rowIndex, formsNext=None):
                 "Cannot save: script generation failed. Please select at least one TrainInfo file.",
                 "Error", JOptionPane.ERROR_MESSAGE)
             return
-
-        scriptsPath = jmri.util.FileUtil.getScriptsPath()
+        # Workings are written under profile:jython (writable). Do not use getScriptsPath() as a fallback.
         targetDir = None
         try:
-            if TPR is not None:
+            if TPR is not None and hasattr(TPR, 'GetWorkingsWriteDir'):
                 targetDir = TPR.GetWorkingsWriteDir(direction)
         except Exception:
             targetDir = None
         if targetDir is None:
-            targetDir = os.path.join(scriptsPath, "workings", direction)
+            try:
+                # profile:jython/workings/<direction>
+                targetDir = FileUtil.getExternalFilename('profile:jython/workings/' + str(direction))
+            except Exception:
+                targetDir = None
+        if targetDir is None:
+            JOptionPane.showMessageDialog(dlg,
+                'Cannot save: workings folder could not be resolved.\n' +
+                'Please ensure that your JMRI profile is writable.',
+                'Error', JOptionPane.ERROR_MESSAGE)
+            return
         if not os.path.isdir(targetDir):
             try:
                 os.makedirs(targetDir)
-            except Exception:
-                pass
-        targetFile = os.path.join(targetDir, rn + ".py")
+            except Exception as exMk:
+                JOptionPane.showMessageDialog(dlg, 'Cannot create workings folder: ' + str(exMk), 'Error', JOptionPane.ERROR_MESSAGE)
+                return
+        targetFile = os.path.join(targetDir, rn + '.py')
 
         try:
             with open(targetFile, "w") as f:
