@@ -1,0 +1,11 @@
+*** INSTALLATION INSTRUCTIONS ***
+
+1. Copy all files and folders from the download to {your JMRI profile directory}/jython . Important: Do not copy these files into the JMRI program folder (e.g. C:\Program Files (x86)\JMRI\jython). That location is for JMRI’s built-in example scripts and may be overwritten or unwritable.
+
+2. In JMRI, go to "Scripting>Run Script..." and select "TimetableAutomation.py" from the place where you installed the Timetable Automation System. This will start the main menu.
+
+3. Create a timetable. For more information, click "Help" in the main menu and select "Timetable". There is an example timetable included.
+
+4. In the main menu, click "Setup". Allow the wizard to run (or click "Setup wizard..."). Follow all instructions.
+
+NOTE: The Timetable Automation System is installed per profile.
