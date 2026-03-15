@@ -39,9 +39,162 @@ from java.awt import GraphicsEnvironment
 from java.io import BufferedReader, InputStreamReader
 import jmri
 import os
-from java.io import File  # needed for canonical path comparison
-import TASBeanLookup as TBL
+import sys
+from java.io import File # needed for canonical path comparison
 
+# --- Scripts directory check ---
+# JMRI defaults the portable "scripts:" location to program:jython, which is often unwritable.
+# The Timetable Automation System expects to run from a writable scripts directory containing the
+# Timetable Automation System scripts.
+# If scripts is not writable (or appears to be under the program directory), prompt the user to
+# change it to the folder where this TimetableAutomation.py is running from.
+
+def _TasGetThisScriptDir():
+    # Best effort: __file__ is usually set for file-based execution.
+    try:
+        p = globals().get('__file__', None)
+        if p is not None and str(p).strip() != '':
+            return str(File(str(p)).getParent())
+    except Exception:
+        pass
+    # Fallback: assume profile:jython/TimetableAutomation.py
+    try:
+        f = jmri.util.FileUtil.getExternalFilename('profile:jython/TimetableAutomation.py')
+        if f is not None and str(f).strip() != '':
+            return str(File(str(f)).getParent())
+    except Exception:
+        pass
+    return None
+
+def _TasIsWritableDir(path):
+    try:
+        if path is None:
+            return False
+        d = File(str(path))
+        if (not d.exists()) or (not d.isDirectory()):
+            return False
+        tmp = File(d, '._tas_write_test.tmp')
+        try:
+            if tmp.exists():
+                tmp.delete()
+        except Exception:
+            pass
+        try:
+            ok = tmp.createNewFile()
+        except Exception:
+            ok = False
+        try:
+            if tmp.exists():
+                tmp.delete()
+        except Exception:
+            pass
+        return bool(ok)
+    except Exception:
+        return False
+
+def _TasScriptsPathLooksLikeProgramDir(scriptsPath):
+    try:
+        sp = File(str(scriptsPath)).getCanonicalPath().lower()
+    except Exception:
+        try:
+            sp = str(scriptsPath).lower()
+        except Exception:
+            return False
+    try:
+        pp = File(jmri.util.FileUtil.getProgramPath()).getCanonicalPath().lower()
+    except Exception:
+        try:
+            pp = str(jmri.util.FileUtil.getProgramPath()).lower()
+        except Exception:
+            pp = ''
+    if pp == '':
+        return False
+    try:
+        return sp.startswith(pp)
+    except Exception:
+        return False
+
+def _EnsureTasScriptsPath():
+    # Ensure the TAS folder is importable in this session.
+    tasDir = _TasGetThisScriptDir()
+    if tasDir is not None:
+        try:
+            if tasDir not in sys.path:
+                sys.path.insert(0, tasDir)
+        except Exception:
+            pass
+
+    # Check scripts path preference and writability.
+    try:
+        curScripts = jmri.util.FileUtil.getScriptsPath()
+    except Exception:
+        curScripts = None
+    if curScripts is None:
+        return
+
+    needPrompt = False
+    if _TasScriptsPathLooksLikeProgramDir(curScripts):
+        needPrompt = True
+    if not _TasIsWritableDir(curScripts):
+        needPrompt = True
+    if not needPrompt:
+        return
+
+    if tasDir is None or str(tasDir).strip() == '':
+        return
+
+    try:
+        if File(str(curScripts)).getCanonicalPath().lower() == File(str(tasDir)).getCanonicalPath().lower():
+            return
+    except Exception:
+        pass
+
+    msg = []
+    msg.append("Timetable Automation System needs the JMRI scripts directory (the scripts: location)")
+    msg.append("to be a writable folder containing the TAS scripts.")
+    msg.append("")
+    msg.append("Your JMRI scripts directory is currently:")
+    msg.append("  " + str(curScripts))
+    msg.append("")
+    msg.append("TAS was started from:")
+    msg.append("  " + str(tasDir))
+    msg.append("")
+    msg.append("Click OK to set the JMRI scripts directory to the TAS folder above, then restart JMRI.")
+    msg.append("Click Cancel to leave it unchanged (TAS may malfunction).")
+    txt = chr(10).join(msg)
+    try:
+        choice = JOptionPane.showConfirmDialog(None, txt, "TAS scripts directory", JOptionPane.OK_CANCEL_OPTION, JOptionPane.WARNING_MESSAGE)
+    except Exception:
+        choice = JOptionPane.CANCEL_OPTION
+    if choice != JOptionPane.OK_OPTION:
+        return
+
+    try:
+        pm = jmri.profile.ProfileManager.getDefault()
+        prof = pm.getActiveProfile() if pm is not None else None
+    except Exception:
+        prof = None
+    if prof is None:
+        return
+
+    try:
+        try:
+            jmri.util.FileUtil.createDirectory(str(tasDir))
+        except Exception:
+            pass
+        jmri.util.FileUtil.setScriptsPath(prof, str(tasDir))
+    except Exception:
+        return
+
+    try:
+        JOptionPane.showMessageDialog(None, "Scripts directory updated. Please restart JMRI now.", "TAS", JOptionPane.INFORMATION_MESSAGE)
+    except Exception:
+        pass
+
+# Run the check early, before importing other TAS modules.
+_EnsureTasScriptsPath()
+
+import TASBeanLookup as TBL
 # Optional resolver (profile-first script lookup)
 try:
     import TASPathResolver as TPR
