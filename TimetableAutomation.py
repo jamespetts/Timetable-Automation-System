@@ -68,128 +68,188 @@ def _TasGetThisScriptDir():
 
 def _TasIsWritableDir(path):
     try:
+        import tempfile
         if path is None:
             return False
-        d = File(str(path))
-        if (not d.exists()) or (not d.isDirectory()):
+        d = str(path).strip()
+        if d == '' or (not os.path.isdir(d)):
             return False
-        tmp = File(d, '._tas_write_test.tmp')
+        fd = None
+        testPath = None
         try:
-            if tmp.exists():
-                tmp.delete()
+            fd, testPath = tempfile.mkstemp(prefix='tas_write_test_', suffix='.tmp', dir=d)
+            os.close(fd)
+            fd = None
+            try:
+                os.remove(testPath)
+            except Exception:
+                pass
+            return True
         except Exception:
-            pass
-        try:
-            ok = tmp.createNewFile()
-        except Exception:
-            ok = False
-        try:
-            if tmp.exists():
-                tmp.delete()
-        except Exception:
-            pass
-        return bool(ok)
+            try:
+                if fd is not None:
+                    os.close(fd)
+            except Exception:
+                pass
+            try:
+                if testPath is not None and os.path.exists(testPath):
+                    os.remove(testPath)
+            except Exception:
+                pass
+            return False
     except Exception:
         return False
 
 def _TasScriptsPathLooksLikeProgramDir(scriptsPath):
     try:
-        sp = File(str(scriptsPath)).getCanonicalPath().lower()
-    except Exception:
-        try:
-            sp = str(scriptsPath).lower()
-        except Exception:
+        if scriptsPath is None:
             return False
-    try:
-        pp = File(jmri.util.FileUtil.getProgramPath()).getCanonicalPath().lower()
-    except Exception:
         try:
-            pp = str(jmri.util.FileUtil.getProgramPath()).lower()
+            programPath = jmri.util.FileUtil.getProgramPath()
         except Exception:
-            pp = ''
-    if pp == '':
-        return False
-    try:
+            programPath = None
+        if programPath is None:
+            return False
+        try:
+            sp = os.path.normcase(os.path.realpath(str(scriptsPath)))
+        except Exception:
+            sp = os.path.normcase(os.path.abspath(str(scriptsPath)))
+        try:
+            pp = os.path.normcase(os.path.realpath(str(programPath)))
+        except Exception:
+            pp = os.path.normcase(os.path.abspath(str(programPath)))
+        if sp == pp:
+            return True
+        if not pp.endswith(os.sep):
+            pp = pp + os.sep
         return sp.startswith(pp)
     except Exception:
         return False
 
 def _EnsureTasScriptsPath():
-    # Ensure the TAS folder is importable in this session.
-    tasDir = _TasGetThisScriptDir()
-    if tasDir is not None:
-        try:
-            if tasDir not in sys.path:
-                sys.path.insert(0, tasDir)
-        except Exception:
-            pass
-
-    # Check scripts path preference and writability.
     try:
-        curScripts = jmri.util.FileUtil.getScriptsPath()
-    except Exception:
-        curScripts = None
-    if curScripts is None:
-        return
-
-    needPrompt = False
-    if _TasScriptsPathLooksLikeProgramDir(curScripts):
-        needPrompt = True
-    if not _TasIsWritableDir(curScripts):
-        needPrompt = True
-    if not needPrompt:
-        return
-
-    if tasDir is None or str(tasDir).strip() == '':
-        return
-
-    try:
-        if File(str(curScripts)).getCanonicalPath().lower() == File(str(tasDir)).getCanonicalPath().lower():
+        # Ensure the TAS folder is importable in this session.
+        tasDir = _TasGetThisScriptDir()
+        if tasDir is not None:
+            try:
+                if tasDir not in sys.path:
+                    sys.path.insert(0, tasDir)
+            except Exception:
+                pass
+        if tasDir is None or str(tasDir).strip() == '':
             return
-    except Exception:
-        pass
 
-    msg = []
-    msg.append("Timetable Automation System needs the JMRI scripts directory (the scripts: location)")
-    msg.append("to be a writable folder containing the TAS scripts.")
-    msg.append("")
-    msg.append("Your JMRI scripts directory is currently:")
-    msg.append("  " + str(curScripts))
-    msg.append("")
-    msg.append("TAS was started from:")
-    msg.append("  " + str(tasDir))
-    msg.append("")
-    msg.append("Click OK to set the JMRI scripts directory to the TAS folder above, then restart JMRI.")
-    msg.append("Click Cancel to leave it unchanged (TAS may malfunction).")
-    txt = chr(10).join(msg)
-    try:
-        choice = JOptionPane.showConfirmDialog(None, txt, "TAS scripts directory", JOptionPane.OK_CANCEL_OPTION, JOptionPane.WARNING_MESSAGE)
-    except Exception:
-        choice = JOptionPane.CANCEL_OPTION
-    if choice != JOptionPane.OK_OPTION:
-        return
-
-    try:
-        pm = jmri.profile.ProfileManager.getDefault()
-        prof = pm.getActiveProfile() if pm is not None else None
-    except Exception:
-        prof = None
-    if prof is None:
-        return
-
-    try:
+        # Import the pure-python helper only after the TAS folder is on sys.path.
+        helper = None
         try:
-            jmri.util.FileUtil.createDirectory(str(tasDir))
+            helper = __import__('TASScriptsPathGuard')
+        except Exception:
+            helper = None
+
+        try:
+            curScripts = jmri.util.FileUtil.getScriptsPath()
+        except Exception:
+            curScripts = None
+        try:
+            programPath = jmri.util.FileUtil.getProgramPath()
+        except Exception:
+            programPath = None
+
+        try:
+            if helper is not None:
+                needPrompt = helper.NeedsScriptsPathUpdate(curScripts, tasDir, programPath)
+            else:
+                needPrompt = _TasScriptsPathLooksLikeProgramDir(curScripts) or (not _TasIsWritableDir(curScripts))
+        except Exception:
+            needPrompt = _TasScriptsPathLooksLikeProgramDir(curScripts) or (not _TasIsWritableDir(curScripts))
+        if not needPrompt:
+            return
+
+        try:
+            curDisp = '' if curScripts is None else str(curScripts)
+        except Exception:
+            curDisp = ''
+
+        try:
+            samePath = False
+            if helper is not None:
+                samePath = helper.PathsEqual(curDisp, tasDir)
+            else:
+                samePath = (os.path.normcase(os.path.abspath(str(curDisp))) == os.path.normcase(os.path.abspath(str(tasDir))))
+            if samePath:
+                return
         except Exception:
             pass
-        jmri.util.FileUtil.setScriptsPath(prof, str(tasDir))
+
+        msg = []
+        msg.append('Timetable Automation System needs the JMRI scripts directory (the scripts: location)')
+        msg.append('to be a writable folder containing the TAS scripts.')
+        msg.append('')
+        msg.append('Your JMRI scripts directory is currently:')
+        msg.append(' ' + curDisp)
+        msg.append('')
+        msg.append('TAS was started from:')
+        msg.append(' ' + str(tasDir))
+        msg.append('')
+        msg.append('Click OK to set the JMRI scripts directory to the TAS folder above, then restart JMRI.')
+        msg.append('Click Cancel to leave it unchanged (TAS may malfunction).')
+        txt = chr(10).join(msg)
+        try:
+            choice = JOptionPane.showConfirmDialog(None, txt, 'TAS scripts directory', JOptionPane.OK_CANCEL_OPTION, JOptionPane.WARNING_MESSAGE)
+        except Exception:
+            choice = JOptionPane.CANCEL_OPTION
+        if choice != JOptionPane.OK_OPTION:
+            return
+
+        try:
+            pm = jmri.profile.ProfileManager.getDefault()
+            prof = pm.getActiveProfile() if pm is not None else None
+        except Exception:
+            prof = None
+        if prof is None:
+            return
+
+        def _DoSetScriptsPath(targetPath):
+            jmri.util.FileUtil.setScriptsPath(prof, str(targetPath))
+
+        try:
+            if helper is not None:
+                status, updatedPath = helper.EnsureScriptsPathChanged(curScripts, tasDir, programPath, _DoSetScriptsPath, jmri.util.FileUtil.getScriptsPath)
+            else:
+                try:
+                    _DoSetScriptsPath(tasDir)
+                    status = 'updated'
+                    updatedPath = jmri.util.FileUtil.getScriptsPath()
+                except Exception:
+                    status = 'set-failed'
+                    updatedPath = curScripts
+        except Exception:
+            status = 'set-failed'
+            updatedPath = curScripts
+
+        if status == 'updated':
+            try:
+                JOptionPane.showMessageDialog(None, 'Scripts directory updated. Please restart JMRI now.', 'TAS', JOptionPane.INFORMATION_MESSAGE)
+            except Exception:
+                pass
+            return
+
+        warn = []
+        warn.append('TAS could not confirm the scripts directory change automatically.')
+        warn.append('')
+        warn.append('Requested location:')
+        warn.append(' ' + str(tasDir))
+        warn.append('Current reported location:')
+        warn.append(' ' + str(updatedPath))
+        warn.append('')
+        warn.append('Please set Preferences -> File Locations -> Jython Script Location manually,')
+        warn.append('save preferences, and restart JMRI.')
+        try:
+            JOptionPane.showMessageDialog(None, chr(10).join(warn), 'TAS', JOptionPane.WARNING_MESSAGE)
+        except Exception:
+            pass
     except Exception:
         return
-
-    try:
-        JOptionPane.showMessageDialog(None, "Scripts directory updated. Please restart JMRI now.", "TAS", JOptionPane.INFORMATION_MESSAGE)
-    except Exception:
-        pass
 
 # Run the check early, before importing other TAS modules.
 _EnsureTasScriptsPath()
