@@ -717,6 +717,10 @@ class PIDUndergroundLedWindow(object):
         # Special scheduling
         self.SpecialPending = False
         self.LastSpecialShownMinute = None
+        self.ApproachingPending = False
+        self.LastApproachingKey = None
+        self.ActiveSpecialMessage = None
+        self.ActiveSpecialDurationMs = 0
 
         # Animation state machine
         self.Mode = "NORMAL"  # NORMAL, SLIDE, BLANK, WIPE_IN, SPECIAL, WIPE_OUT
@@ -832,6 +836,10 @@ class PIDUndergroundLedWindow(object):
         self.BottomShowingIndex = 1
         self.BottomNextIndex = 2
         self.SpecialPending = False
+        self.ApproachingPending = False
+        self.LastApproachingKey = None
+        self.ActiveSpecialMessage = None
+        self.ActiveSpecialDurationMs = 0
 
     def UpdateDisplay(self, event=None):
         self.ReadSettings()
@@ -863,6 +871,19 @@ class PIDUndergroundLedWindow(object):
         self.LastDayName = dayName
 
         self.Services = CollectUpcomingForPlatform(rowsAll, self.Platform, dayName, nowMin, int(self.LookAheadMin))
+
+        # Trigger the train approaching message once when the first service reaches 0 minutes.
+        try:
+            topService = self.Services[0] if self.Services and len(self.Services) > 0 else None
+            if topService is not None:
+                topEffMin = int(topService.get("effMin", -999999))
+                if int(nowMin) >= topEffMin:
+                    approachingKey = str(topService.get("rn", "") or "") + "|" + str(topEffMin)
+                    if approachingKey != self.LastApproachingKey:
+                        self.ApproachingPending = True
+                        self.LastApproachingKey = approachingKey
+        except:
+            pass
 
         # Schedule special message (pending) once per N minutes
         if self.SpecialEnabled:
@@ -928,6 +949,27 @@ class PIDUndergroundLedWindow(object):
             msg = "** NO SMOKING **"
         return msg
 
+    def _ApproachingText(self):
+        return "** Stand Back - Train Approaching **"
+
+    def _StartSpecialCycle(self, nowMs, messageText, durationMs):
+        self.Mode = "SLIDE"
+        self.ModeStartMs = nowMs
+        self.SlidePhase = 0.0
+        self.SlideFromText = self._BottomCandidate(self.BottomShowingIndex)
+        self.SlideToText = ("", None)
+        self.ActiveSpecialMessage = str(messageText or "")
+        try:
+            dur = int(durationMs)
+        except:
+            dur = 0
+        if dur < 0:
+            dur = 0
+        self.ActiveSpecialDurationMs = dur
+
+    def _IsApproachingActive(self):
+        return self.ActiveSpecialMessage == self._ApproachingText() and self.Mode in ["SLIDE", "BLANK", "WIPE_IN", "SPECIAL", "WIPE_OUT"]
+
     def OnAnimTick(self, event):
         nowMs = System.currentTimeMillis()
 
@@ -945,6 +987,21 @@ class PIDUndergroundLedWindow(object):
 
         cycleDue = (nowMs - self.LastCycleMs) >= int(self.CycleSeconds) * 1000
 
+        # Train approaching takes priority over the periodic special message.
+        # If another special is already active, wipe it out immediately and then show the
+        # approaching message using the normal special-message animation path.
+        if self.ApproachingPending and (not self._IsApproachingActive()):
+            if self.Mode in ["WIPE_IN", "SPECIAL", "WIPE_OUT"] and self.ActiveSpecialMessage is not None:
+                if self.Mode != "WIPE_OUT":
+                    self.Mode = "WIPE_OUT"
+                    self.ModeStartMs = nowMs
+                    self.WipeFrac = 1.0
+                    self.FlashOn = True
+                    self.LastFlashToggleMs = nowMs
+            else:
+                self.ApproachingPending = False
+                self._StartSpecialCycle(nowMs, self._ApproachingText(), 5000)
+
         if self.Mode == "NORMAL":
             if cycleDue:
                 if self.SpecialPending:
@@ -953,12 +1010,7 @@ class PIDUndergroundLedWindow(object):
                     except:
                         self.LastSpecialShownMinute = None
                     self.SpecialPending = False
-
-                    self.Mode = "SLIDE"
-                    self.ModeStartMs = nowMs
-                    self.SlidePhase = 0.0
-                    self.SlideFromText = self._BottomCandidate(self.BottomShowingIndex)
-                    self.SlideToText = ("", None)
+                    self._StartSpecialCycle(nowMs, self._SpecialText(), int(self.CycleSeconds) * 1000)
                 else:
                     if len(self.Services) >= 3:
                         self.BottomNextIndex = 2 if self.BottomShowingIndex == 1 else 1
@@ -1010,7 +1062,8 @@ class PIDUndergroundLedWindow(object):
                 self.LastCycleMs = nowMs
 
         elif self.Mode == "SPECIAL":
-            if (nowMs - self.ModeStartMs) >= int(self.CycleSeconds) * 1000:
+            specialDurationMs = int(self.ActiveSpecialDurationMs) if int(self.ActiveSpecialDurationMs) > 0 else int(self.CycleSeconds) * 1000
+            if (nowMs - self.ModeStartMs) >= specialDurationMs:
                 self.Mode = "WIPE_OUT"
                 self.ModeStartMs = nowMs
                 self.WipeFrac = 1.0
@@ -1021,12 +1074,18 @@ class PIDUndergroundLedWindow(object):
             t = float(nowMs - self.ModeStartMs)
             self.WipeFrac = max(0.0, min(1.0, 1.0 - (t / dur)))
             if self.WipeFrac <= 0.0:
-                self.Mode = "SLIDE"
-                self.ModeStartMs = nowMs
-                self.SlidePhase = 0.0
-                self.SlideFromText = ("", None)
-                self.SlideToText = self._BottomCandidate(self.BottomShowingIndex)
-                self.LastCycleMs = nowMs
+                if self.ApproachingPending:
+                    self.ApproachingPending = False
+                    self._StartSpecialCycle(nowMs, self._ApproachingText(), 5000)
+                else:
+                    self.Mode = "SLIDE"
+                    self.ModeStartMs = nowMs
+                    self.SlidePhase = 0.0
+                    self.SlideFromText = ("", None)
+                    self.SlideToText = self._BottomCandidate(self.BottomShowingIndex)
+                    self.ActiveSpecialMessage = None
+                    self.ActiveSpecialDurationMs = 0
+                    self.LastCycleMs = nowMs
 
         try:
             self.Panel.repaint()
@@ -1311,7 +1370,7 @@ class PIDUndergroundLedWindow(object):
         elif self.Mode in ["WIPE_IN", "SPECIAL", "WIPE_OUT"]:
             # Flash off => draw nothing
             if self.FlashOn:
-                msg = self._SpecialText()
+                msg = self.ActiveSpecialMessage if self.ActiveSpecialMessage is not None else self._SpecialText()
                 frac = float(self.WipeFrac)
                 if self.Mode == "SPECIAL":
                     frac = 1.0
