@@ -1782,7 +1782,7 @@ class TASSetupFrame(jmri.util.JmriJFrame):
 
         # Display options must NOT seed values. TASSetup does not know defaults.
         # If the memory does not exist yet, disable the control and explain why.
-        _NEED_RUN_HINT = "Run the selected display once to create this option, then reopen TASSetup to change it."
+        _NEED_RUN_HINT = "Run the selected display once to create this option."
 
         def _FindExistingMemoryBeanBySuffix(memSuffix):
             # memSuffix is the suffix used by TASBeanLookup (e.g. "TAS_USER_SETTING_STRIP_COLUMNS").
@@ -2202,6 +2202,38 @@ class TASSetupFrame(jmri.util.JmriJFrame):
             except:
                 pass
 
+        def RefreshDisplayOptionsAfterPreview(fname):
+            # Some display scripts create their option memories when first run.
+            # Rebuild the options pane immediately after preview, then retry a few
+            # times in case the script creates its memories slightly later.
+            try:
+                ShowDescriptionForFile(fname)
+            except:
+                pass
+            refreshState = {"count": 0}
+            refreshTimer = {"timer": None}
+            def _Tick(e=None):
+                try:
+                    ShowDescriptionForFile(fname)
+                except:
+                    pass
+                try:
+                    refreshState["count"] = int(refreshState.get("count", 0)) + 1
+                except:
+                    refreshState["count"] = 1
+                if int(refreshState.get("count", 0)) >= 6:
+                    try:
+                        if refreshTimer.get("timer", None) is not None:
+                            refreshTimer["timer"].stop()
+                    except:
+                        pass
+            try:
+                refreshTimer["timer"] = Timer(250, lambda e: _Tick(e))
+                refreshTimer["timer"].setRepeats(True)
+                refreshTimer["timer"].start()
+            except:
+                pass
+
         def PreviewDisplayScript(fname):
             try:
                 fn = ("" if fname is None else str(fname)).strip()
@@ -2215,6 +2247,10 @@ class TASSetupFrame(jmri.util.JmriJFrame):
                 # Run in a clean global namespace, but set __file__/__name__ for scripts that rely on them.
                 g = {"__file__": path, "__name__": "__main__"}
                 execfile(path, g)
+                try:
+                    RefreshDisplayOptionsAfterPreview(fn)
+                except:
+                    pass
 
             except Exception as ex:
                 LogError("Failed to run preview for: " + str(fname) + " :: " + str(ex), ex=ex, alsoDialog=True)
