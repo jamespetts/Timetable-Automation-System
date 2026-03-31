@@ -259,6 +259,77 @@ def GetDefaultBackgroundRGB():
     # CoverPanel default background (Color(240,238,220))
     return "240,238,220"
 
+def GetFastClockTimebase():
+    try:
+        return jmri.InstanceManager.getDefault(jmri.Timebase)
+    except:
+        return None
+
+def FastClockDateToText(d):
+    try:
+        cal = java.util.Calendar.getInstance()
+        cal.setTime(d)
+        return "%02d:%02d" % (cal.get(java.util.Calendar.HOUR_OF_DAY), cal.get(java.util.Calendar.MINUTE))
+    except:
+        return "05:00"
+
+def FastClockTextToDate(text, fallbackDate=None):
+    if fallbackDate is None:
+        try:
+            fallbackDate = java.util.Date()
+        except:
+            fallbackDate = None
+    mins = _ParseTimeToMinutes(text)
+    if mins is None:
+        return None
+    try:
+        base = fallbackDate if fallbackDate is not None else java.util.Date()
+        cal = java.util.Calendar.getInstance()
+        cal.setTime(base)
+        cal.set(java.util.Calendar.HOUR_OF_DAY, int(mins // 60))
+        cal.set(java.util.Calendar.MINUTE, int(mins % 60))
+        cal.set(java.util.Calendar.SECOND, 0)
+        cal.set(java.util.Calendar.MILLISECOND, 0)
+        return cal.getTime()
+    except:
+        return None
+
+def GetNativeFastClockStartupInfo():
+    usePreset = False
+    presetText = "05:00"
+    tb = GetFastClockTimebase()
+    if tb is None:
+        return (usePreset, presetText)
+    try:
+        usePreset = bool(tb.getStartSetTime())
+    except:
+        usePreset = False
+    try:
+        d = tb.getStartTime()
+        if d is not None:
+            presetText = FastClockDateToText(d)
+    except:
+        pass
+    return (usePreset, presetText)
+
+def ApplyNativeFastClockStartupInfo(usePreset, presetText):
+    tb = GetFastClockTimebase()
+    if tb is None:
+        return False
+    try:
+        try:
+            baseDate = tb.getTime()
+        except:
+            baseDate = java.util.Date()
+        d = FastClockTextToDate(presetText, baseDate)
+        if d is None:
+            return False
+        tb.setStartSetTime(bool(usePreset), d)
+        return True
+    except Exception as ex:
+        LogWarn("Could not update native fast clock start-up settings: " + str(ex), alsoDialog=True)
+        return False
+
 # ------------------------------- Keys ---------------------------------
 IMCurrentTimetable   = "CURRENTTIMETABLE"
 IMAllowDelays        = "ALLOWDELAYS"
@@ -293,6 +364,11 @@ IMTimeWarpThresholdMinutes = "TIMEWARPTHRESHOLDMINUTES"
 
 # NEW: Auto-working enable memory switch (non-startup, no restart)
 IMTASAutoWorking = "TASAUTOWORKING"
+# Fast clock start-up control (option 3 extends native JMRI options 1 and 2)
+IMFastClockUseSavedStartup = "TASFASTCLOCKUSESAVEDSTARTUP"
+IMFastClockSavedTime = "TASSAVEDFASTCLOCKTIME"
+TASFastClockStartupScript = "TASFastClockStartup.py"
+TASFastClockStateFile = "profile:jython/config/TASFastClockState.txt"
 
 # --------------------------- Portable paths ---------------------------
 def GetTimetableDirFile():
@@ -315,6 +391,102 @@ def ProfileJythonFilePath(name):
         return FileUtil.getExternalFilename("profile:jython/" + name)
     except:
         return "jython/" + name
+
+def _FastClockStateFilePath():
+    try:
+        return FileUtil.getExternalFilename(TASFastClockStateFile)
+    except:
+        return None
+
+def _LoadFastClockStateDict():
+    state = {'useSavedStartup': None, 'clockText': None}
+    path = _FastClockStateFilePath()
+    if path is None:
+        return state
+    try:
+        if not os.path.isfile(path):
+            return state
+        fh = open(path, 'r')
+        try:
+            raw = fh.read()
+        finally:
+            fh.close()
+    except:
+        return state
+    try:
+        text = '' if raw is None else str(raw)
+    except:
+        text = ''
+    lines = [ln.strip() for ln in text.replace('\r\n', '\n').replace('\r', '\n').split('\n') if ln.strip() != '']
+    if len(lines) == 0:
+        return state
+    hasPairs = False
+    for line in lines:
+        if '=' in line:
+            hasPairs = True
+            break
+    if not hasPairs:
+        state['clockText'] = lines[0]
+        return state
+    for line in lines:
+        if '=' not in line:
+            continue
+        key, value = line.split('=', 1)
+        keyLower = str(key).strip().lower()
+        value = str(value).strip()
+        if keyLower == 'usesavedstartup':
+            state['useSavedStartup'] = value.lower() in ['1', 'true', 'yes', 'y', 'on', 'enabled']
+        elif keyLower == 'clocktext':
+            state['clockText'] = value
+    return state
+
+def _SaveFastClockStateDict(state):
+    path = _FastClockStateFilePath()
+    if path is None:
+        return False
+    try:
+        d = os.path.dirname(str(path))
+        if d is not None and str(d).strip() != '' and not os.path.isdir(d):
+            os.makedirs(d)
+    except:
+        return False
+    lines = []
+    try:
+        useSaved = state.get('useSavedStartup', None)
+    except:
+        useSaved = None
+    try:
+        clockText = state.get('clockText', None)
+    except:
+        clockText = None
+    if useSaved is not None:
+        lines.append('useSavedStartup=' + ('true' if bool(useSaved) else 'false'))
+    if clockText is not None and str(clockText).strip() != '':
+        lines.append('clockText=' + str(clockText).strip())
+    try:
+        fh = open(path, 'w')
+        try:
+            if len(lines) > 0:
+                fh.write('\n'.join(lines) + '\n')
+            else:
+                fh.write('')
+        finally:
+            fh.close()
+        return True
+    except:
+        return False
+
+def PersistFastClockSavedStartupChoice(enabled):
+    state = _LoadFastClockStateDict()
+    state['useSavedStartup'] = bool(enabled)
+    _SaveFastClockStateDict(state)
+
+def GetPersistedFastClockSavedStartupChoice(defaultValue=False):
+    state = _LoadFastClockStateDict()
+    value = state.get('useSavedStartup', None)
+    if value is None:
+        return bool(defaultValue)
+    return bool(value)
 
 # -------------------- Workings path policy (profile-first with legacy fallback) --------------------
 # Policy: Use profile:jython/workings if it contains ANY .py working scripts.
@@ -1113,11 +1285,11 @@ class TASSetupFrame(jmri.util.JmriJFrame):
         # Base frame setup
         jmri.util.JmriJFrame.__init__(self, "Timetable Automation System setup")
         self.setDefaultCloseOperation(JDialog.DISPOSE_ON_CLOSE)
-        self.setSize(780, 890)
+        self.setSize(780, 760)
            
         # Prevent the frame from ever packing smaller than the baseline.
         try:
-            self.setMinimumSize(Dimension(780, 890))
+            self.setMinimumSize(Dimension(780, 760))
         except:
             pass
 
@@ -1140,6 +1312,14 @@ class TASSetupFrame(jmri.util.JmriJFrame):
         # TAS menu on Start-Up (TimetableAutomation.py)
         self.InitialTASMenu = _IsScriptEnabled("TimetableAutomation.py")
         self.CurrentTASMenu = self.InitialTASMenu
+        # TAS fast clock saved-startup extension at Start-Up
+        self.InitialFastClockStartup = _IsScriptEnabled(TASFastClockStartupScript)
+        self.CurrentFastClockStartup = self.InitialFastClockStartup
+        # If we enable the saved-startup option here, start the existing script
+        # immediately so that this session is saved on shutdown without requiring
+        # a restart first.
+        self.FastClockStartupRuntimeStarted = False
+        self.FastClockStartupNeedsRestart = False
 
         # Wizard sync: allow UI to refresh if a setup wizard changes preferences while this window is open.
         self.SuppressWizardSync = False
@@ -1333,7 +1513,7 @@ class TASSetupFrame(jmri.util.JmriJFrame):
         # placing the button roughly mid-gap visually.
         try:
             ph = wizardBtn.getPreferredSize().height
-            header.setBorder(BorderFactory.createEmptyBorder(12, 0, int(ph * 0.75), 0))
+            header.setBorder(BorderFactory.createEmptyBorder(8, 0, max(8, int(ph * 0.20)), 0))
         except:
             try:
                 header.setBorder(BorderFactory.createEmptyBorder(12, 0, 28, 0))
@@ -1386,9 +1566,6 @@ class TASSetupFrame(jmri.util.JmriJFrame):
             msgTAS = "<html>" + "<br/>".join(["Missing script: " + m for m in missingTAS]) + "</html>"
             self.LblTASMenuError.setText(msgTAS)
 
-        # Add a spacer so "Enable time-based actions" moves down cleanly, but nothing else shifts
-        gbc.gridy += 1
-        panel.add(JLabel(" "), gbc)
         def OnTimeActions(e=None):
             want = self.ChkTimeActions.isSelected()
 
@@ -1424,25 +1601,9 @@ class TASSetupFrame(jmri.util.JmriJFrame):
             msg = "<html>" + "<br/>".join(["Missing script: " + m for m in missing]) + "</html>"
             self.LblTimeActionsError.setText(msg)
 
-        # Add extra vertical space before next checkbox
-        gbc.gridy += 1
-        spacer = JLabel(" ")  # blank spacer for padding
-        panel.add(spacer, gbc)
-
-        # Now increment again for the second checkbox row
-        gbc.gridy += 1
-
         # (B) "Run trains automatically" row (checkbox + status label) - NOW uses IMTASAutoWorking memory only
         gbc.gridwidth = 3
         gbc.gridx = 0
-        gbc.gridy += 1  # move down below the TAS menu section
-        # Add twice as much vertical space below the time-based actions error label
-        gbc.gridy += 1
-        panel.add(JLabel(" "), gbc)  # spacer row 1
-        gbc.gridy += 1
-        panel.add(JLabel(" "), gbc)  # spacer row 2
-
-        # Now place the second checkbox on the next row
         gbc.gridy += 1
         runRow = Box.createHorizontalBox()
         self.ChkRunAuto = JCheckBox("Run trains automatically from timetable")
@@ -1518,6 +1679,163 @@ class TASSetupFrame(jmri.util.JmriJFrame):
         panel.add(self.TxtCurrentTimetable, gbc)
         gbc.gridx = 2; gbc.weightx = 0.0
         panel.add(btnBrowse, gbc)
+
+        # Fast clock start-up controls
+        gbc.gridx = 0
+        gbc.gridwidth = 3
+        gbc.fill = GridBagConstraints.HORIZONTAL
+        gbc.gridy += 1
+
+        fastClockPanel = JPanel()
+        fastClockPanel.setOpaque(False)
+        fastClockPanel.setLayout(GridBagLayout())
+        fcg = GridBagConstraints()
+        fcg.insets = Insets(0, 0, 2, 0)
+        fcg.anchor = GridBagConstraints.WEST
+        fcg.fill = GridBagConstraints.NONE
+        fcg.weightx = 0.0
+        fcg.weighty = 0.0
+        fcg.gridx = 0
+        fcg.gridy = 0
+
+        lblFastClockHeading = MakeHeading("Fast clock time when JMRI starts")
+        fastClockPanel.add(lblFastClockHeading, fcg)
+
+        nativeUsePreset, nativePresetText = GetNativeFastClockStartupInfo()
+        useSavedStartup = _IsScriptEnabled(TASFastClockStartupScript) and (GetMemoryBool(IMFastClockUseSavedStartup, False) or GetPersistedFastClockSavedStartupChoice(False))
+
+        self.RbFastClockSystem = JRadioButton("Use real time")
+        self.RbFastClockSystem.setOpaque(False)
+        self.RbFastClockPreset = JRadioButton("Use preset time")
+        self.RbFastClockPreset.setOpaque(False)
+        self.TxtFastClockPreset = JTextField(nativePresetText, 8)
+        self.RbFastClockSaved = JRadioButton("Resume with same fast clock time as the last shut down")
+        self.RbFastClockSaved.setOpaque(False)
+
+        self.FastClockGroup = ButtonGroup()
+        self.FastClockGroup.add(self.RbFastClockSystem)
+        self.FastClockGroup.add(self.RbFastClockPreset)
+        self.FastClockGroup.add(self.RbFastClockSaved)
+
+        if useSavedStartup:
+            self.RbFastClockSaved.setSelected(True)
+        elif nativeUsePreset:
+            self.RbFastClockPreset.setSelected(True)
+        else:
+            self.RbFastClockSystem.setSelected(True)
+
+        try:
+            ApplyTheme(self.RbFastClockSystem)
+            ApplyTheme(self.RbFastClockPreset)
+            ApplyTheme(self.RbFastClockSaved)
+            ApplyTheme(self.TxtFastClockPreset)
+        except:
+            pass
+
+        try:
+            pref = self.TxtFastClockPreset.getPreferredSize()
+            self.TxtFastClockPreset.setMinimumSize(pref)
+            self.TxtFastClockPreset.setPreferredSize(pref)
+            self.TxtFastClockPreset.setMaximumSize(pref)
+        except:
+            pass
+
+        def RefreshFastClockStartupUi():
+            try:
+                self.TxtFastClockPreset.setEnabled(self.RbFastClockPreset.isSelected())
+            except:
+                pass
+            try:
+                self.LblFastClockStartupError.setVisible(len(str(self.LblFastClockStartupError.getText()).strip()) > 0)
+            except:
+                pass
+
+        class FastClockPresetLost(FocusAdapter):
+            def focusLost(innerSelf, e):
+                try:
+                    if self.RbFastClockPreset.isSelected():
+                        ApplyFastClockStartupSelection()
+                except:
+                    pass
+
+        self.TxtFastClockPreset.addActionListener(lambda e: ApplyFastClockStartupSelection())
+        self.TxtFastClockPreset.addFocusListener(FastClockPresetLost())
+
+        def ApplyFastClockStartupSelection(e=None):
+            presetText = str(self.TxtFastClockPreset.getText()).strip()
+            if len(presetText) == 0:
+                presetText = nativePresetText if len(str(nativePresetText).strip()) > 0 else "05:00"
+                self.TxtFastClockPreset.setText(presetText)
+            if self.RbFastClockSaved.isSelected():
+                SetMemoryBool(IMFastClockUseSavedStartup, True)
+                PersistFastClockSavedStartupChoice(True)
+                scriptExists = ScriptExists(TASFastClockStartupScript)
+                if scriptExists:
+                    ok = _EnsureScriptEnabled(TASFastClockStartupScript, True)
+                    actual = _IsScriptEnabled(TASFastClockStartupScript)
+                    self.CurrentFastClockStartup = actual
+                    self.RbFastClockSaved.setSelected(actual)
+                    self.FastClockStartupNeedsRestart = False
+                    if not ok:
+                        LogWarn("Could not change Start-Up for " + TASFastClockStartupScript, alsoDialog=True)
+                else:
+                    self.CurrentFastClockStartup = False
+                    self.FastClockStartupNeedsRestart = False
+                    SetMemoryBool(IMFastClockUseSavedStartup, False)
+                    PersistFastClockSavedStartupChoice(False)
+                    self.RbFastClockSaved.setSelected(False)
+            elif self.RbFastClockPreset.isSelected():
+                PersistFastClockSavedStartupChoice(False)
+                if not ApplyNativeFastClockStartupInfo(True, presetText):
+                    self.RbFastClockPreset.setSelected(False)
+                    self.RbFastClockSystem.setSelected(True)
+                    SetMemoryBool(IMFastClockUseSavedStartup, False)
+                    _EnsureScriptEnabled(TASFastClockStartupScript, False)
+                    self.CurrentFastClockStartup = _IsScriptEnabled(TASFastClockStartupScript)
+                    self.FastClockStartupNeedsRestart = False
+                else:
+                    SetMemoryBool(IMFastClockUseSavedStartup, False)
+                    _EnsureScriptEnabled(TASFastClockStartupScript, False)
+                    self.CurrentFastClockStartup = _IsScriptEnabled(TASFastClockStartupScript)
+                    self.FastClockStartupNeedsRestart = False
+            else:
+                PersistFastClockSavedStartupChoice(False)
+                ApplyNativeFastClockStartupInfo(False, presetText)
+                SetMemoryBool(IMFastClockUseSavedStartup, False)
+                _EnsureScriptEnabled(TASFastClockStartupScript, False)
+                self.CurrentFastClockStartup = _IsScriptEnabled(TASFastClockStartupScript)
+                self.FastClockStartupNeedsRestart = False
+            RefreshFastClockStartupUi()
+        self.RbFastClockSystem.addActionListener(ApplyFastClockStartupSelection)
+        self.RbFastClockPreset.addActionListener(ApplyFastClockStartupSelection)
+        self.RbFastClockSaved.addActionListener(ApplyFastClockStartupSelection)
+
+        fcg.gridy += 1
+        fastClockPanel.add(self.RbFastClockSystem, fcg)
+
+        fcg.gridy += 1
+        presetRow = Box.createHorizontalBox()
+        presetRow.setOpaque(False)
+        presetRow.add(self.RbFastClockPreset)
+        presetRow.add(Box.createHorizontalStrut(8))
+        presetRow.add(self.TxtFastClockPreset)
+        fastClockPanel.add(presetRow, fcg)
+
+        fcg.gridy += 1
+        fastClockPanel.add(self.RbFastClockSaved, fcg)
+
+        fcg.gridy += 1
+        self.LblFastClockStartupError = JLabel("")
+        ApplyTheme(self.LblFastClockStartupError)
+        fastClockPanel.add(self.LblFastClockStartupError, fcg)
+        if not ScriptExists(TASFastClockStartupScript):
+            self.RbFastClockSaved.setEnabled(False)
+            self.LblFastClockStartupError.setText("Missing script for resuming the last fast clock time: " + TASFastClockStartupScript)
+        else:
+            self.LblFastClockStartupError.setText("")
+
+        RefreshFastClockStartupUi()
+        panel.add(fastClockPanel, gbc)
 
         # Wire up RunAuto checkbox logic (memory-based)
         def OnRunAuto(e=None):
@@ -4569,6 +4887,49 @@ class TASSetupFrame(jmri.util.JmriJFrame):
         except:
             pass
 
+    def EnsureFastClockShutdownTaskRegistered(self):
+        # Register only the shutdown saver from TASFastClockStartup.py.
+        # Do not run the restore path in the current live session.
+        try:
+            path = ProfileJythonFilePath(TASFastClockStartupScript)
+            if not os.path.isfile(path):
+                return False
+        except:
+            return False
+        try:
+            execfile(path, {
+                '__name__': '__main__',
+                '__file__': path,
+                'TAS_FASTCLOCK_STARTUP_REGISTER_ONLY': True
+            })
+            return True
+        except Exception as ex:
+            LogError('Could not register fast clock shutdown task from ' + TASFastClockStartupScript + ': ' + str(ex), ex=ex, alsoDialog=True)
+            return False
+
+    def StartFastClockStartupRuntime(self):
+        # Start the existing TASFastClockStartup.py immediately so it can register
+        # its shutdown saver in this JMRI session without waiting for a restart.
+        # Run it in live-only mode so that it does not change the already-running
+        # fast clock time in the current session.
+        try:
+            path = ProfileJythonFilePath(TASFastClockStartupScript)
+            if not os.path.isfile(path):
+                return False
+        except:
+            return False
+        try:
+            execfile(path, {
+                '__name__': '__main__',
+                '__file__': path,
+                'TAS_FASTCLOCK_STARTUP_LIVE_ONLY': True
+            })
+            self.FastClockStartupRuntimeStarted = True
+            return True
+        except Exception as ex:
+            LogError('Could not start ' + TASFastClockStartupScript + ' immediately: ' + str(ex), ex=ex, alsoDialog=True)
+            return False
+
     def RefreshGeneralTabFromWizard(self):
         # Refresh General-tab controls that the wizard may have changed.
         try:
@@ -4589,6 +4950,27 @@ class TASSetupFrame(jmri.util.JmriJFrame):
             if hasattr(self, 'TxtCurrentTimetable') and self.TxtCurrentTimetable is not None:
                 val = str(TBL.SafeGetOrCreateMemoryValue(IMCurrentTimetable, '')).strip()
                 self.TxtCurrentTimetable.setText(val)
+        except:
+            pass
+        try:
+            nativeUsePreset, nativePresetText = GetNativeFastClockStartupInfo()
+            useSavedStartup = _IsScriptEnabled(TASFastClockStartupScript) and (GetMemoryBool(IMFastClockUseSavedStartup, False) or GetPersistedFastClockSavedStartupChoice(False))
+            if hasattr(self, 'TxtFastClockPreset') and self.TxtFastClockPreset is not None:
+                self.TxtFastClockPreset.setText(nativePresetText)
+            if hasattr(self, 'RbFastClockSystem') and hasattr(self, 'RbFastClockPreset') and hasattr(self, 'RbFastClockSaved'):
+                if useSavedStartup:
+                    self.RbFastClockSaved.setSelected(True)
+                elif nativeUsePreset:
+                    self.RbFastClockPreset.setSelected(True)
+                else:
+                    self.RbFastClockSystem.setSelected(True)
+            if hasattr(self, 'CurrentFastClockStartup'):
+                self.CurrentFastClockStartup = bool(_IsScriptEnabled(TASFastClockStartupScript))
+            try:
+                if hasattr(self, 'TxtFastClockPreset') and hasattr(self, 'RbFastClockPreset'):
+                    self.TxtFastClockPreset.setEnabled(bool(self.RbFastClockPreset.isSelected()))
+            except:
+                pass
         except:
             pass
 
@@ -4765,6 +5147,14 @@ class TASSetupFrame(jmri.util.JmriJFrame):
         except Exception:
             pass
 
+        # If saved-startup has been enabled during this setup session, register the
+        # shutdown saver now so that the current JMRI session will be saved on exit.
+        try:
+            currentSavedChoice = bool(GetMemoryBool(IMFastClockUseSavedStartup, False) or GetPersistedFastClockSavedStartupChoice(False))
+            if (not bool(self.InitialFastClockStartup)) and bool(self.CurrentFastClockStartup) and currentSavedChoice:
+                self.EnsureFastClockShutdownTaskRegistered()
+        except Exception as ex:
+            LogError('Could not arm fast clock shutdown saver before closing setup: ' + str(ex), ex=ex, alsoDialog=True)
         # If this window was opened from the main menu, refresh the main menu theme if needed.
         try:
             self._NotifyMainMenuThemeIfChanged()
@@ -4775,7 +5165,8 @@ class TASSetupFrame(jmri.util.JmriJFrame):
         changed = (self.InitialTimeActions != self.CurrentTimeActions or
                    self.InitialDayNight != self.CurrentDayNight or
                    self.InitialWeather != self.CurrentWeather or
-                   self.InitialDirectionSensing != self.CurrentDirectionSensing)
+                   self.InitialDirectionSensing != self.CurrentDirectionSensing or
+                   bool(getattr(self, 'FastClockStartupNeedsRestart', (self.InitialFastClockStartup != self.CurrentFastClockStartup))))
         if changed:
             try:
                 JOptionPane.showMessageDialog(

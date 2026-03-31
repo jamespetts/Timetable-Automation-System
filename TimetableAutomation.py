@@ -367,6 +367,7 @@ _TASStartUpScriptNames = [
     'DayNight.py',
     'WeatherGenerator.py',
     'LastReportedDirection.py',
+    'TASFastClockStartup.py',
 ]
 
 _StartupPathCheckDone = False
@@ -612,6 +613,7 @@ _TASCoreScriptNamesForLocationCheck = [
     'CheckWhenTimeChanges.py',
     'WorkingCreator.py',
     'DisruptionGenerator.py',
+    'TASFastClockStartup.py',
 ]
 
 def _DirContainsAnyOf(dirPath, fileNames):
