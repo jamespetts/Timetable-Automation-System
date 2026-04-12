@@ -18,7 +18,7 @@
 # Working Timetable-style startup UI for the Timetable Automation System (TAS)
 # JMRI 5.12 / Jython 2.7. ASCII only. Thread-safe. No absolute paths.
 
-VERSION = "1.3"
+VERSION = "1.4"
 from javax.swing import JFrame
 from javax.swing import JPanel
 from javax.swing import JButton
