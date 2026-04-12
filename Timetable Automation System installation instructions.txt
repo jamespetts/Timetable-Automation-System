@@ -1,12 +1,13 @@
 *** INSTALLATION INSTRUCTIONS ***
-1. Copy all files and folders from the download to {your JMRI profile directory}/jython.
+
+1. Copy all files and folders from the download to your jython scripts location (e.g. {your JMRI profile directory}/jython). 
    Important: Do not copy these files into the JMRI program folder (e.g. C:\Program Files (x86)\JMRI\jython).
-   The program folder is for JMRI's built-in example scripts and is normally unwritable.
+   The program folder is for JMRI's built-in example scripts and is normally unwritable. 
    
 2. In JMRI, go to "Scripting > Run Script..." and run TimetableAutomation.py from the folder where you installed the Timetable Automation System.  This will start the main menu.
 
 3. When it first runs, the Timetable Automation System will check the JMRI scripts directory (the 'scripts:' location).
-   If it is still set to the default program:jython location (or is not writable),  the Timetable Automation System will show a dialogue.
+   If it is still set to the default program:jython location (or is not writable), the Timetable Automation System will show a dialogue.
    Click OK to change the scripts directory to the  the Timetable Automation System folder you are running from, then restart JMRI.
    If you click Cancel, the Timetable Automation System may malfunction (modules may not import and scripts may not save).
    
@@ -14,4 +15,4 @@
 
 5. In the main menu, click "Setup". Allow the wizard to run (or click "Setup wizard..."). Follow all instructions.
 
-NOTE: The Timetable Automation System is installed per profile.
+NOTE: The Timetable Automation System is installed per JMRI profile.
