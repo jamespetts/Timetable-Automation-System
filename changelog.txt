@@ -1,6 +1,9 @@
 Version 1.3
 
 * Fix file locations issue that affected default and some other install locations
+* Added option to resume automatically at the fast clock time when the system was last shut down.
+* PID parameters now show immediately after previewing rather than requiring restarting the setup window
+* Added "Stand Back - Train Approaching" message for the 1980s London Underground PID
 
 Version 1.2
 

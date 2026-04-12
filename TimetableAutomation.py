@@ -212,6 +212,25 @@ def _EnsureTasScriptsPath():
         def _DoSetScriptsPath(targetPath):
             jmri.util.FileUtil.setScriptsPath(prof, str(targetPath))
 
+        def _DoSaveFileLocationPreferences():
+            prefMgr = None
+            try:
+                prefMgr = jmri.InstanceManager.getNullableDefault(jmri.implementation.FileLocationsPreferences)
+            except Exception:
+                prefMgr = None
+            if prefMgr is None:
+                try:
+                    prefMgr = jmri.InstanceManager.getDefault(jmri.implementation.FileLocationsPreferences)
+                except Exception:
+                    prefMgr = None
+            if prefMgr is None:
+                return False
+            try:
+                prefMgr.savePreferences(prof)
+                return True
+            except Exception:
+                return False
+
         try:
             if helper is not None:
                 status, updatedPath = helper.EnsureScriptsPathChanged(curScripts, tasDir, programPath, _DoSetScriptsPath, jmri.util.FileUtil.getScriptsPath)
@@ -228,8 +247,23 @@ def _EnsureTasScriptsPath():
             updatedPath = curScripts
 
         if status == 'updated':
+            if _DoSaveFileLocationPreferences():
+                try:
+                    JOptionPane.showMessageDialog(None, 'Scripts directory updated. Please restart JMRI now.', 'TAS', JOptionPane.INFORMATION_MESSAGE)
+                except Exception:
+                    pass
+                return
+            warn = []
+            warn.append('Scripts directory was updated for this session, but TAS could not save the change to preferences.')
+            warn.append('')
+            warn.append('Please open Preferences -> File Locations, click Save, and then restart JMRI.')
+            warn.append('')
+            warn.append('Requested location:')
+            warn.append(' ' + str(tasDir))
+            warn.append('Current reported location:')
+            warn.append(' ' + str(updatedPath))
             try:
-                JOptionPane.showMessageDialog(None, 'Scripts directory updated. Please restart JMRI now.', 'TAS', JOptionPane.INFORMATION_MESSAGE)
+                JOptionPane.showMessageDialog(None, chr(10).join(warn), 'TAS', JOptionPane.WARNING_MESSAGE)
             except Exception:
                 pass
             return
