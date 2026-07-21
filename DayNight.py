@@ -169,6 +169,18 @@ class DayNight(jmri.jmrit.automat.AbstractAutomaton):
         # >>> Use ACTIVE_DAYNIGHT_PRESET resolved above (from memory or default)
         self.sunTimes = _load_daynight_from_tsv(DAYNIGHT_CSV_PATH, ACTIVE_DAYNIGHT_PRESET, FALLBACK_SUN_TIMES)
 
+        # Publish the resolved sunrise and sunset used by this controller.
+        # These Memories are the single source of truth for dependent systems.
+        self.sunriseSecondsMemory = TBL.ProvideMemoryBySuffix("SUNRISESECONDS", "0")
+        self.sunsetSecondsMemory = TBL.ProvideMemoryBySuffix("SUNSETSECONDS", "0")
+        self.solarDayMemory = TBL.ProvideMemoryBySuffix("SOLARDAY", "")
+        initialSolarDay = self.dayMemory.getValue() if self.dayMemory is not None else "Monday"
+        if initialSolarDay not in _DAYS:
+            initialSolarDay = "Monday"
+        self.sunriseSecondsMemory.setValue(str(int(self.sunTimes[initialSolarDay]["sunrise"]) * 60))
+        self.sunsetSecondsMemory.setValue(str(int(self.sunTimes[initialSolarDay]["sunset"]) * 60))
+        self.solarDayMemory.setValue(initialSolarDay)
+
         # ---- Determine desired throttle addresses (with validation) ----
         low_addr = _to_int_or_none(self.lowAddrMem.getValue()) if self.lowAddrMem is not None else None
         high_addr = _to_int_or_none(self.highAddrMem.getValue()) if self.highAddrMem is not None else None
@@ -250,6 +262,7 @@ class DayNight(jmri.jmrit.automat.AbstractAutomaton):
         # Wake on time (always), on address changes (if memories exist),
         # and on time-warp config changes (if memories exist)
         wait_list = [self.clock]
+        if self.dayMemory is not None: wait_list.append(self.dayMemory)
         if self.lowAddrMem is not None: wait_list.append(self.lowAddrMem)
         if self.highAddrMem is not None: wait_list.append(self.highAddrMem)
         if self.blackoutSecsMem is not None: wait_list.append(self.blackoutSecsMem)
@@ -293,6 +306,12 @@ class DayNight(jmri.jmrit.automat.AbstractAutomaton):
         self.currentDay = self.dayMemory.getValue()
         if self.currentDay not in _DAYS:
             self.currentDay = 'Monday'
+
+        # Publish the exact resolved solar events for the current simulated day.
+        self.sunriseSecondsMemory.setValue(str(int(self.sunTimes[self.currentDay]['sunrise']) * 60))
+        self.sunsetSecondsMemory.setValue(str(int(self.sunTimes[self.currentDay]['sunset']) * 60))
+        # Publish the day last. This acts as the commit marker for an atomic solar snapshot.
+        self.solarDayMemory.setValue(self.currentDay)
 
         # Read cloud cover from memory (0..100 -> 0.0..1.0)
         try:

@@ -3810,11 +3810,29 @@ class TASWizardDialog(JDialog):
         ApplyTheme(self.UseLightingCheck)
         center2d.add(self.UseLightingCheck, g2d)
 
+        g2d.gridy = 3
+        self.StreetLightConfigButton = JButton('Configure street lights...')
+        ApplyTheme(self.StreetLightConfigButton)
+        def _OpenStreetLightConfiguration():
+            try:
+                import StreetLightController as SLC
+                configured = bool(SLC.ShowStreetLightConfigDialog(self))
+                if configured:
+                    self.UseLightingCheck.setSelected(True)
+                    self._SetDayNightEnabled(True)
+                    self._EnsureStartupScriptEnabled('StreetLightController.py', True)
+                    self._UpdateFeatureCache()
+                    self._RefreshStep2dUi()
+            except Exception as ex:
+                JOptionPane.showMessageDialog(self, 'Could not open the street-light configuration.\n\nDetails: ' + str(ex), 'Street lights', JOptionPane.ERROR_MESSAGE)
+        self.StreetLightConfigButton.addActionListener(lambda e: _OpenStreetLightConfiguration())
+        center2d.add(self.StreetLightConfigButton, g2d)
+
         # Extra text for this step. Give it the remaining vertical space when visible.
         g2dExtra = GridBagConstraints()
         g2dExtra.insets = Insets(6, 12, 6, 6)
         g2dExtra.gridx = 0
-        g2dExtra.gridy = 3
+        g2dExtra.gridy = 4
         g2dExtra.weightx = 1.0
         g2dExtra.weighty = 1.0
         g2dExtra.fill = GridBagConstraints.BOTH
@@ -3854,7 +3872,7 @@ class TASWizardDialog(JDialog):
         except:
             pass
 
-        g2d.gridy = 4
+        g2d.gridy = 5
         g2d.weighty = 0.0
         g2d.fill = GridBagConstraints.BOTH
         filler2d = JPanel()
@@ -5032,4 +5050,4 @@ def ShowTASWizard():
 
 
         # Entry
-ShowTASWizard() 
+ShowTASWizard()

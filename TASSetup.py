@@ -650,6 +650,9 @@ def _EnsureScriptEnabled(scriptFileName, enabled):
 def IsDayNightEnabled():
     return _IsScriptEnabled("DayNight.py")
 
+def IsStreetLightControllerEnabled():
+    return _IsScriptEnabled("StreetLightController.py")
+
 def IsWeatherEnabled():
     return _IsScriptEnabled("WeatherGenerator.py")
 
@@ -4399,6 +4402,49 @@ class TASSetupFrame(jmri.util.JmriJFrame):
         cmbDaylight.addActionListener(lambda e: ApplyDaylight())
         row4b.add(lblDaylight); row4b.add(Box.createHorizontalStrut(8)); row4b.add(cmbDaylight)
         root.add(row4b, gbc)
+
+        # Street-light groups. The modal editor is shared with the setup wizard.
+        gbc.gridy += 1
+        streetLightEnableRow = Box.createHorizontalBox()
+        chkStreetLights = JCheckBox("Enable street-light controller (requires restart)")
+        chkStreetLights.setOpaque(False)
+        chkStreetLights.setSelected(IsStreetLightControllerEnabled())
+        self.ChkStreetLights = chkStreetLights
+        def OnStreetLights(e=None):
+            want = chkStreetLights.isSelected()
+            ok = _EnsureScriptEnabled("StreetLightController.py", want)
+            chkStreetLights.setSelected(IsStreetLightControllerEnabled())
+            if not ok:
+                LogWarn("Could not change Start-Up for StreetLightController.py", alsoDialog=True)
+        chkStreetLights.addActionListener(OnStreetLights)
+        streetLightEnableRow.add(chkStreetLights)
+        root.add(streetLightEnableRow, gbc)
+
+        if not ScriptExists("StreetLightController.py"):
+            chkStreetLights.setSelected(False)
+            chkStreetLights.setEnabled(False)
+
+        gbc.gridy += 1
+        streetLightRow = Box.createHorizontalBox()
+        configureStreetLightsButton = JButton("Configure street lights...")
+        ApplyTheme(configureStreetLightsButton)
+        def ConfigureStreetLights(e=None):
+            try:
+                import StreetLightController as SLC
+                configured = bool(SLC.ShowStreetLightConfigDialog(self))
+                if configured:
+                    dayNightOk = _EnsureScriptEnabled("DayNight.py", True)
+                    streetLightOk = _EnsureScriptEnabled("StreetLightController.py", True)
+                    chkDN.setSelected(IsDayNightEnabled())
+                    chkStreetLights.setSelected(IsStreetLightControllerEnabled())
+                    self.CurrentDayNight = IsDayNightEnabled()
+                    if not dayNightOk or not streetLightOk:
+                        LogWarn("Could not enable all required street-light Start-Up scripts.", alsoDialog=True)
+            except Exception as ex:
+                LogError("Could not open the street-light configuration: " + str(ex), ex=ex, alsoDialog=True)
+        configureStreetLightsButton.addActionListener(ConfigureStreetLights)
+        streetLightRow.add(configureStreetLightsButton)
+        root.add(streetLightRow, gbc)
         
         # (5) Cloud cover (%) and Minimum night glow (0.0-1.0) side by side
         gbc.gridy += 1
