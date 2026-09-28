@@ -369,6 +369,19 @@ IMFastClockUseSavedStartup = "TASFASTCLOCKUSESAVEDSTARTUP"
 IMFastClockSavedTime = "TASSAVEDFASTCLOCKTIME"
 TASFastClockStartupScript = "TASFastClockStartup.py"
 TASFastClockStateFile = "profile:jython/config/TASFastClockState.txt"
+_TAS_DAY_NAMES = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
+
+def _NormalizeDayOfWeek(value):
+    try:
+        s = str(value).strip().lower()
+    except:
+        return None
+    if s == "":
+        return None
+    for name in _TAS_DAY_NAMES:
+        if s == name.lower():
+            return name
+    return None
 
 # --------------------------- Portable paths ---------------------------
 def GetTimetableDirFile():
@@ -399,7 +412,7 @@ def _FastClockStateFilePath():
         return None
 
 def _LoadFastClockStateDict():
-    state = {'useSavedStartup': None, 'clockText': None}
+    state = {'useSavedStartup': None, 'clockText': None, 'dayOfWeek': None}
     path = _FastClockStateFilePath()
     if path is None:
         return state
@@ -438,6 +451,8 @@ def _LoadFastClockStateDict():
             state['useSavedStartup'] = value.lower() in ['1', 'true', 'yes', 'y', 'on', 'enabled']
         elif keyLower == 'clocktext':
             state['clockText'] = value
+        elif keyLower == 'dayofweek':
+            state['dayOfWeek'] = _NormalizeDayOfWeek(value)
     return state
 
 def _SaveFastClockStateDict(state):
@@ -459,10 +474,16 @@ def _SaveFastClockStateDict(state):
         clockText = state.get('clockText', None)
     except:
         clockText = None
+    try:
+        dayOfWeek = _NormalizeDayOfWeek(state.get('dayOfWeek', None))
+    except:
+        dayOfWeek = None
     if useSaved is not None:
         lines.append('useSavedStartup=' + ('true' if bool(useSaved) else 'false'))
     if clockText is not None and str(clockText).strip() != '':
         lines.append('clockText=' + str(clockText).strip())
+    if dayOfWeek is not None:
+        lines.append('dayOfWeek=' + dayOfWeek)
     try:
         fh = open(path, 'w')
         try:
@@ -1712,7 +1733,7 @@ class TASSetupFrame(jmri.util.JmriJFrame):
         self.RbFastClockPreset = JRadioButton("Use preset time")
         self.RbFastClockPreset.setOpaque(False)
         self.TxtFastClockPreset = JTextField(nativePresetText, 8)
-        self.RbFastClockSaved = JRadioButton("Resume with same fast clock time as the last shut down")
+        self.RbFastClockSaved = JRadioButton("Resume with same fast clock time and day of week as the last shut down")
         self.RbFastClockSaved.setOpaque(False)
 
         self.FastClockGroup = ButtonGroup()

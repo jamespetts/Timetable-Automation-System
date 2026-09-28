@@ -15,6 +15,8 @@ The time uses JMRI's fast clock and can be integrated with a hardware fast clock
 
 The Time Warp feature also allows the Timetable Automation System to be used for layouts that are intended to run to a sequence rather than relying on timing by pausing the clock and using the Time Warp to advance to the next working whenever the operators are ready, all the time keeping the day/night cycle and any public/signallers' displays in tune with what is currently happening on the layout. 
 
+If the Setup option to resume with the same fast clock time and day of week as the last shut down is enabled, the day of the week is saved when JMRI shuts down and restored when JMRI starts.
+
 The features for the automatic running of trains work with JMRI's in-built Dispatcher interface, and add tools to integrate the JMRI Dispatcher into automated timetabled operations, including:
 
 * keeping track of trains' locations (optional: with assistance from RailCom);

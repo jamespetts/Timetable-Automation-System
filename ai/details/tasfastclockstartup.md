@@ -4,24 +4,26 @@ Read when: Task modifies or debugs TASFastClockStartup.py saved fast-clock start
 
 File: TASFastClockStartup.py. Lines: 480.
 
-Purpose: persist fast-clock time on shutdown, restore on start when saved-startup is enabled.
+Purpose: persist fast-clock time and Memory DAYOFWEEK on shutdown, restore on start when saved-startup is enabled.
 
 Constants:
 - IMFastClockUseSavedStartup = TASFASTCLOCKUSESAVEDSTARTUP
 - IMFastClockSavedTime = TASSAVEDFASTCLOCKTIME
+- IMDayOfWeek = DAYOFWEEK
+- _DAY_NAMES = Monday through Sunday
 - STATE_FILE = profile:jython/config/TASFastClockState.txt
 - _ShutdownTaskJvmKey = tas.fastclockstartup.shutdown.registered
 - _ApplyJvmKey = tas.fastclockstartup.apply.started
 - Globals TAS_FASTCLOCK_STARTUP_LIVE_ONLY, TAS_FASTCLOCK_STARTUP_REGISTER_ONLY
 
 Functions:
-- _ParseBoolText
-- GetLiveOnlyMode, GetJvmFlag, SetJvmFlag, GetRegisterOnlyMode, GetShutDownManager, LoadState, SaveState, PersistUseSavedStartupChoice, SyncSavedStartupChoiceToMemory, Log, SafeGetMemoryValue, SafeSetMemoryValue, GetStateFilePath, EnsureStateDir, GetTimebase, UseSavedStartupEnabled, FormatDateToClockText, ParseClockTextToDate, LoadSavedClockText, SaveSavedClockText, RegisterShutdownTaskOnce, EnsureShutdownTaskRegistered, ApplySavedStartupTimeOnce
+- _ParseBoolText, NormalizeDayOfWeek
+- GetLiveOnlyMode, GetJvmFlag, SetJvmFlag, GetRegisterOnlyMode, GetShutDownManager, LoadState, SaveState, PersistUseSavedStartupChoice, SyncSavedStartupChoiceToMemory, Log, SafeGetMemoryValue, SafeSetMemoryValue, GetStateFilePath, EnsureStateDir, GetTimebase, UseSavedStartupEnabled, FormatDateToClockText, ParseClockTextToDate, LoadSavedClockText, SaveSavedClockText, LoadSavedDayOfWeek, SaveSavedDayOfWeek, RegisterShutdownTaskOnce, EnsureShutdownTaskRegistered, ApplySavedStartupTimeOnce
 - Class PersistFastClockTask extends jmri.implementation.AbstractShutDownTask with method run
 
-Memories: TASFASTCLOCKUSESAVEDSTARTUP, TASSAVEDFASTCLOCKTIME with IM prefix fallback in local wrappers. Local SafeGetMemoryValue and SafeSetMemoryValue prefer TASBeanLookup.SafeGetOrCreateMemoryValue and TASBeanLookup.SafeSetMemoryValue when TASBeanLookup import succeeds.
+Memories: TASFASTCLOCKUSESAVEDSTARTUP, TASSAVEDFASTCLOCKTIME, DAYOFWEEK with IM prefix fallback in local wrappers. Local SafeGetMemoryValue and SafeSetMemoryValue prefer TASBeanLookup.SafeGetOrCreateMemoryValue and TASBeanLookup.SafeSetMemoryValue when TASBeanLookup import succeeds.
 
-File: profile:jython/config/TASFastClockState.txt with keys useSavedStartup= and clockText= through jmri.util.FileUtil.getExternalFilename(STATE_FILE).
+File: profile:jython/config/TASFastClockState.txt with keys useSavedStartup=, clockText=, dayOfWeek= through jmri.util.FileUtil.getExternalFilename(STATE_FILE).
 
 JMRI APIs:
 - jmri.InstanceManager.getDefault(jmri.ShutDownManager) with register(PersistFastClockTask)

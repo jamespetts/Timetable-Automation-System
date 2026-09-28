@@ -13,8 +13,8 @@
 # TAS fast clock saved-startup extension.
 #
 # Purpose:
-# - Save the current fast clock time when JMRI shuts down.
-# - Restore that saved time when JMRI starts if the TAS saved-startup option is enabled.
+# - Save the current fast clock time and the value of Memory DAYOFWEEK when JMRI shuts down.
+# - Restore that saved time and day when JMRI starts if the TAS saved-startup option is enabled.
 #
 # JMRI 5.14 / Jython 2.7. ASCII only. Thread-safe. No absolute paths.
 
@@ -32,6 +32,8 @@ except Exception:
 
 IMFastClockUseSavedStartup = 'TASFASTCLOCKUSESAVEDSTARTUP'
 IMFastClockSavedTime = 'TASSAVEDFASTCLOCKTIME'
+IMDayOfWeek = 'DAYOFWEEK'
+_DAY_NAMES = ('Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday')
 STATE_FILE = 'profile:jython/config/TASFastClockState.txt'
 _TaskRegistered = False
 _ShutdownTaskJvmKey = 'tas.fastclockstartup.shutdown.registered'
@@ -50,6 +52,19 @@ def _ParseBoolText(value, defaultValue=None):
     if s in ['0', 'false', 'no', 'n', 'off', 'disabled']:
         return False
     return defaultValue
+
+
+def NormalizeDayOfWeek(value):
+    try:
+        s = str(value).strip().lower()
+    except Exception:
+        return None
+    if s == '':
+        return None
+    for name in _DAY_NAMES:
+        if s == name.lower():
+            return name
+    return None
 
 
 def GetLiveOnlyMode():
@@ -85,7 +100,7 @@ def GetShutDownManager():
         return None
 
 def LoadState():
-    state = {'useSavedStartup': None, 'clockText': None}
+    state = {'useSavedStartup': None, 'clockText': None, 'dayOfWeek': None}
     path = GetStateFilePath()
     if path is None:
         return state
@@ -125,6 +140,8 @@ def LoadState():
             state['useSavedStartup'] = _ParseBoolText(value, None)
         elif keyLower == 'clocktext':
             state['clockText'] = value
+        elif keyLower == 'dayofweek':
+            state['dayOfWeek'] = NormalizeDayOfWeek(value)
     return state
 
 
@@ -144,11 +161,17 @@ def SaveState(state):
         clockText = state.get('clockText', None)
     except Exception:
         clockText = None
+    try:
+        dayOfWeek = NormalizeDayOfWeek(state.get('dayOfWeek', None))
+    except Exception:
+        dayOfWeek = None
     lines = []
     if useSavedStartup is not None:
         lines.append('useSavedStartup=' + ('true' if bool(useSavedStartup) else 'false'))
     if clockText is not None and str(clockText).strip() != '':
         lines.append('clockText=' + str(clockText).strip())
+    if dayOfWeek is not None:
+        lines.append('dayOfWeek=' + dayOfWeek)
     try:
         fh = open(path, 'w')
         try:
@@ -360,6 +383,21 @@ def SaveSavedClockText(clockText):
     state['clockText'] = str(clockText).strip()
     return SaveState(state)
 
+
+def LoadSavedDayOfWeek():
+    state = LoadState()
+    return NormalizeDayOfWeek(state.get('dayOfWeek', None))
+
+
+def SaveSavedDayOfWeek(dayText):
+    normalized = NormalizeDayOfWeek(dayText)
+    if normalized is None:
+        return False
+    state = LoadState()
+    state['dayOfWeek'] = normalized
+    return SaveState(state)
+
+
 class PersistFastClockTask(jmri.implementation.AbstractShutDownTask):
     def run(self):
         try:
@@ -378,6 +416,16 @@ class PersistFastClockTask(jmri.implementation.AbstractShutDownTask):
             SafeSetMemoryValue(IMFastClockSavedTime, clockText)
             if SaveSavedClockText(clockText):
                 Log('Saved fast clock time ' + clockText)
+            try:
+                dayValue = SafeGetMemoryValue(IMDayOfWeek, '')
+            except Exception:
+                dayValue = ''
+            normalizedDay = NormalizeDayOfWeek(dayValue)
+            if normalizedDay is None:
+                Log('Day of week not saved during shutdown: Memory DAYOFWEEK missing or invalid')
+            else:
+                if SaveSavedDayOfWeek(normalizedDay):
+                    Log('Saved day of week ' + normalizedDay)
             return True
         except Exception as ex:
             Log('Shutdown save failed: ' + str(ex))
@@ -413,7 +461,7 @@ def ApplySavedStartupTimeOnce():
     if not UseSavedStartupEnabled():
         return
     SetJvmFlag(_ApplyJvmKey)
-    state = {'attempts': 0, 'done': False, 'timer': None}
+    state = {'attempts': 0, 'clockDone': False, 'dayDone': False, 'timer': None}
 
     def StopTimer():
         try:
@@ -424,42 +472,56 @@ def ApplySavedStartupTimeOnce():
         state['timer'] = None
 
     def Tick(e=None):
-        if state['done']:
+        if state['clockDone'] and state['dayDone']:
             StopTimer()
             return
         state['attempts'] += 1
-        tb = GetTimebase()
-        if tb is None:
-            if state['attempts'] >= 20:
-                StopTimer()
-            return
-        try:
-            if hasattr(tb, 'getIsInitialized') and (not tb.getIsInitialized()):
+        if not state['dayDone']:
+            savedDay = LoadSavedDayOfWeek()
+            if savedDay is None:
+                state['dayDone'] = True
+            else:
+                try:
+                    SafeSetMemoryValue(IMDayOfWeek, savedDay)
+                    Log('Applied saved day of week ' + savedDay)
+                except Exception as ex:
+                    Log('Could not apply saved day of week: ' + str(ex))
+                state['dayDone'] = True
+        if not state['clockDone']:
+            tb = GetTimebase()
+            if tb is None:
                 if state['attempts'] >= 20:
                     StopTimer()
                 return
-        except Exception:
-            pass
-        savedText = LoadSavedClockText()
-        if savedText is None:
-            savedText = SafeGetMemoryValue(IMFastClockSavedTime, '')
-        target = ParseClockTextToDate(savedText, Date())
-        if target is None:
-            Log('Saved fast clock time not available; leaving native JMRI start-up setting unchanged')
-            state['done'] = True
+            try:
+                if hasattr(tb, 'getIsInitialized') and (not tb.getIsInitialized()):
+                    if state['attempts'] >= 20:
+                        StopTimer()
+                    return
+            except Exception:
+                pass
+            savedText = LoadSavedClockText()
+            if savedText is None:
+                savedText = SafeGetMemoryValue(IMFastClockSavedTime, '')
+            target = ParseClockTextToDate(savedText, Date())
+            if target is None:
+                Log('Saved fast clock time not available; leaving native JMRI start-up setting unchanged')
+                state['clockDone'] = True
+                if state['dayDone']:
+                    StopTimer()
+                return
+            try:
+                if hasattr(tb, 'userSetTime'):
+                    tb.userSetTime(target)
+                else:
+                    tb.setTime(target)
+                SafeSetMemoryValue(IMFastClockSavedTime, FormatDateToClockText(tb.getTime()))
+                Log('Applied saved fast clock startup time ' + FormatDateToClockText(target))
+            except Exception as ex:
+                Log('Could not apply saved fast clock startup time: ' + str(ex))
+            state['clockDone'] = True
+        if state['clockDone'] and state['dayDone']:
             StopTimer()
-            return
-        try:
-            if hasattr(tb, 'userSetTime'):
-                tb.userSetTime(target)
-            else:
-                tb.setTime(target)
-            SafeSetMemoryValue(IMFastClockSavedTime, FormatDateToClockText(tb.getTime()))
-            Log('Applied saved fast clock startup time ' + FormatDateToClockText(target))
-        except Exception as ex:
-            Log('Could not apply saved fast clock startup time: ' + str(ex))
-        state['done'] = True
-        StopTimer()
 
     try:
         state['timer'] = Timer(500, lambda e: Tick(e))
