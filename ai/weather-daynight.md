@@ -1,0 +1,20 @@
+Read when: Task concerns WeatherGenerator.py, WeatherForecastUIApp.py, WeatherForecastUINewspaper.py, DayTracker.py, DayNight.py, StreetLightController.py, config/climate.csv, config/daynight.csv, config/streetlights.tsv, Memories WX_*, CLOUDCOVERPCT, DAYOFWEEK, SUNRISESECONDS, SUNSETSECONDS, SOLARDAY.
+
+# Weather and Day Night
+
+WeatherGenerator.py is a startup script. Class WeatherGenerator extends jmri.jmrit.automat.AbstractAutomaton. Method handle returns true to continue. WeatherGenerator.py reads Memories WX_CLIMATE, WX_FORECAST_ACCURACY, WX_SCHEMA, WX_FC_STEP_MIN, WX_FC_LENGTH, WX_FC_ISSUE_ABSMIN, WX_FC_POINTS, WX_UPDATED_ABSMIN, WX_FC_ISSUES, WX_FC_LIST, WX_FC_<issueAbsMin>, CURRENTTIME, DAYOFWEEK and writes Memory CLOUDCOVERPCT for current time. Config file is profile:jython/config/climate.csv with tab delimiter through csv.DictReader. Functions include _hash32, _prng01, _gauss, _lerp, _sigma_for_horizon, _dow_idx, _fmt_hhmm, _dow_name_from_abs_minute, _parse_float, _parse_int, _load_climate_from_tsv.
+
+WeatherForecastUIApp.py defines class WeatherForecastUI extends jmri.jmrit.automat.AbstractAutomaton. Header states UI frontend only, reads future weather published by WeatherGenerator.py with schema WG2. It reads Memories CURRENTTIME, DAYOFWEEK, CLOUDCOVERPCT, WX_SCHEMA, WX_FC_STEP_MIN, WX_FC_LENGTH, WX_FC_ISSUE_ABSMIN, WX_FC_POINTS, WX_UPDATED_ABSMIN, DAYNIGHT_PRESET, SPOOFADSENABLED, AD_ROTATE_SEC, AD_MODE, AD_COUNT, ADn_BRAND, ADn_L1, ADn_L2, ADn_CTA. It reads config/daynight.csv for sunrise and sunset. It calls execfile on SecretScriptDoNotRun.py for one ad entry.
+
+WeatherForecastUINewspaper.py defines class WeatherForecastNewspaper extends jmri.jmrit.automat.AbstractAutomaton. Method handle returns false. It supports modern and old styles with half-day averaging bounded by AM_START, AM_END, PM_START, PM_END. Memories include WX_NEWS_STYLE, WX_NEWS_PAPERNAME, WX_NEWS_DAYS.
+
+DayTracker.py is a startup script. Class DayTracker extends jmri.jmrit.automat.AbstractAutomaton. It stores dayNames list Monday through Sunday. Rollover condition is lastHour >= 22 and currentHour < 5. Memories are CURRENTTIME and DAYOFWEEK.
+
+DayNight.py is a startup script. Class DayNight extends jmri.jmrit.automat.AbstractAutomaton. It controls lighting through throttles and publishes solar values. Memories written are SUNRISESECONDS, SUNSETSECONDS, SOLARDAY. Memories read are DAYNIGHT_PRESET, CURRENTTIME, DAYOFWEEK, CLOUDCOVERPCT, MINNIGHTGLOW, LOWCTTHROTTLEADDR, HIGHCTTHROTTLEADDR, TIMEWARPBLACKOUTSECONDS, TIMEWARPTHRESHOLDMINUTES. Config file is profile:jython/config/daynight.csv with tab delimiter. Constants include LOW_TEMP_DEFAULT=990, HIGH_TEMP_DEFAULT=991, BLACKOUT_SECONDS_DEFAULT=2, TIMEWARP_THRESHOLD_MINUTES_DEFAULT=5, MIN_NIGHT_GLOW_DEFAULT=0.02.
+
+StreetLightController.py defines class StreetLightController extends jmri.jmrit.automat.AbstractAutomaton with 250 ms waitMsec interval, class StreetLightConfigDialog extends JDialog, class DurationEditor extends JPanel. Config file is profile:jython/config/streetlights.tsv with columns group_name, dusk_offset_seconds, dawn_offset_seconds, light_system_names. StreetLightController.py reads Memories SUNRISESECONDS, SUNSETSECONDS, SOLARDAY, DAYOFWEEK. It controls JMRI Lights through jmri.InstanceManager.getDefault(jmri.LightManager) with light.getState, light.setState, jmri.Light.ON, jmri.Light.OFF. Import of StreetLightController.py calls StartStreetLightController().
+
+Detailed topics:
+- ai/details/weather-generator.md
+- ai/details/weather-ui.md
+- ai/details/daynight-daytracker-streetlight.md

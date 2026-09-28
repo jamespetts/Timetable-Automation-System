@@ -7,6 +7,23 @@ Jython 2.7 scripts for JMRI (Java Model Railroad Interface). Provides timetable 
 
 **License:** GPL v3. All code files must have the standard GPL v. 3 header.
 
+## AI Operating Rules
+- Use no metaphor in any output, file content, code comment, commit message, or internal chain-of-thought. This prohibition includes internal reasoning. State facts directly without comparison phrases.
+- All text produced by the AI must be precise and literal. Define each term before use. Quote exact file names, function names, class names, Memory names, file paths, and JMRI API names.
+- Do not invent identifiers, file names, Memory names, configuration keys, or JMRI API signatures. Verify each reference against the repository code or against the publicly available JMRI 5.16 documentation. If the documentation is ambiguous, contradictory, incomplete, or inconsistent with observed behaviour, inspect the corresponding JMRI 5.16 source code on Github and relevant tests before relying on the API.
+- If a fact cannot be resolved by examining the repository code or the JMRI 5.16 documentation or source, stop and ask the user.
+- Keep responses short. Report file paths as `path:line_number` when referencing specific code.
+
+## AI Knowledge Base (ai/)
+- The directory `ai/` contains the indexed knowledge base that describes how the code works for future agents.
+- Entry point is `ai/index.md`. Read `ai/index.md` at the start of each session.
+- `ai/index.md` links head-topic files. Each head-topic file links detailed-topic files. Do not link detailed-topic files directly from `ai/index.md`.
+- Each knowledge base file starts with a `Read when:` line that states the exact task conditions that require reading that file. Read a file only when its `Read when:` condition matches the current task.
+- All knowledge base documents are `.md` files under `ai/`. Detailed-topic files are under `ai/details/`.
+- All knowledge base documents must use ASCII only, precise literal text, and no metaphor.
+- Keep knowledge base documents much shorter than the code. For details, the AI can read the code. Record only facts needed to locate and use the code.
+- AI temporary and scratch files must be placed only in `ai/temp/`. At the end of each session delete all files in `ai/temp/`, then write `ai/temp/handoff.md` only when incomplete work remains for a new session. `ai/temp/handoff.md` contains only the description of the incomplete work. Delete `ai/temp/handoff.md` when the handed off work is complete.
+
 ## Installation & Runtime
 - Copy all files to JMRI profile's `jython/` directory (NOT program folder)
 - First run prompts to set `scripts:` location to this folder; restart JMRI after
@@ -37,7 +54,7 @@ Jython 2.7 scripts for JMRI (Java Model Railroad Interface). Provides timetable 
 - Configuration files are stored under `profile:jython/config/`, including `daynight.csv`, `climate.csv`, and `streetlights.tsv`. The csv files are actually tab separated. 'streetlights.tsv' is automatically created only when street lights are configured by the user.
 
 ## Development Conventions
-- **Single source of truth** - do not create competing authoritative stores for the same state; use shared utilities and derive or snapshot state where needed
+- **Single authoritative source of truth** - for every value being represented, there should be a single authoritative source of truth. Do not create competing authoritative stores for the same value; use shared utilities and derive or snapshot state where needed. Before adding a Memory, file, or register entry, verify that no existing Memory, file, or register already represents the same value.
 - **ASCII only** — no non-ASCII chars in source
 - **No hard-coded absolute paths** — use JMRI path schemes through FileUtil or TASPathResolver and resolve them at runtime
 - **Thread-safe** — treat JMRI as threaded; protect shared state and perform Swing UI access on the Event Dispatch Thread
@@ -108,6 +125,10 @@ TAS devel/
 ├── Example timetables/*.csv    # Sample timetables
 ├── changelog.txt               # Version history
 ├── Licence.txt                 # GPL v3
+├── ai/index.md                 # Knowledge base entry point
+├── ai/*.md                     # Head-topic files
+├── ai/details/*.md             # Detailed-topic files
+├── ai/temp/                    # AI scratch files; preserve only handoff.md
 └── Timetable Automation System installation instructions.txt
 ```
 

@@ -1,0 +1,16 @@
+Read when: Task concerns DisruptionGenerator.py, DisruptionRegister.py, TimingRegister.py, NotebookDisruption.py, TeleprinterDisruption.py, Disruption.csv, timing points TPArr and TPDep, delay values, cancellation values.
+
+# Disruptions and Timing
+
+DisruptionGenerator.py generates delays, early running, and cancellations with support for virtual timing points. Functions include parseTimeToMinutes, minutesToStrHMM, timetablePathFromMemory, loadDisruptionGroups, iterTodayRows, seedFor, rngUniformInt, rngPickGeometric, updateDisruptions, cullSpuriousDisruptions. Pattern _TP_PATTERN = ^TP(\d*)(Arr|Dep)\s+(.+)$ with case-insensitive match. Memories read: CURRENTTIMETABLE, DAYOFWEEK, CURRENTTIME, ALLOWDELAYS, ALLOWCANCELLATIONS, DISRUPTIONSEEDBASE, TP_WEIGHT_DELAY_PRE_FIRSTTP, TP_WEIGHT_EARLY_PRE_FIRSTTP, TP_P_LATE_DEPART_ON_EARLY, TP_MIN_DWELL_LE_2_MIN, TP_MIN_DWELL_LE_5_MIN, TP_MIN_DWELL_GT_5_MIN, TP_POST_GRACE_MINUTES. Config files: profile:timetable/<name>.csv through TASPathResolver.GetTimetableCsvPath, profile:timetable/Disruption.csv with fields Disruption group, Delay probability, Max delay, Early probability, Max early, Cancellation probability, Minutes before to check max, Minutes before to check min, Cancel if later than, Max recovery mins/min. DisruptionGenerator.py calls DisruptionRegister.registerDisruption, updateDisruption, getDisruption, deregisterDisruption, TimingRegister.getTiming, listTimingPoints, getBlocks, ensureTimingPoint, registerTiming, TASUtil.MakeDefaultReportingNumberFromRow, TrainLocatorRegister.getRosterId, PlatformAllocationRegister.deregisterPlatform.
+
+DisruptionRegister.py stores delay and cancellation data. Cancellation equals delay greater than 1440 minutes. Variables and functions: register = Hashtable(), registerDisruption, getDisruption, deregisterDisruption, updateDisruption, save, load. File is profile:disruption_register.json through jmri.util.FileUtil.getExternalFilename with fallback to FileUtil.getProfilePath. Shutdown save uses jmri.ShutDownManager.instance().addShutdownTask(save) with fallback to Runtime hook.
+
+TimingRegister.py stores per-timing-point dicts with keys timings and blocks in Hashtable() with ReentrantReadWriteLock. Functions: registerTiming(timingPointName, reportingNumber, direction, time, day), assignBlocks, clearBlocks, getBlocks, getTiming, removeByDay, ensureTimingPoint, clearTimings, deleteTimingPoint, listTimingPoints, setMeta, getMeta, save, load. File is profile:timingRegister.json. Memories read: CURRENTTIMETABLE, DAYOFWEEK. registerTiming computes delay as actual minutes minus scheduled minutes and calls DisruptionRegister.registerDisruption or updateDisruption unless current minutes >= 1441. Timing point name pattern is ^TP(\d*)(Arr|Dep)\s+(.+)$.
+
+NotebookDisruption.py tag is <<SIG-DISP-NAME: Message notebook>>. TeleprinterDisruption.py tag is <<SIG-DISP-NAME: Teleprinter>>. Both read timetable CSV with tab delimiter, Memories CURRENTTIME, DAYOFWEEK, CURRENTTIMETABLE, TAS_USER_SETTING_USE_24_HOUR_TIME, and use DisruptionRegister.getDisruption and TimingRegister.listTimingPoints and getTiming.
+
+Detailed topics:
+- ai/details/disruption-generator-register.md
+- ai/details/timingregister-checks.md
+- ai/details/notebook-teleprinter.md

@@ -1,0 +1,22 @@
+Read when: Task concerns TASSetup.py, TASWiz.py, HardwareDirectionConfig.py, TASHelp.py, tashelp/*.txt, TASFontCheck.py, TASIcon.py, TASUtil.py, configuration UI, wizard steps, help viewer, font check, window icon.
+
+# Setup Wizard Help
+
+TASSetup.py defines class TASSetupFrame extends jmri.util.JmriJFrame. Tabs built are General setup, Timetable, Workings, Timing points, Orientation, Display configuration, Day/night cycle, Interface. Header states ASCII-only, portable paths, thread-safe. Functions include LogInfo, LogWarn, LogError, RunSetupWizard, GetMemoryBool, SetMemoryBool, ScriptExists, ApplyTheme, MakePaperPanel, MakeHeading, MakeWrappedLabel, GetDefaultFontFamily, GetFastClockTimebase, FastClockDateToText, FastClockTextToDate, GetNativeFastClockStartupInfo, ApplyNativeFastClockStartupInfo, GetTimetableDirFile, ProfileJythonFilePath, PersistFastClockSavedStartupChoice, GetPersistedFastClockSavedStartupChoice. Tag regexes are _PID_TAG_RE, _SIG_TAG_RE, _DESC_TAG_RE, _SETTING_DESC_RE, _SETTING_ENUMVALS_RE. TASSetup.py reads Memories CURRENTTIMETABLE, ALLOWDELAYS, ALLOWCANCELLATIONS, PUBLICDISPLAYLIST, SIGNALLERDISPLAYLIST, WTT_PAGE_MODE, WTT_TIME_24H, WTT_TIME_SEPARATOR, WTT_TP_NAME_DOT_LEADERS, WTT_ECS_LABEL, WTT_ECS_DEST_MATCH, WTT_TIMING_LOAD_LABEL, WTT_REP_NO_LABEL, WTT_DIRECTION_SPLIT, WTT_OD_HEADER_VERTICAL, LOWCTTHROTTLEADDR, HIGHCTTHROTTLEADDR, DAYNIGHT_PRESET, WX_CLIMATE, CLOUDCOVERPCT, WX_UI, WX_NEWS_STYLE, TIMEWARPBLACKOUTSECONDS, TIMEWARPTHRESHOLDMINUTES, TASAUTOWORKING, TASFASTCLOCKUSESAVEDSTARTUP, TASSAVEDFASTCLOCKTIME, TAS_FONT_FAMILY, TASPAPERCOLOUR, TASCOVERCOLOUR, TASINNERCOLOUR, TASINKCOLOUR, TASCOVERINKCOLOUR, TASWTTBANDLIGHT, TASWTTBANDDARK, RAILWAYCO, REGION, SECTION, DISRUPTIONSEEDBASE, MINNIGHTGLOW, WX_NEWS_PAPERNAME, WX_FORECAST_ACCURACY, TAS_USER_SETTING_ plus key.
+
+TASWiz.py defines class TASWizardDialog extends JDialog. Header states wizard-style setup helper for JMRI 5.14 and Jython 2.7. Functions include _CompanyOptionsForYear, _RegionOptionsForCompany, _ValidateTimetableFile, _ParseTimetableTimeToMinutes, _GetDayNightEnabled, _SetDayNightEnabled, _GetOrientationSensingEnabled, _SetOrientationSensingEnabled, _ListRosterIds. TASWiz.py compares roster IDs to NormalDirectionRegister with str(k).strip().lower().
+
+HardwareDirectionConfig.py defines class HardwareDirectionConfigUI implements Runnable with method run and method Show(). Functions include NormId, TitleCase, NormAddr, GetLightingAddressSet, BuildRosterAddressIndex, ExpandLastMapToAllIds, RosterIdClusterFor, BuildRegistersSnapshot, BuildListingData, DetermineOppositeDirection. NormId is str(s).strip().lower(). HardwareDirectionConfig.py uses NormalDirectionRegister.GetCopy, GetNormalDirection, SetNormalDirection, RemoveNormalDirection, Save and LastReportedDirection.lastReportedDirection and OrientationRegister.IsContained, RemoveTrain, AddTrain, save.
+
+TASHelp.py defines Show(initialTopic="General"). Help directory is jmri.util.FileUtil.getProfilePath() plus /jython/tashelp. Files in tashelp/ are Day and night cycle.txt, Disruption.txt, Enqueued workings.txt, General.txt, Public Information Displays.txt, Signallers' displays.txt, Time warp.txt, Timetable.txt, Train orientation.txt, Workings.txt, Workings.txt duplicated in list is one file. TASHelp.py opens tashelpDir plus / plus topicName plus .txt.
+
+TASFontCheck.py defines class FontRequirement, class FontCheckResult, class StatusCellRenderer, class FontsFrame. Functions include BuildRequirementsFromProfileScripts, EvaluateRequirements, RunFontCheckDialog, GetFontCheckResults, CountMissingFonts, RunFontCheck, GetMissingFontsCount. It scans profile:jython/*.py for font names, compares to java.awt.GraphicsEnvironment.getLocalGraphicsEnvironment().getAvailableFontFamilyNames(), and displays a colour-coded report. It does not install fonts. Memory read is TAS_FONT_FAMILY.
+
+TASIcon.py defines CreateClockIconImage and SetFrameClockIcon. Clock drawing is 10:10 with red second hand at 8. New top-level TAS windows must call TASIcon.SetFrameClockIcon(). Code must not duplicate the clock-icon drawing code.
+
+TASUtil.py defines IsDefaultReportingNumber and MakeDefaultReportingNumberFromRow. MakeDefaultReportingNumberFromRow(rowNumber) returns "TAS" plus rowNumber.
+
+Detailed topics:
+- ai/details/tasssetup.md
+- ai/details/taswiz.md
+- ai/details/tashelp-fontcheck-icon-util.md

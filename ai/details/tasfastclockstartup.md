@@ -1,0 +1,34 @@
+Read when: Task modifies or debugs TASFastClockStartup.py saved fast-clock startup.
+
+# TASFastClockStartup.py
+
+File: TASFastClockStartup.py. Lines: 480.
+
+Purpose: persist fast-clock time on shutdown, restore on start when saved-startup is enabled.
+
+Constants:
+- IMFastClockUseSavedStartup = TASFASTCLOCKUSESAVEDSTARTUP
+- IMFastClockSavedTime = TASSAVEDFASTCLOCKTIME
+- STATE_FILE = profile:jython/config/TASFastClockState.txt
+- _ShutdownTaskJvmKey = tas.fastclockstartup.shutdown.registered
+- _ApplyJvmKey = tas.fastclockstartup.apply.started
+- Globals TAS_FASTCLOCK_STARTUP_LIVE_ONLY, TAS_FASTCLOCK_STARTUP_REGISTER_ONLY
+
+Functions:
+- _ParseBoolText
+- GetLiveOnlyMode, GetJvmFlag, SetJvmFlag, GetRegisterOnlyMode, GetShutDownManager, LoadState, SaveState, PersistUseSavedStartupChoice, SyncSavedStartupChoiceToMemory, Log, SafeGetMemoryValue, SafeSetMemoryValue, GetStateFilePath, EnsureStateDir, GetTimebase, UseSavedStartupEnabled, FormatDateToClockText, ParseClockTextToDate, LoadSavedClockText, SaveSavedClockText, RegisterShutdownTaskOnce, EnsureShutdownTaskRegistered, ApplySavedStartupTimeOnce
+- Class PersistFastClockTask extends jmri.implementation.AbstractShutDownTask with method run
+
+Memories: TASFASTCLOCKUSESAVEDSTARTUP, TASSAVEDFASTCLOCKTIME with IM prefix fallback in local wrappers. Local SafeGetMemoryValue and SafeSetMemoryValue prefer TASBeanLookup.SafeGetOrCreateMemoryValue and TASBeanLookup.SafeSetMemoryValue when TASBeanLookup import succeeds.
+
+File: profile:jython/config/TASFastClockState.txt with keys useSavedStartup= and clockText= through jmri.util.FileUtil.getExternalFilename(STATE_FILE).
+
+JMRI APIs:
+- jmri.InstanceManager.getDefault(jmri.ShutDownManager) with register(PersistFastClockTask)
+- jmri.InstanceManager.getDefault(jmri.MemoryManager) with getMemory(IM + name) and provideMemory(IM + name)
+- jmri.InstanceManager.getDefault(jmri.Timebase) with getTime, userSetTime, setTime, getIsInitialized
+- jmri.implementation.AbstractShutDownTask, javax.swing.Timer, java.util.Calendar and Date, java.lang.System.getProperty and setProperty
+
+Execution: module runs SyncSavedStartupChoiceToMemory(), RegisterShutdownTaskOnce(), ApplySavedStartupTimeOnce() at import unless register-only or live-only modes are set. Listed in TimetableAutomation._TASStartUpScriptNames.
+
+Open question: none. Facts verified against file content read in this session.
