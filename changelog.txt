@@ -1,5 +1,8 @@
 Version 1.3
 
+* Fix RunWTT printing "No working script found" after successfully triggering a working script
+* Fix enqueued workings retry so that every enqueued working is retried each minute (previously only the last entry was considered, and entries with existing scripts were never retried)
+* Fix formed workings so that a successor waits when its stock is not in the start block instead of starting with other stock
 * Fix file locations issue that affected default and some other install locations
 * Added option to resume automatically at the fast clock time when the system was last shut down.
 * PID parameters now show immediately after previewing rather than requiring restarting the setup window

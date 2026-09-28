@@ -50,14 +50,20 @@ else:
     # Iterate a copy of the enqueued workings list, as every time that a working fails
     # to run, it may re-enqueue itself, so we have to avoid infinite loops.
     workingsCopy = enqueuedWorkings.getEnqueuedWorkingsCopy()
-    for reportingNumber, direction in workingsCopy:    
-        if not reportingNumber:
+    for reportingNumber, direction in workingsCopy:
+        if not reportingNumber or not direction:
             continue
-        scriptName = TPR.ResolveWorkingScriptReadPath(direction, reportingNumber)
-    if scriptName is None:
-        scriptName = os.path.join(scriptsPath, "workings", direction, reportingNumber + ".py")
+        scriptName = None
+        try:
+            scriptName = TPR.ResolveWorkingScriptReadPath(direction, reportingNumber)
+        except Exception:
+            scriptName = None
+        if scriptName is None:
+            scriptName = os.path.join(scriptsPath, "workings", direction, reportingNumber + ".py")
         print("Retrying ", scriptName)
         formsNext = get_forms_for(reportingNumber)
+        if formsNext == "":
+            formsNext = None
         if not os.path.isfile(scriptName):
             print("No working script found for {} at {} (skipping)".format(reportingNumber, scriptName))
         else:

@@ -110,6 +110,47 @@ def trainFinder(traininfoNames, rosterIds=None, reportingNumber=None):
                     print(u"Train {} not found in the start block for working {}".format(rosterId, rnKey))
                     return None, None
 
+                # Verify the expected train is the train occupying this start block.
+                # Fail open when the occupant cannot be identified; skip this
+                # traininfo only when the occupant positively identifies as a
+                # different roster entry. This makes a formed successor wait
+                # while its stock has not yet arrived.
+                try:
+                    _expectedId = str(rosterEntry.getId()).strip()
+                except Exception:
+                    _expectedId = None
+                _occupantId = None
+                try:
+                    _memVal = block.getValue()
+                    if _memVal is not None:
+                        _text = str(_memVal).strip()
+                        if _text != "":
+                            _occ = None
+                            try:
+                                _occ = roster.getEntry(int(_text))
+                            except Exception:
+                                try:
+                                    _occ = roster.getEntryForId(_text)
+                                except Exception:
+                                    _occ = None
+                            if _occ is None:
+                                try:
+                                    _rid2 = TLR.getRosterId(_text.upper())
+                                    if _rid2 is not None and str(_rid2).strip() != "":
+                                        _occ = roster.getEntryForId(_rid2)
+                                except Exception:
+                                    pass
+                            if _occ is not None:
+                                try:
+                                    _occupantId = str(_occ.getId()).strip()
+                                except Exception:
+                                    _occupantId = None
+                except Exception:
+                    _occupantId = None
+                if _occupantId is not None and _expectedId is not None and _occupantId != _expectedId:
+                    print("Formed train {} not in start block for working {} (found {}), waiting".format(_expectedId, rnKey, _occupantId))
+                    continue
+
                 # We must return here: when a train is registered for this working, use only this train.
                 return rosterEntry, traininfoName
 

@@ -153,6 +153,7 @@ else:
          # Check trigger, arrival and departure times and trigger the appropriate script
         for direction in ["Trigger", "Arr", "Dep"]:
             reportingNumber = None
+            formsNext = None
             with open(timetableFile, "r") as f:
                 reader = csv.DictReader(f, delimiter="\t")
                 # Spreadsheet row numbers: header = 1, first data row = 2
@@ -177,6 +178,8 @@ else:
                         else:
                             reportingNumber = rnCell  # Use supplied RN as-is
                         formsNext = row.get("Forms", "").strip()
+                        if formsNext == "":
+                            formsNext = None
                         break
                     elif dayValue not in ["true", "false", ""]:
                         print("Warning: Unexpected value in timetable for day '{}' : '{}'".format(currentDay, dayValue))
@@ -204,6 +207,4 @@ else:
                         print("Triggered script: " + scriptName)
                     except Exception as e:
                         print("Error triggering script '{}': {}".format(scriptName, e))
-
-                    print("No working script found for {} at {} (skipping)".format(reportingNumber, scriptName))
 

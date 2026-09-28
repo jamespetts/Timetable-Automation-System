@@ -755,10 +755,10 @@ def startTrain(traininfoName, rosterEntry, reportingNumber, direction, formsNext
             formationRegister.deregisterTrain(reportingNumber)
             
             # Now register this train with its next formation reporting number.
-            if formsNext is not None:
+            if formsNext is not None and str(formsNext).strip() != "":
                 # The "forms" entry in the timetable is not compulsory. Only create an entry
-                # if the string representing this is non-null.
-                formationRegister.registerNextFormation(str(formsNext), rosterEntry.getId())          
+                # if the string representing this is non-empty.
+                formationRegister.registerNextFormation(str(formsNext).strip(), rosterEntry.getId())          
         else:
             print("Error: ActiveTrain has no Transit assigned for ", rosterEntry.getId(), " ", traininfoName)
             enqueuedWorkings.enqueueWorking(reportingNumber, direction)
