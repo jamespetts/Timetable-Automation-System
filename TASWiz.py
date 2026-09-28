@@ -368,7 +368,7 @@ class WizardSidebarImagePanel(JPanel):
 
 FONT_CHECK_SCRIPT = "TASFontCheck.py"
 
-WORKING_CREATOR_SCRIPT = 'WorkingCreator_HeadlessAudit_20260106_v2.py'
+WORKING_CREATOR_SCRIPT = 'WorkingCreator.py'
 WORKINGS_UI_SCRIPT = 'TASWorkingsUi.py'
 def LoadWorkingsUiModule():
 # Returns a loaded module or None.
@@ -2905,7 +2905,7 @@ class TASWizardDialog(JDialog):
 
 
     def _GetWorkingsStatusFromWorkingCreator(self):
-    # Try to use WorkingCreator headless audit if available.
+    # Try to use WorkingCreator if available.
         csvPath = None
         try:
             csvPath = self._CurrentTimetableCsvPath()
