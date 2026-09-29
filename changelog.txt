@@ -1,5 +1,7 @@
 Version 1.5
 
+* Added optional occupancy sensor flicker monitor (BlockFlickerMonitor.py, off by default, enabled in Setup General tab). Shows one non-modal warning window with one message per Block.
+
 * The option to resume with the same fast clock time as the last shut down now also saves and restores the day of the week.
 * Fix departure logging missing its WAITING to RUNNING move when Dispatcher allocates before the listener is attached (status fallback now always armed plus an immediate status check; first movement still wins when both paths fire; throttle address falls back to the working roster entry)
 * Fix cancelled workings remaining on the small modern PID indefinitely; they now clear once booked departure time has passed

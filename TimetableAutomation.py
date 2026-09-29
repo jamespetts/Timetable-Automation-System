@@ -403,6 +403,7 @@ _TASStartUpScriptNames = [
     'WeatherGenerator.py',
     'LastReportedDirection.py',
     'TASFastClockStartup.py',
+    'BlockFlickerMonitor.py',
 ]
 
 _StartupPathCheckDone = False
