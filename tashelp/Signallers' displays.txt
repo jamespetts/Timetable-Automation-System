@@ -8,7 +8,7 @@ The Timetable Automation System can simulate displays (other than the working ti
 
 One of the displays, "Station working", is intended to able to be used with manually operated layouts. The current working is highlighted and it is possible to see previous and subsequent workings. The "remarks" column can be configured, when creating the timetable, to contain useful information for operators (e.g. "shunt to siding", "detach milk van", "turn off saloon lights to run ECS", etc.) or alternatively to mimic a real station working book (giving the calling pattern with times where available). See the timetable help for more details on how to configure this.
 
-To view the currently configured signallers' or operators' displays, choose "Signallers' displays" from the Timetable Automation System main menu.
+To view the currently configured signallers' or operators' displays, choose "Signallers' displays" from the Timetable Automation System main menu. Choosing it again closes the displays.
 
 *Configuration*
 

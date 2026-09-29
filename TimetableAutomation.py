@@ -295,6 +295,11 @@ try:
     import TASPathResolver as TPR
 except Exception:
     TPR = None
+# Optional window registry (main menu button toggles)
+try:
+    import TASWindowRegistry as TASWINREG
+except Exception:
+    TASWINREG = None
 # ------------------ Helpers - profile & memory (JMRI API validated) ------------------
 
 def _IsStartUpScriptEnabled(scriptFileName):
@@ -1009,6 +1014,13 @@ class CoverPanel(JPanel):
     BTN_W = 240
     BTN_H = 36
     BTN_BASELINE_Y = 18 + 14 + 356  # margin + innerPad + baseline
+    # Window registry keys for the buttons that open other windows
+    KEY_TIMETABLE = "showtimetable"
+    KEY_PUBLIC = "publicdisplays"
+    KEY_SIGNALLERS = "signallerdisplays"
+    KEY_WEATHER = "weatherforecast"
+    KEY_SETUP = "setup"
+    KEY_HELP = "help"
 
     def __init__(self):
         JPanel.__init__(self)
@@ -1110,13 +1122,22 @@ class CoverPanel(JPanel):
             pass
         
         # Actions
-        self.BtnShowTimetable.addActionListener(lambda e: RunExternalScript("WTTDisplay.py", "Show timetable"))
+        # The buttons that open other windows are toggles: a second press closes
+        # the windows that the first press opened.
+        self.BtnShowTimetable.addActionListener(
+            lambda e: self.ToggleWindows(self.KEY_TIMETABLE,
+                                         lambda: RunExternalScript("WTTDisplay.py", "Show timetable")))
         self.BtnTimeWarp.addActionListener(lambda e: self.OnTimeWarp(e))
-        self.BtnPublic.addActionListener(lambda e: self.RunConfiguredPublic())
-        self.BtnSignallers.addActionListener(lambda e: self.RunConfiguredSignallers())
-        self.BtnWeather.addActionListener(lambda e: self.OnWeatherForecast())
-        self.BtnSetup.addActionListener(lambda e: RunExternalScript("TASSetup.py", "Setup"))
-        self.BtnHelp.addActionListener(lambda e: RunExternalScript("TASHelp.py", "Help"))
+        self.BtnPublic.addActionListener(
+            lambda e: self.ToggleWindows(self.KEY_PUBLIC, lambda: self.RunConfiguredPublic()))
+        self.BtnSignallers.addActionListener(
+            lambda e: self.ToggleWindows(self.KEY_SIGNALLERS, lambda: self.RunConfiguredSignallers()))
+        self.BtnWeather.addActionListener(
+            lambda e: self.ToggleWindows(self.KEY_WEATHER, lambda: self.OnWeatherForecast()))
+        self.BtnSetup.addActionListener(
+            lambda e: self.ToggleWindows(self.KEY_SETUP, lambda: RunExternalScript("TASSetup.py", "Setup")))
+        self.BtnHelp.addActionListener(
+            lambda e: self.ToggleWindows(self.KEY_HELP, lambda: RunExternalScript("TASHelp.py", "Help")))
         self.BtnAbout.addActionListener(lambda e: self.ShowAbout())
 
         # Initial enabled/disabled state based on IMALLOWTIMEWARP
@@ -1136,6 +1157,23 @@ class CoverPanel(JPanel):
         btn.setForeground(getattr(self, 'CoverInkColor', self.InkColor))
         btn.setBorder(BorderFactory.createLineBorder(getattr(self, 'CoverInkColor', self.InkColor), 1))
         return btn
+
+    def ToggleWindows(self, key, opener):
+        # Run opener unless the windows it opened are still up, in which case close
+        # them. Each button is therefore a toggle. Without the registry, when that
+        # module is not present, opener always runs, as before.
+        if TASWINREG is None:
+            opener()
+            return
+        try:
+            TASWINREG.Toggle(key, opener)
+        except Exception as ex:
+            print("[TAS] Could not toggle windows for " + str(key) + ": " + str(ex))
+            try:
+                import traceback
+                print(traceback.format_exc())
+            except:
+                pass
 
     def ShowStub(self, name):
         JOptionPane.showMessageDialog(self, name + " is not implemented yet.", "TAS", JOptionPane.INFORMATION_MESSAGE)
