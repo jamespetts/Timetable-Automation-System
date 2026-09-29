@@ -34,7 +34,7 @@
 # ui = WeatherForecastUI(); ui.setName('Weather forecast UI'); ui.start()
 import jmri, java, csv
 import os
-from java.awt import Color, Font, BasicStroke, RenderingHints, Dimension, GridLayout, BorderLayout
+from java.awt import Color, Font, BasicStroke, RenderingHints, Dimension, GridLayout, BorderLayout, Insets
 from java.awt.geom import RoundRectangle2D
 from javax.swing import JPanel, JLabel, BoxLayout, BorderFactory, Timer, JButton, JDialog, SwingConstants
 from javax.swing.border import EmptyBorder
@@ -327,7 +327,7 @@ class _WxAppAlertButton(JButton):
         self.setFont(Font("SansSerif", Font.PLAIN, 16))
         self.setHorizontalAlignment(SwingConstants.CENTER)
         self.setVerticalAlignment(SwingConstants.CENTER)
-        self.setMargin(EmptyBorder(0, 0, 0, 0))
+        self.setMargin(Insets(0, 0, 0, 0))
 
     def paintComponent(self, g):
         try:
