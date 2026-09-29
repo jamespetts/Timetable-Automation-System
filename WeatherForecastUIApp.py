@@ -17,6 +17,9 @@
 # Provides a 2010s-style mobile app UI for the weather forecast.
 # PURPOSE: UI frontend ONLY - reads future weather data published by WeatherGenerator.py
 # (schema WG2: IMWX_FC_POINTS etc.). Also shows sunrise/sunset for the current day.
+# The window is rendered once before it is shown, so it opens fully populated. If the
+# forecast series has not been published yet, a glass pane over the window shows a
+# late-2010s iOS-style activity indicator until the first series arrives.
 # Input memories:
 # - IMCURRENTTIME (for simulated time)
 # - IMDAYOFWEEK
@@ -58,6 +61,23 @@ GRID_COLS = 6
 SUN_YELLOW = Color(255,190,0)
 MOON_GRAY = Color(210,210,220)
 CLOUD_GRAY = Color(150,155,165)
+
+# ------------------------------ Loading indicator ------------------------------
+# Late-2010s mobile app style: an iOS-style twelve-spoke activity indicator, shown
+# on a glass pane over the window while the forecast has not yet been published.
+# Names carry a WXAPP_ prefix because Jython start-up scripts share one namespace
+# (see ai/details/startup-power-warnings.md).
+WXAPP_SPINNER_SPOKES = 12
+WXAPP_SPINNER_SIZE = 64
+WXAPP_SPINNER_FRAME_MS = 40
+WXAPP_SPINNER_DEG_PER_FRAME = 360.0 * (WXAPP_SPINNER_FRAME_MS / 1000.0)
+WXAPP_SPINNER_GREY = Color(110,122,142)
+WXAPP_SPINNER_ALPHA_MIN = 0.12
+WXAPP_SPINNER_ALPHA_MAX = 0.80
+WXAPP_SPINNER_LEN_MIN = 0.30
+WXAPP_LOADING_TIMEOUT_MS = 12000
+WXAPP_LOADING_WAIT_MSG = "Fetching forecast..."
+WXAPP_LOADING_STALL_MSG = "No forecast data - check the weather generator is running"
 
 # Sunrise/Sunset CSV (reuse your other scripts' location)
 try:
@@ -185,6 +205,97 @@ def gapH(w):
     return p
 
 # ------------------------------ UI components ------------------------------
+class _WxAppSpinnerPanel(JPanel):
+    """
+    Late-2010s mobile app loading indicator in the iOS style: twelve rounded
+    spokes arranged around a hub, each spoke shorter and fainter than the one
+    ahead of it, giving the familiar comet trail. Rotated by a javax.swing.Timer
+    so the animation runs on the Event Dispatch Thread.
+    """
+    def __init__(self, message):
+        JPanel.__init__(self)
+        self.setOpaque(True)
+        self.setBackground(PANEL_BG)
+        self._message = str(message or "")
+        self._angle = 0.0
+        self._timer = None
+        self._font = Font("SansSerif", Font.PLAIN, 14)
+        self.setPreferredSize(Dimension(WXAPP_SPINNER_SIZE + 40, WXAPP_SPINNER_SIZE + 56))
+
+    def setMessage(self, message):
+        msg = str(message or "")
+        if msg == self._message:
+            return
+        self._message = msg
+        self.repaint()
+
+    def startSpinning(self):
+        try:
+            if self._timer is None:
+                self._timer = Timer(WXAPP_SPINNER_FRAME_MS, self._onFrame)
+            if not self._timer.isRunning():
+                self._timer.start()
+        except Exception:
+            pass
+        self.repaint()
+
+    def stopSpinning(self):
+        try:
+            if self._timer is not None:
+                self._timer.stop()
+        except Exception:
+            pass
+
+    def _onFrame(self, ev):
+        self._angle = (self._angle + WXAPP_SPINNER_DEG_PER_FRAME) % 360.0
+        self.repaint()
+
+    def paintComponent(self, g):
+        super(_WxAppSpinnerPanel, self).paintComponent(g)
+        g2 = g.create()
+        try:
+            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
+            g2.setRenderingHint(RenderingHints.KEY_STROKE_CONTROL, RenderingHints.VALUE_STROKE_PURE)
+            fm = g.getFontMetrics(self._font)
+            capGap = 14
+            cy = (self.getHeight() - (fm.getHeight() + capGap)) / 2.0
+            self._paintSpokes(g2, self.getWidth() / 2.0, cy)
+            if self._message != "":
+                g2.setFont(self._font)
+                g2.setColor(TEXT_SECONDARY)
+                tx = (self.getWidth() - fm.stringWidth(self._message)) / 2.0
+                ty = cy + WXAPP_SPINNER_SIZE / 2.0 + capGap + fm.getAscent()
+                g2.drawString(self._message, int(tx), int(ty))
+        finally:
+            g2.dispose()
+
+    def _paintSpokes(self, g2, cx, cy):
+        r = WXAPP_SPINNER_SIZE / 2.0
+        rInner = r * 0.30
+        maxLen = r - rInner
+        step = 360.0 / WXAPP_SPINNER_SPOKES
+        strokeW = max(2.0, WXAPP_SPINNER_SIZE * 0.085)
+        g2.setStroke(BasicStroke(strokeW, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND))
+        for i in range(WXAPP_SPINNER_SPOKES):
+            ang = self._angle + i * step
+            # Position of this spoke in the rotation cycle: 0 at the leading edge.
+            pos = ((i * step + self._angle) % 360.0) / step
+            fade = 1.0 - (pos / WXAPP_SPINNER_SPOKES)
+            alpha = WXAPP_SPINNER_ALPHA_MIN + (WXAPP_SPINNER_ALPHA_MAX - WXAPP_SPINNER_ALPHA_MIN) * fade
+            length = maxLen * (WXAPP_SPINNER_LEN_MIN + (1.0 - WXAPP_SPINNER_LEN_MIN) * fade)
+            rad = java.lang.Math.toRadians(ang)
+            ca = java.lang.Math.cos(rad)
+            sa = java.lang.Math.sin(rad)
+            x1 = cx + (rInner * ca)
+            y1 = cy + (rInner * sa)
+            x2 = cx + ((rInner + length) * ca)
+            y2 = cy + ((rInner + length) * sa)
+            g2.setColor(Color(WXAPP_SPINNER_GREY.getRed(),
+                              WXAPP_SPINNER_GREY.getGreen(),
+                              WXAPP_SPINNER_GREY.getBlue(),
+                              int(alpha * 255)))
+            g2.drawLine(int(x1), int(y1), int(x2), int(y2))
+
 class Card(JPanel):
     def __init__(self, pad=12):
         JPanel.__init__(self)
@@ -549,6 +660,11 @@ class WeatherForecastUI(jmri.jmrit.automat.AbstractAutomaton):
 
         self.page = 0 # 0=Today, 1=Tomorrow, 2=Day+2
 
+        # --- Loading indicator state ---
+        self.loading = False            # True while the forecast is still unavailable
+        self._loadingSince = 0          # milliseconds, from java.lang.System
+        self._loadingStalled = False    # True once the stall message has been shown
+
         # --- Ad rotation state ---
         self.adList = [] # list of dicts: {'brand','l1','l2','cta'}
         self.adIndex = -1
@@ -561,6 +677,13 @@ class WeatherForecastUI(jmri.jmrit.automat.AbstractAutomaton):
         cp = self.frame.getContentPane()
         cp.setBackground(PANEL_BG)
         cp.setLayout(BoxLayout(cp, BoxLayout.Y_AXIS))
+
+        # Loading overlay. A glass pane covers the window while the forecast is
+        # unavailable, so the window opens with the indicator rather than with
+        # empty placeholder cells, and it also blocks input until data arrives.
+        self.spinner = _WxAppSpinnerPanel(WXAPP_LOADING_WAIT_MSG)
+        self.frame.setGlassPane(self.spinner)
+        self.spinner.setVisible(True)
 
         self.hdr = JLabel("Weather"); self.hdr.setForeground(TEXT_PRIMARY); self.hdr.setFont(Font("SansSerif", Font.BOLD, 20))
         self.hdr.setBorder(EmptyBorder(10,12,2,12)); cp.add(self.hdr)
@@ -615,8 +738,7 @@ class WeatherForecastUI(jmri.jmrit.automat.AbstractAutomaton):
       
         self.frame.setSize(540, 960) # phone-like portrait
         self.frame.setLocationByPlatform(True)
-        self.frame.setVisible(True)
-            
+
         # Ensure the frame is actually disposed by Swing, not just hidden
         self.frame.setDefaultCloseOperation(WindowConstants.DISPOSE_ON_CLOSE)
 
@@ -649,7 +771,18 @@ class WeatherForecastUI(jmri.jmrit.automat.AbstractAutomaton):
         self._reload_ads_from_mem()
         self._apply_ad_visibility_and_timer()
         self._applyProTitle()
-            
+
+        # Render once here, on the automaton thread, before the window is shown.
+        # The forecast is already in Memory by the time this window is opened, so
+        # this fills every cell and the window opens fully populated. Without it
+        # the first paint showed placeholders and data appeared only on the first
+        # _onTick, which is either delayed by the refresh timer or held by
+        # waitChange until a watched Memory changes.
+        self._onTick(None)
+
+        # Show only after the first render, so no empty state is ever painted.
+        self.frame.setVisible(True)
+
     def _cleanup(self):
         # Idempotent shutdown: stop timers and detach listeners
         try:
@@ -672,6 +805,15 @@ class WeatherForecastUI(jmri.jmrit.automat.AbstractAutomaton):
                 except:
                     pass
                 self.adTimer = None
+        except:
+            pass
+        try:
+            if getattr(self, 'spinner', None) is not None:
+                try:
+                    self.spinner.stopSpinning()
+                    self.spinner.setVisible(False)
+                except:
+                    pass
         except:
             pass
         # Remove action listeners to avoid lingering references
@@ -975,6 +1117,92 @@ class WeatherForecastUI(jmri.jmrit.automat.AbstractAutomaton):
             return
         self._advance_ad(first=False)
 
+    # ------------------------------ Loading indicator ------------------------------
+    def _runGlassOp(self, fn):
+        """
+        Run a glass pane change. While the frame is not yet displayable the change
+        is made directly, so the pre-display render in init completes before the
+        window is shown. Afterwards it is marshalled to the Event Dispatch Thread.
+        """
+        displayed = True
+        try:
+            displayed = self.frame.isDisplayable()
+        except Exception:
+            displayed = True
+        if displayed:
+            self._RunOnEdt(fn)
+            return
+        try:
+            fn()
+        except:
+            pass
+
+    def _forecast_ready(self):
+        """True once WeatherGenerator has published a non-empty forecast series."""
+        try:
+            return len(self._read_points()) > 0
+        except Exception:
+            return False
+
+    def _show_loading(self, message):
+        def _apply():
+            try:
+                self.spinner.setMessage(message)
+                self.spinner.startSpinning()
+                self.spinner.setVisible(True)
+            except:
+                pass
+        self._runGlassOp(_apply)
+
+    def _hide_loading(self):
+        def _apply():
+            try:
+                self.spinner.stopSpinning()
+                self.spinner.setVisible(False)
+            except:
+                pass
+        self._runGlassOp(_apply)
+
+    def _update_loading_state(self):
+        """
+        Show the loading indicator only while the forecast is genuinely
+        unavailable, and remove it as soon as the series arrives. If no data
+        arrives within WXAPP_LOADING_TIMEOUT_MS the caption changes to explain
+        the stall, because WeatherGenerator.py publishes from handle(), which is
+        itself held by waitChange until the clock Memory changes.
+        """
+        try:
+            ready = self._forecast_ready()
+        except Exception:
+            ready = False
+
+        if ready:
+            self._loadingStalled = False
+            if self.loading:
+                self.loading = False
+                print("[TAS] Weather app UI: forecast received, loading indicator removed")
+            self._hide_loading()
+            return
+
+        if not self.loading:
+            self.loading = True
+            self._loadingStalled = False
+            self._loadingSince = java.lang.System.currentTimeMillis()
+            print("[TAS] Weather app UI: no forecast series yet, showing loading indicator")
+
+        if not self._loadingStalled:
+            try:
+                elapsed = int(java.lang.System.currentTimeMillis() - self._loadingSince)
+            except Exception:
+                elapsed = 0
+            if elapsed >= WXAPP_LOADING_TIMEOUT_MS:
+                self._loadingStalled = True
+                print("[TAS] Weather app UI: no forecast data after %d ms. Check that "
+                      "WeatherGenerator.py is running and has published IMWX_FC_POINTS."
+                      % WXAPP_LOADING_TIMEOUT_MS)
+
+        self._show_loading(WXAPP_LOADING_STALL_MSG if self._loadingStalled else WXAPP_LOADING_WAIT_MSG)
+
     # ------------------------------ Render ------------------------------
     def _onTick(self, ev):
         # Issuance (user-facing)
@@ -1019,6 +1247,9 @@ class WeatherForecastUI(jmri.jmrit.automat.AbstractAutomaton):
         self._reload_ads_from_mem()
         self._apply_ad_visibility_and_timer()
         self._applyProTitle()
+
+        # --- Loading indicator: only while the forecast is genuinely missing ---
+        self._update_loading_state()
 
     def handle(self):
         # Wake on time/DOW/forecast update and ad controls

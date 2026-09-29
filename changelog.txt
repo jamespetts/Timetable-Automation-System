@@ -1,5 +1,9 @@
 Version 1.5
 
+* Fix the mobile app weather forecast showing an empty window for several seconds after opening. The window is now rendered before it is shown, so it opens fully populated instead of filling in only when the first refresh or memory change arrives.
+
+* Added a loading indicator to the mobile app weather forecast, in the 2010s mobile app style, shown while the forecast data has not yet been published by the weather generator. It is removed as soon as the forecast arrives, and the caption changes to explain a stall if no data arrives within 12 seconds.
+
 * The version number is now shown at the bottom right of the main menu, to the right of the GPL notice.
 
 * The main menu buttons that open another window (Show timetable, Public information displays, Signallers' displays, Weather forecast, Setup and Help) are now toggles: choosing one a second time closes the window, or windows, that the first choice opened instead of opening a second copy.
