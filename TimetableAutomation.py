@@ -1481,11 +1481,8 @@ class CoverPanel(JPanel):
         footerY = h - margin - innerPad - 20
         g.setFont(Font(self.FontFamily, Font.PLAIN, 12))
         g.drawString("This system is subject to the GNU GPL v3.0. See About for details.", innerLeft, footerY)
-        g.setColor(Color(90, 90, 90))
-        g.setFont(Font(self.FontFamily, Font.PLAIN, 10))
         verText = "Version " + VERSION
         g.drawString(verText, innerRight - g.getFontMetrics().stringWidth(verText), footerY)
-        g.setColor(self.CoverInkColor)
 
 # ------------------ About dialog (external Licence.txt or concise GPL summary) ------------------
 
