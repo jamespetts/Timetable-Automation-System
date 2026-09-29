@@ -1,6 +1,6 @@
 Version 1.5
 
-* Setup dialogue opens faster: Workings, Timing points and Orientation tabs now load in the background with a horizontal progress bar shown until each tab is ready.
+* Setup dialogue opens faster: all tabs now load in the background with a horizontal progress bar shown until each tab is ready. The timetable and working script checks in General setup have their own inline progress bar.
 
 * Added optional occupancy sensor flicker monitor (BlockFlickerMonitor.py, off by default, enabled in Setup General tab). Shows one non-modal warning window with one message per Block.
 
