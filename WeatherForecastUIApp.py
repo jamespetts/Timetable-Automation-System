@@ -34,9 +34,9 @@
 # ui = WeatherForecastUI(); ui.setName('Weather forecast UI'); ui.start()
 import jmri, java, csv
 import os
-from java.awt import Color, Font, BasicStroke, RenderingHints, Dimension, GridLayout
+from java.awt import Color, Font, BasicStroke, RenderingHints, Dimension, GridLayout, BorderLayout
 from java.awt.geom import RoundRectangle2D
-from javax.swing import JPanel, JLabel, BoxLayout, BorderFactory, Timer, JButton, JDialog, BorderLayout, SwingConstants
+from javax.swing import JPanel, JLabel, BoxLayout, BorderFactory, Timer, JButton, JDialog, SwingConstants
 from javax.swing.border import EmptyBorder
 import TASBeanLookup as TBL
 import TASPathResolver
