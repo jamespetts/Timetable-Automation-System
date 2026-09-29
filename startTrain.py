@@ -467,18 +467,26 @@ def startTrain(traininfoName, rosterEntry, reportingNumber, direction, formsNext
                     except Exception:
                         startBlk = None
 
-                    # Obtain loco address from roster entry
+                    # Obtain loco address from roster entry.
+                    # Prefer the entry Dispatcher associated with the train.
                     try:
                         re = at.getRosterEntry()
                         print("Arm 4")
                     except Exception:
                         re = None
+                    # Fall back to the roster entry selected for the working,
+                    # which covers OPERATIONS and USER train sources where
+                    # getRosterEntry returns None yet the train runs automatically.
                     locoAddr = None
-                    if re is not None:
+                    for cand in (re, rosterEntry):
+                        if cand is None:
+                            continue
                         try:
-                            locoAddr = re.getDccLocoAddress()  # BasicRosterEntry API
+                            locoAddr = cand.getDccLocoAddress()  # BasicRosterEntry API
                         except Exception:
                             locoAddr = None
+                        if locoAddr is not None:
+                            break
 
                     if locoAddr is None:
                         self.fallbackArmed = True
@@ -505,14 +513,17 @@ def startTrain(traininfoName, rosterEntry, reportingNumber, direction, formsNext
 
                                     if v > 0.0:
                                         print("Train started moving: " + reportingNumber)
-                                        if not outer.depLogged:
-                                            tpRegister(reportingNumber, direction, kind="Dep")
-                                            outer.depLogged = True
-                                            self.done = True
-                                            try:
-                                                self.tmgr.removeListener(self.addr, self)
-                                            except Exception:
-                                                pass
+                                        # Always record first movement. The status fallback
+                                        # may have logged earlier at allocation time;
+                                        # movement time is the more accurate departure,
+                                        # and registerTiming keeps one tuple per working.
+                                        tpRegister(reportingNumber, direction, kind="Dep")
+                                        outer.depLogged = True
+                                        self.done = True
+                                        try:
+                                            self.tmgr.removeListener(self.addr, self)
+                                        except Exception:
+                                            pass
                             except Exception:
                                 pass
 
@@ -667,9 +678,11 @@ def startTrain(traininfoName, rosterEntry, reportingNumber, direction, formsNext
                         except Exception as e:
                             print("Warning: could not attach block listener:", e)
                 
-                def propertyChange(self, event):                        
-                    # Case (1) fallback: WAITING -> RUNNING if we could not attach a throttle listener
-                    if self.fallbackArmed and not self.depLogged and \
+                def propertyChange(self, event):
+                    # Case (1) fallback: WAITING -> RUNNING.
+                    # This path stays armed even when a throttle listener was attached,
+                    # so a missed throttle event still records the departure.
+                    if not self.depLogged and \
                        event.getPropertyName() == jmri.jmrit.dispatcher.ActiveTrain.PROPERTY_STATUS:
                         try:
                             newStatus = int(event.getNewValue())
@@ -747,6 +760,24 @@ def startTrain(traininfoName, rosterEntry, reportingNumber, direction, formsNext
             activeTrain.addPropertyChangeListener(atlisten)
             # Arm the passive throttle listener immediately so we can't miss the first movement
             atlisten.armDepartureOnPhysicalMove(activeTrain)
+            # Catch a WAITING to RUNNING move that landed before attach.
+            # New ActiveTrain objects start in WAITING, so RUNNING here means
+            # the move was already sent and the listener above missed it.
+            # Require usable clock values so a transient blank memory cannot
+            # store a record that later matches nothing.
+            try:
+                _cu_time, _cu_day = tpGetTimeAndDay()
+            except Exception:
+                _cu_time, _cu_day = "", ""
+            try:
+                if not atlisten.depLogged and str(_cu_time).strip() != "" and str(_cu_day).strip() != "" and activeTrain.getStatus() == jmri.jmrit.dispatcher.ActiveTrain.RUNNING:
+                    tpRegister(reportingNumber, direction, kind="Dep")
+                    atlisten.depLogged = True
+            except Exception as ex:
+                try:
+                    print("Warning: departure catch-up check failed for", reportingNumber, ":", ex)
+                except:
+                    pass
                     
             # Attach per-block listeners for physical timing points
             atlisten.AttachPhysicalTPListeners(activeTrain)

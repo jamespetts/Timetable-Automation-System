@@ -9,7 +9,7 @@ Jython 2.7 scripts for JMRI (Java Model Railroad Interface). Provides timetable 
 
 ## AI Operating Rules
 - Use no metaphor in any output, file content, code comment, commit message, or internal chain-of-thought. This prohibition includes internal reasoning. State facts directly without comparison phrases.
-- All text produced by the AI must be precise and literal. Define each term before use. Quote exact file names, function names, class names, Memory names, file paths, and JMRI API names.
+- All text produced by the AI must be precise and literal.
 - Do not invent identifiers, file names, Memory names, configuration keys, or JMRI API signatures. Verify each reference against the repository code or against the publicly available JMRI 5.16 documentation. If the documentation is ambiguous, contradictory, incomplete, or inconsistent with observed behaviour, inspect the corresponding JMRI 5.16 source code on Github and relevant tests before relying on the API.
 - If a fact cannot be resolved by examining the repository code or the JMRI 5.16 documentation or source, stop and ask the user.
 - Keep responses short. Report file paths as `path:line_number` when referencing specific code.

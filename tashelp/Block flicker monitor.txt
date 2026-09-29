@@ -1,0 +1,15 @@
+Block flicker monitor
+
+This is an optional startup script. It is off by default. Enable it in Setup, General tab, with "Enable occupancy sensor flicker monitor (requires restart)". Restart JMRI after changing the setting.
+
+When enabled, the script watches all Blocks for a short drop from occupied to unoccupied and back to occupied. A short drop often means dirty track or loose wiring.
+
+When a drop is seen, the script writes a line to the system console and shows a small warning window. The window has a warning triangle at the top and one message per Block at the bottom. The message reads:
+
+flickering occupancy sensor detected at: <block name>: check for dirty track or loose wiring
+
+All messages go in the same window. No second window is opened while the window is open. The window grows as messages are added. Each message is separated by vertical space.
+
+The window is non-modal. It can stay open while the layout keeps running. Close it at any time. If a new flicker happens after the window was closed, a new window is opened.
+
+The monitor reports even when Dispatcher shows no error.

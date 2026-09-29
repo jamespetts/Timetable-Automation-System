@@ -671,6 +671,9 @@ def _EnsureScriptEnabled(scriptFileName, enabled):
 def IsDayNightEnabled():
     return _IsScriptEnabled("DayNight.py")
 
+def IsFlickerMonitorEnabled():
+    return _IsScriptEnabled("BlockFlickerMonitor.py")
+
 def IsStreetLightControllerEnabled():
     return _IsScriptEnabled("StreetLightController.py")
 
@@ -1332,6 +1335,9 @@ class TASSetupFrame(jmri.util.JmriJFrame):
         # Hardware orientation sensing (LastReportedDirection.py) at Start-Up
         self.InitialDirectionSensing = _IsScriptEnabled("LastReportedDirection.py")
         self.CurrentDirectionSensing = self.InitialDirectionSensing
+        # Occupancy flicker monitor (BlockFlickerMonitor.py) at Start-Up, off by default
+        self.InitialFlickerMonitor = _IsScriptEnabled("BlockFlickerMonitor.py")
+        self.CurrentFlickerMonitor = self.InitialFlickerMonitor
         
         # TAS menu on Start-Up (TimetableAutomation.py)
         self.InitialTASMenu = _IsScriptEnabled("TimetableAutomation.py")
@@ -1624,6 +1630,34 @@ class TASSetupFrame(jmri.util.JmriJFrame):
             self.ChkTimeActions.setEnabled(False)
             msg = "<html>" + "<br/>".join(["Missing script: " + m for m in missing]) + "</html>"
             self.LblTimeActionsError.setText(msg)
+
+        # Flicker monitor (BlockFlickerMonitor.py) at Start-Up, off by default
+        gbc.gridy += 1
+        flickerRow = Box.createHorizontalBox()
+        self.ChkFlickerMonitor = JCheckBox("Enable occupancy sensor flicker monitor (requires restart)")
+        self.ChkFlickerMonitor.setOpaque(False)
+        self.ChkFlickerMonitor.setSelected(self.InitialFlickerMonitor)
+        def OnFlickerMonitor(e=None):
+            want = self.ChkFlickerMonitor.isSelected()
+            ok = _EnsureScriptEnabled("BlockFlickerMonitor.py", want)
+            actual = _IsScriptEnabled("BlockFlickerMonitor.py")
+            self.CurrentFlickerMonitor = actual
+            self.ChkFlickerMonitor.setSelected(actual)
+            if not ok:
+                LogWarn("Could not change Start-Up for BlockFlickerMonitor.py", alsoDialog=True)
+        self.ChkFlickerMonitor.addActionListener(OnFlickerMonitor)
+        flickerRow.add(self.ChkFlickerMonitor)
+        panel.add(flickerRow, gbc)
+
+        gbc.gridy += 1
+        self.LblFlickerMonitorError = JLabel("")
+        ApplyTheme(self.LblFlickerMonitorError)
+        panel.add(self.LblFlickerMonitorError, gbc)
+
+        if not ScriptExists("BlockFlickerMonitor.py"):
+            self.ChkFlickerMonitor.setSelected(False)
+            self.ChkFlickerMonitor.setEnabled(False)
+            self.LblFlickerMonitorError.setText("Missing script: BlockFlickerMonitor.py")
 
         # (B) "Run trains automatically" row (checkbox + status label) - NOW uses IMTASAutoWorking memory only
         gbc.gridwidth = 3
@@ -5233,6 +5267,7 @@ class TASSetupFrame(jmri.util.JmriJFrame):
                    self.InitialDayNight != self.CurrentDayNight or
                    self.InitialWeather != self.CurrentWeather or
                    self.InitialDirectionSensing != self.CurrentDirectionSensing or
+                   self.InitialFlickerMonitor != self.CurrentFlickerMonitor or
                    bool(getattr(self, 'FastClockStartupNeedsRestart', (self.InitialFastClockStartup != self.CurrentFastClockStartup))))
         if changed:
             try:
