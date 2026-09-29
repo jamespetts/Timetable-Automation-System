@@ -27,7 +27,7 @@ from javax.swing import (Box, JButton, JCheckBox, JFileChooser, JLabel, JDialog,
     JList, JOptionPane, JPanel, JScrollPane, JTabbedPane, JTextField,
     ListSelectionModel, SwingUtilities, UIManager, DefaultListModel,
     DefaultListCellRenderer, BorderFactory, JComboBox, JRadioButton, ButtonGroup,
-    JSpinner, SpinnerNumberModel, Timer)
+    JSpinner, SpinnerNumberModel, Timer, JProgressBar)
 from javax.swing.filechooser import FileNameExtensionFilter
 from javax.swing import JTextPane
 from javax.swing.event import DocumentListener, ListSelectionListener, ChangeListener
@@ -1368,16 +1368,21 @@ class TASSetupFrame(jmri.util.JmriJFrame):
 
 
         # --- Build tabs AFTER initial/current state is ready ---
+        # Workings, Timing points and Orientation tabs are lazy: placeholders
+        # show immediately with a horizontal progress bar, heavy content
+        # loads in background threads and swaps in on the EDT.
+        self.WorkingsUiController = None
         tabs = JTabbedPane()
         ApplyTheme(tabs)
         tabs.addTab("General setup", self.BuildGeneralTab())
         tabs.addTab("Timetable", self.BuildTimetableTab())
-        tabs.addTab("Workings", self.BuildWorkingsTab())
-        tabs.addTab("Timing points", self.BuildTimingPointsTab())
-        tabs.addTab("Orientation", self.BuildOrientationTab())
+        tabs.addTab("Workings", self._MakeLazyPlaceholder("Loading workings..."))
+        tabs.addTab("Timing points", self._MakeLazyPlaceholder("Loading timing points..."))
+        tabs.addTab("Orientation", self._MakeLazyPlaceholder("Loading orientation..."))
         tabs.addTab("Display configuration", self.BuildDisplayTab())
         tabs.addTab("Day/night cycle", self.BuildDayNightTab())
         tabs.addTab("Interface", self.BuildInterfaceTab())
+        self.SetupTabs = tabs
 
         # Finalize
         self.getContentPane().add(tabs, BorderLayout.CENTER)
@@ -1391,6 +1396,13 @@ class TASSetupFrame(jmri.util.JmriJFrame):
             print("[TASSetup] Failed to set setup window icon: " + str(ex))
 
         self.setVisible(True)
+
+        # Start background loads for heavy tabs. Placeholders stay visible
+        # with a horizontal progress bar until each real panel swaps in.
+        try:
+            self._StartLazyTabLoads()
+        except:
+            pass
 
         # Post-show: prompt to run the wizard when no valid timetable is configured
         try:
@@ -1474,6 +1486,170 @@ class TASSetupFrame(jmri.util.JmriJFrame):
         self.pack()
         try: self.setLocationRelativeTo(None)
         except: pass
+
+    def _MakeLazyPlaceholder(self, message):
+        # Fast placeholder with a horizontal progress bar in the content area.
+        # Shown when the user opens a heavy tab before its init completes.
+        panel = MakePaperPanel()
+        try:
+            panel.setLayout(BorderLayout())
+        except:
+            pass
+        try:
+            center = Box.createVerticalBox()
+            try:
+                lbl = JLabel(str(message))
+                ApplyTheme(lbl)
+                lbl.setAlignmentX(0.5)
+                center.add(lbl)
+            except:
+                pass
+            try:
+                center.add(Box.createVerticalStrut(8))
+            except:
+                pass
+            try:
+                bar = JProgressBar()
+                bar.setIndeterminate(True)
+                try:
+                    bar.setPreferredSize(Dimension(300, 20))
+                    bar.setMinimumSize(Dimension(200, 20))
+                    bar.setMaximumSize(Dimension(400, 20))
+                except:
+                    pass
+                bar.setAlignmentX(0.5)
+                center.add(bar)
+            except:
+                pass
+            wrap = JPanel()
+            try:
+                wrap.setOpaque(False)
+                wrap.setLayout(GridBagLayout())
+                gc = GridBagConstraints()
+                gc.gridx = 0
+                gc.gridy = 0
+                gc.anchor = GridBagConstraints.CENTER
+                wrap.add(center, gc)
+            except:
+                try:
+                    wrap.add(center)
+                except:
+                    pass
+            panel.add(wrap, BorderLayout.CENTER)
+        except:
+            pass
+        return panel
+
+    def _SwapLazyTab(self, title, newPanel):
+        # Replace the tab component titled title with newPanel on the EDT.
+        try:
+            tabs = getattr(self, "SetupTabs", None)
+            if tabs is None or newPanel is None:
+                return
+            try:
+                if not self.isDisplayable():
+                    return
+            except:
+                pass
+            idx = -1
+            try:
+                n = tabs.getTabCount()
+                for i in range(n):
+                    try:
+                        if str(tabs.getTitleAt(i)) == str(title):
+                            idx = i
+                            break
+                    except:
+                        pass
+            except:
+                return
+            if idx < 0:
+                return
+            try:
+                _ApplyFontRecursive(newPanel, THEME_FONT_FAMILY)
+            except:
+                pass
+            try:
+                tabs.setComponentAt(idx, newPanel)
+                tabs.revalidate()
+                tabs.repaint()
+            except:
+                pass
+        except:
+            pass
+
+    def _StartLazyTabLoads(self):
+        # Load heavy tabs in background threads so the dialog opens fast.
+        # Each loader builds the real panel off the EDT, then swaps it
+        # into the tab on the EDT with SwingUtilities.invokeLater.
+        try:
+            if getattr(self, "_LazyLoadStarted", False):
+                return
+            self._LazyLoadStarted = True
+        except:
+            pass
+
+        def _StartOne(threadName, buildFunc, tabTitle, doneAttr):
+            try:
+                if getattr(self, doneAttr, False):
+                    return
+            except:
+                pass
+            def _Worker():
+                panel = None
+                try:
+                    panel = buildFunc()
+                except Exception as ex:
+                    try:
+                        print("[TASSetup] Lazy load failed for " + str(tabTitle) + ": " + str(ex))
+                    except:
+                        pass
+                    panel = None
+                def _Apply():
+                    try:
+                        if panel is None:
+                            err = MakePaperPanel()
+                            try:
+                                err.setLayout(BorderLayout())
+                                err.add(JLabel("Could not load " + str(tabTitle) + "."), BorderLayout.CENTER)
+                            except:
+                                pass
+                            self._SwapLazyTab(tabTitle, err)
+                        else:
+                            self._SwapLazyTab(tabTitle, panel)
+                    except:
+                        pass
+                    try:
+                        setattr(self, doneAttr, True)
+                    except:
+                        pass
+                try:
+                    SwingUtilities.invokeLater(RunnableAdapter(_Apply))
+                except:
+                    try:
+                        _Apply()
+                    except:
+                        pass
+            try:
+                java.lang.Thread(RunnableAdapter(_Worker), threadName).start()
+            except:
+                try:
+                    _Worker()
+                except:
+                    pass
+
+        try:
+            _StartOne("TASSetup-Workings", self.BuildWorkingsTab, "Workings", "_LazyWorkingsDone")
+        except:
+            pass
+        try:
+            _StartOne("TASSetup-TimingPoints", self.BuildTimingPointsTab, "Timing points", "_LazyTimingDone")
+        except:
+            pass
+        try:
+            _StartOne("TASSetup-Orientation", self.BuildOrientationTab, "Orientation", "_LazyOrientationDone")
+        except:
+            pass
 
     # ------------------------------ General ----------------------------
     
