@@ -16,16 +16,15 @@
 # Monitors Block occupancy state and shows one non-modal warning window when a
 # Block drops to UNOCCUPIED and returns to OCCUPIED within a short gap.
 # The window is shown even when Dispatcher reports no error. All flicker
-# messages accumulate in the same window; no second window is opened while
-# the first window is open. A repeated flicker for the same Block does not
-# add a second message; the existing message flashes instead.
+# messages accumulate in the same window, one per line; no second window is
+# opened while the first window is open. A repeated flicker for the same Block
+# does not add a second message; the existing message flashes instead.
 # JMRI 5.16 / Jython 2.7. ASCII only. Thread-safe; Swing access on the EDT.
 
 import jmri
 import threading
-from javax.swing import (JFrame, JPanel, JTextPane, JScrollPane, SwingUtilities, Timer,
-                        BorderFactory)
-from javax.swing.text import SimpleAttributeSet, StyleConstants, DefaultHighlighter
+from javax.swing import (JFrame, JPanel, JTextPane, JScrollPane, SwingUtilities, Timer)
+from javax.swing.text import DefaultHighlighter
 from java.awt import BorderLayout, Dimension, Color, Font, BasicStroke, Polygon, RenderingHints
 from java.awt.event import WindowAdapter, ActionListener
 from java.lang import Runnable, System
@@ -41,7 +40,6 @@ FRAME_GROW_PER_MESSAGE = 46
 FRAME_MAX_HEIGHT = 560
 TEXT_WIDTH = 400
 TEXT_HEIGHT = 170
-MESSAGE_GAP_PIXELS = 16
 FLASH_PIXELS = 700
 FLIPPER_FONT_SIZE = 12
 NAME_FONT_SIZE = 13
@@ -52,6 +50,11 @@ SYMBOL_FILL = Color(198, 40, 40)
 SYMBOL_EDGE = Color(122, 0, 0)
 SYMBOL_MARK = Color(255, 255, 255)
 
+MESSAGE_LEAD = "Flickering occupancy sensor detected at: "
+MESSAGE_TAIL = ": check for dirty track or loose wiring"
+NOTICE_TEXT = "No occupancy sensor flickering recorded this session."
+NOTICE_KEY = "__notice__"
+
 _lock = threading.RLock()
 _started = False
 _listeners = []
@@ -59,6 +62,7 @@ _lastInactiveMs = {}
 _frame = None
 _pane = None
 _scroll = None
+_messages = []
 _ranges = {}
 _msgCount = [0]
 _timers = []
@@ -197,7 +201,8 @@ class _CloseReset(WindowAdapter):
                 _frame = None
                 _pane = None
                 _scroll = None
-                _ranges.clear()
+                _messages = []
+                _ranges = {}
                 _msgCount[0] = 0
                 del _timers[:]
         except Exception:
@@ -213,6 +218,14 @@ def _IsFrameOpen():
         return False
 
 
+def _Escape(text):
+    s = str(text)
+    s = s.replace("&", "&amp;")
+    s = s.replace("<", "&lt;")
+    s = s.replace(">", "&gt;")
+    return s
+
+
 def _CreateFrame():
     global _frame, _pane, _scroll
     frame = JFrame("Occupancy sensor warning")
@@ -225,7 +238,7 @@ def _CreateFrame():
         pane.setBackground(BACKGROUND)
         pane.setForeground(TEXT_LIGHT)
         pane.setFont(Font("SansSerif", Font.PLAIN, FLIPPER_FONT_SIZE))
-        pane.setBorder(BorderFactory.createEmptyBorder(6, 8, 6, 8))
+        pane.setContentType("text/html")
     except Exception:
         pass
     scroll = JScrollPane(pane)
@@ -256,16 +269,66 @@ def _CreateFrame():
     return frame
 
 
-def _PlainAttrs(color, size, bold):
-    attrs = SimpleAttributeSet()
-    StyleConstants.setForeground(attrs, color)
-    StyleConstants.setFontFamily(attrs, "SansSerif")
-    StyleConstants.setFontSize(attrs, size)
-    StyleConstants.setBold(attrs, bold)
-    return attrs
+def _BuildHtml():
+    body = "background-color:#000000;"
+    parts = ["<html><head><style type=\"text/css\">",
+             "body { " + body + " color:#dedede; font-family: SansSerif; font-size: " +
+             str(FLIPPER_FONT_SIZE) + "px; margin: 6px 8px 6px 8px; }",
+             "p { margin: 0px 0px " + str(FRAME_GROW_PER_MESSAGE // 2) + "px 0px; }",
+             "</style></head><body>"]
+    for m in _messages:
+        if m.get("name") is None:
+            parts.append("<p>" + _Escape(m.get("text")) + "</p>")
+        else:
+            parts.append("<p>" + _Escape(MESSAGE_LEAD) +
+                         "<span style=\"color:#ff4040; font-size:" + str(NAME_FONT_SIZE) +
+                         "px; font-weight:bold;\">" + _Escape(m.get("name")) + "</span>" +
+                         _Escape(MESSAGE_TAIL) + "</p>")
+    parts.append("</body></html>")
+    return "".join(parts)
 
 
-def _GrowFrame():
+def _RecomputeRanges():
+    try:
+        doc = _pane.getDocument()
+        txt = doc.getText(0, doc.getLength())
+    except Exception:
+        return
+    pos = 0
+    for m in _messages:
+        needle = m.get("text")
+        if needle is None:
+            continue
+        idx = txt.find(needle, pos)
+        if idx < 0:
+            continue
+        m["start"] = idx
+        m["end"] = idx + len(needle)
+        pos = idx + len(needle)
+    _ranges.clear()
+    for m in _messages:
+        k = m.get("key")
+        if k is None:
+            continue
+        if m.get("start") is not None:
+            _ranges[k] = (m.get("start"), m.get("end"))
+
+
+def _RenderNow():
+    try:
+        _pane.setText(_BuildHtml())
+    except Exception:
+        return
+    try:
+        _pane.setCaretPosition(0)
+    except Exception:
+        pass
+    _RecomputeRanges()
+    try:
+        _pane.revalidate()
+        _pane.repaint()
+    except Exception:
+        pass
     try:
         h = FRAME_BASE_HEIGHT + (int(_msgCount[0]) * FRAME_GROW_PER_MESSAGE)
         if h > FRAME_MAX_HEIGHT:
@@ -291,90 +354,39 @@ def _FlashNow(key):
         pass
 
 
-def _ShowNotice(text):
+def _ShowFrame():
     try:
-        if not _IsFrameOpen():
-            _CreateFrame()
-        doc = _pane.getStyledDocument()
-        pos = doc.getLength()
-        if pos > 0:
-            gap = SimpleAttributeSet()
-            StyleConstants.setFontSize(gap, MESSAGE_GAP_PIXELS)
-            doc.insertString(pos, " ", gap)
-            pos = doc.getLength()
-        start = pos
-        doc.insertString(pos, str(text), _PlainAttrs(TEXT_LIGHT, FLIPPER_FONT_SIZE, False))
-        _ranges["__notice__"] = (start, doc.getLength())
-        _msgCount[0] += 1
+        if not _frame.isVisible():
+            _frame.setLocationRelativeTo(None)
+        _frame.setVisible(True)
+        _frame.toFront()
+    except Exception:
         try:
-            _pane.setCaretPosition(doc.getLength())
-        except Exception:
-            pass
-        try:
-            _pane.revalidate()
-            _pane.repaint()
-        except Exception:
-            pass
-        _GrowFrame()
-        try:
-            if not _frame.isVisible():
-                _frame.setLocationRelativeTo(None)
             _frame.setVisible(True)
-            _frame.toFront()
         except Exception:
-            try:
-                _frame.setVisible(True)
-            except Exception:
-                pass
-    except Exception as ex:
-        _Log("Block flicker window update failed: " + str(ex))
+            pass
+
+
+def _AddRecord(key, name, text):
+    if not _IsFrameOpen():
+        _CreateFrame()
+    _messages.append({"key": key, "name": name, "text": text, "start": None, "end": None})
+    _msgCount[0] = len(_messages)
+    _RenderNow()
+    _ShowFrame()
+
+
+def _ShowNoticeNow():
+    _AddRecord(NOTICE_KEY, None, NOTICE_TEXT)
 
 
 def _AppendMessage(key, name):
     try:
-        if key in _ranges:
+        if key in _ranges or any(m.get("key") == key for m in _messages):
             _FlashNow(key)
             return
-        if not _IsFrameOpen():
-            _CreateFrame()
-        doc = _pane.getStyledDocument()
-        lead = "Flickering occupancy sensor detected at: "
-        tail = ": check for dirty track or loose wiring"
-        pos = doc.getLength()
-        if pos > 0:
-            gap = SimpleAttributeSet()
-            StyleConstants.setFontSize(gap, MESSAGE_GAP_PIXELS)
-            doc.insertString(pos, " ", gap)
-            pos = doc.getLength()
-        start = pos
-        doc.insertString(pos, lead, _PlainAttrs(TEXT_LIGHT, FLIPPER_FONT_SIZE, False))
-        pos = doc.getLength()
-        doc.insertString(pos, str(name), _PlainAttrs(TEXT_NAME, NAME_FONT_SIZE, True))
-        pos = doc.getLength()
-        doc.insertString(pos, tail, _PlainAttrs(TEXT_LIGHT, FLIPPER_FONT_SIZE, False))
-        end = doc.getLength()
-        _ranges[key] = (start, end)
-        _msgCount[0] += 1
-        try:
-            _pane.setCaretPosition(doc.getLength())
-        except Exception:
-            pass
-        try:
-            _pane.revalidate()
-            _pane.repaint()
-        except Exception:
-            pass
-        _GrowFrame()
-        try:
-            if not _frame.isVisible():
-                _frame.setLocationRelativeTo(None)
-            _frame.setVisible(True)
-            _frame.toFront()
-        except Exception:
-            try:
-                _frame.setVisible(True)
-            except Exception:
-                pass
+        text = MESSAGE_LEAD + str(name) + MESSAGE_TAIL
+        _AddRecord(key, str(name), text)
     except Exception as ex:
         _Log("Block flicker window update failed: " + str(ex))
 
@@ -528,13 +540,9 @@ def Show():
                 pass
             return
         if n == 0:
-            _ShowNotice("No occupancy sensor flickering recorded this session.")
+            _ShowNoticeNow()
         else:
-            try:
-                _frame.setVisible(True)
-                _frame.toFront()
-            except Exception:
-                pass
+            _ShowFrame()
     _InvokeOnEdt(_ShowNow)
 
 
