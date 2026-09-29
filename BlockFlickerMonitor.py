@@ -17,29 +17,51 @@
 # Block drops to UNOCCUPIED and returns to OCCUPIED within a short gap.
 # The window is shown even when Dispatcher reports no error. All flicker
 # messages accumulate in the same window; no second window is opened while
-# the first window is open.
+# the first window is open. A repeated flicker for the same Block does not
+# add a second message; the existing message flashes instead.
 # JMRI 5.16 / Jython 2.7. ASCII only. Thread-safe; Swing access on the EDT.
 
 import jmri
 import threading
-import traceback
-from javax.swing import JFrame, JPanel, JLabel, JScrollPane, Box, SwingUtilities, BorderFactory
-from java.awt import BorderLayout, Dimension, Color, Font
-from java.awt.event import WindowAdapter
+from javax.swing import (JFrame, JPanel, JTextPane, JScrollPane, SwingUtilities, Timer,
+                        BorderFactory)
+from javax.swing.text import SimpleAttributeSet, StyleConstants, DefaultHighlighter
+from java.awt import BorderLayout, Dimension, Color, Font, BasicStroke, Polygon, RenderingHints
+from java.awt.event import WindowAdapter, ActionListener
 from java.lang import Runnable, System
 import TASIcon
 
 # Short UNOCCUPIED gap treated as flicker, in milliseconds.
 FLICKER_GAP_MS = 3000
 
+# Window geometry. Width is fixed so that wrapped text keeps a stable width.
+FRAME_WIDTH = 440
+FRAME_BASE_HEIGHT = 300
+FRAME_GROW_PER_MESSAGE = 46
+FRAME_MAX_HEIGHT = 560
+TEXT_WIDTH = 400
+TEXT_HEIGHT = 170
+MESSAGE_GAP_PIXELS = 16
+FLASH_PIXELS = 700
+FLIPPER_FONT_SIZE = 12
+NAME_FONT_SIZE = 13
+TEXT_LIGHT = Color(222, 222, 222)
+TEXT_NAME = Color(255, 64, 64)
+BACKGROUND = Color(0, 0, 0)
+SYMBOL_FILL = Color(198, 40, 40)
+SYMBOL_EDGE = Color(122, 0, 0)
+SYMBOL_MARK = Color(255, 255, 255)
+
 _lock = threading.RLock()
 _started = False
 _listeners = []
 _lastInactiveMs = {}
 _frame = None
-_msgBox = None
-_msgScroll = None
+_pane = None
+_scroll = None
+_ranges = {}
 _msgCount = [0]
+_timers = []
 
 
 def _Log(msg):
@@ -107,44 +129,61 @@ def _InvokeOnEdt(fn):
             pass
 
 
-class _WarningIconPanel(JPanel):
+class _FlashEnd(ActionListener):
+    def __init__(self, pane, tag):
+        self.pane = pane
+        self.tag = tag
+    def actionPerformed(self, e):
+        try:
+            self.pane.getHighlighter().removeHighlight(self.tag)
+        except Exception:
+            pass
+
+
+class _WarningSymbolPanel(JPanel):
     def __init__(self):
         JPanel.__init__(self)
         try:
-            self.setPreferredSize(Dimension(280, 150))
+            self.setPreferredSize(Dimension(TEXT_WIDTH, 150))
             self.setOpaque(False)
         except Exception:
             pass
+
     def paintComponent(self, g):
         try:
             JPanel.paintComponent(self, g)
         except Exception:
             pass
         try:
-            from java.awt import Polygon
+            g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
+            g.setRenderingHint(RenderingHints.KEY_STROKE_CONTROL, RenderingHints.VALUE_STROKE_PURE)
+            g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON)
             w = self.getWidth()
             h = self.getHeight()
-            cx = w // 2
-            top = 8
-            size = min(w - 24, h - 16)
-            half = size // 2
-            left = cx - half
-            right = cx + half
+            cx = w / 2.0
+            top = 6.0
+            size = min(w - 30.0, h - 14.0)
+            if size < 20:
+                return
+            half = size / 2.0
             bottom = top + size
             poly = Polygon()
-            poly.addPoint(cx, top)
-            poly.addPoint(right, bottom)
-            poly.addPoint(left, bottom)
-            g.setColor(Color(255, 193, 7))
+            poly.addPoint(int(cx), int(top))
+            poly.addPoint(int(cx + half), int(bottom))
+            poly.addPoint(int(cx - half), int(bottom))
+            g.setColor(SYMBOL_FILL)
             g.fillPolygon(poly)
-            g.setColor(Color(0, 0, 0))
+            g.setColor(SYMBOL_EDGE)
+            g.setStroke(BasicStroke(max(4.0, size / 14.0),
+                                    BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND))
             g.drawPolygon(poly)
-            g.setFont(Font("SansSerif", Font.BOLD, 64))
+            g.setFont(Font("SansSerif", Font.BOLD, int(size * 0.46)))
+            g.setColor(SYMBOL_MARK)
             fm = g.getFontMetrics()
             mark = "!"
             tw = fm.stringWidth(mark)
-            tx = cx - (tw // 2)
-            ty = bottom - 18
+            tx = int(cx - (tw / 2.0))
+            ty = int(bottom - size * 0.22)
             g.drawString(mark, tx, ty)
         except Exception:
             pass
@@ -152,16 +191,19 @@ class _WarningIconPanel(JPanel):
 
 class _CloseReset(WindowAdapter):
     def windowClosed(self, e):
-        global _frame, _msgBox, _msgScroll
+        global _frame, _pane, _scroll
         try:
             with _lock:
                 _frame = None
-                _msgBox = None
-                _msgScroll = None
+                _pane = None
+                _scroll = None
+                _ranges.clear()
+                _msgCount[0] = 0
+                del _timers[:]
         except Exception:
             _frame = None
-            _msgBox = None
-            _msgScroll = None
+            _pane = None
+            _scroll = None
 
 
 def _IsFrameOpen():
@@ -172,30 +214,34 @@ def _IsFrameOpen():
 
 
 def _CreateFrame():
-    global _frame, _msgBox, _msgScroll
+    global _frame, _pane, _scroll
     frame = JFrame("Occupancy sensor warning")
     frame.setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE)
-    try:
-        frame.setMinimumSize(Dimension(300, 320))
-        frame.setSize(Dimension(340, 380))
-    except Exception:
-        pass
     root = JPanel(BorderLayout())
+    root.add(_WarningSymbolPanel(), BorderLayout.NORTH)
+    pane = JTextPane()
     try:
-        root.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10))
+        pane.setEditable(False)
+        pane.setBackground(BACKGROUND)
+        pane.setForeground(TEXT_LIGHT)
+        pane.setFont(Font("SansSerif", Font.PLAIN, FLIPPER_FONT_SIZE))
+        pane.setBorder(BorderFactory.createEmptyBorder(6, 8, 6, 8))
     except Exception:
         pass
-    icon = _WarningIconPanel()
-    root.add(icon, BorderLayout.NORTH)
-    box = Box.createVerticalBox()
-    scroll = JScrollPane(box)
+    scroll = JScrollPane(pane)
     try:
-        scroll.setPreferredSize(Dimension(300, 160))
-        scroll.setBorder(BorderFactory.createEmptyBorder(4, 0, 0, 0))
+        scroll.setPreferredSize(Dimension(TEXT_WIDTH, TEXT_HEIGHT))
+        scroll.getViewport().setBackground(BACKGROUND)
+        scroll.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_NEVER)
+        scroll.setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED)
     except Exception:
         pass
     root.add(scroll, BorderLayout.CENTER)
     frame.add(root)
+    try:
+        frame.setSize(Dimension(FRAME_WIDTH, FRAME_BASE_HEIGHT))
+    except Exception:
+        pass
     try:
         TASIcon.SetFrameClockIcon(frame)
     except Exception:
@@ -205,58 +251,128 @@ def _CreateFrame():
     except Exception:
         pass
     _frame = frame
-    _msgBox = box
-    _msgScroll = scroll
+    _pane = pane
+    _scroll = scroll
     return frame
 
 
-def _AddMessageNow(text):
-    global _msgCount
+def _PlainAttrs(color, size, bold):
+    attrs = SimpleAttributeSet()
+    StyleConstants.setForeground(attrs, color)
+    StyleConstants.setFontFamily(attrs, "SansSerif")
+    StyleConstants.setFontSize(attrs, size)
+    StyleConstants.setBold(attrs, bold)
+    return attrs
+
+
+def _GrowFrame():
     try:
-        with _lock:
-            if not _IsFrameOpen():
-                _CreateFrame()
-            box = _msgBox
-            frame = _frame
-        if box is None or frame is None:
+        h = FRAME_BASE_HEIGHT + (int(_msgCount[0]) * FRAME_GROW_PER_MESSAGE)
+        if h > FRAME_MAX_HEIGHT:
+            h = FRAME_MAX_HEIGHT
+        _frame.setSize(Dimension(FRAME_WIDTH, h))
+    except Exception:
+        pass
+
+
+def _FlashNow(key):
+    try:
+        span = _ranges.get(key, None)
+        if span is None:
             return
-        if _msgCount[0] > 0:
-            try:
-                box.add(Box.createVerticalStrut(16))
-            except Exception:
-                pass
-        try:
-            label = JLabel("<html>" + str(text) + "</html>")
-            try:
-                label.setBorder(BorderFactory.createEmptyBorder(8, 8, 8, 8))
-            except Exception:
-                pass
-            box.add(label)
-        except Exception:
-            pass
+        start, end = span
+        painter = DefaultHighlighter.DefaultHighlightPainter(Color(255, 255, 255))
+        tag = _pane.getHighlighter().addHighlight(start, end, painter)
+        timer = Timer(FLASH_PIXELS, _FlashEnd(_pane, tag))
+        timer.setRepeats(False)
+        _timers.append(timer)
+        timer.start()
+    except Exception:
+        pass
+
+
+def _ShowNotice(text):
+    try:
+        if not _IsFrameOpen():
+            _CreateFrame()
+        doc = _pane.getStyledDocument()
+        pos = doc.getLength()
+        if pos > 0:
+            gap = SimpleAttributeSet()
+            StyleConstants.setFontSize(gap, MESSAGE_GAP_PIXELS)
+            doc.insertString(pos, " ", gap)
+            pos = doc.getLength()
+        start = pos
+        doc.insertString(pos, str(text), _PlainAttrs(TEXT_LIGHT, FLIPPER_FONT_SIZE, False))
+        _ranges["__notice__"] = (start, doc.getLength())
         _msgCount[0] += 1
         try:
-            box.revalidate()
-            box.repaint()
-        except Exception:
-            pass
-        wasVisible = False
-        try:
-            wasVisible = frame.isVisible()
+            _pane.setCaretPosition(doc.getLength())
         except Exception:
             pass
         try:
-            frame.pack()
+            _pane.revalidate()
+            _pane.repaint()
         except Exception:
             pass
+        _GrowFrame()
         try:
-            if not wasVisible:
-                frame.setLocationRelativeTo(None)
-            frame.setVisible(True)
-            frame.toFront()
+            if not _frame.isVisible():
+                _frame.setLocationRelativeTo(None)
+            _frame.setVisible(True)
+            _frame.toFront()
         except Exception:
             try:
-                frame.setVisible(True)
+                _frame.setVisible(True)
+            except Exception:
+                pass
+    except Exception as ex:
+        _Log("Block flicker window update failed: " + str(ex))
+
+
+def _AppendMessage(key, name):
+    try:
+        if key in _ranges:
+            _FlashNow(key)
+            return
+        if not _IsFrameOpen():
+            _CreateFrame()
+        doc = _pane.getStyledDocument()
+        lead = "Flickering occupancy sensor detected at: "
+        tail = ": check for dirty track or loose wiring"
+        pos = doc.getLength()
+        if pos > 0:
+            gap = SimpleAttributeSet()
+            StyleConstants.setFontSize(gap, MESSAGE_GAP_PIXELS)
+            doc.insertString(pos, " ", gap)
+            pos = doc.getLength()
+        start = pos
+        doc.insertString(pos, lead, _PlainAttrs(TEXT_LIGHT, FLIPPER_FONT_SIZE, False))
+        pos = doc.getLength()
+        doc.insertString(pos, str(name), _PlainAttrs(TEXT_NAME, NAME_FONT_SIZE, True))
+        pos = doc.getLength()
+        doc.insertString(pos, tail, _PlainAttrs(TEXT_LIGHT, FLIPPER_FONT_SIZE, False))
+        end = doc.getLength()
+        _ranges[key] = (start, end)
+        _msgCount[0] += 1
+        try:
+            _pane.setCaretPosition(doc.getLength())
+        except Exception:
+            pass
+        try:
+            _pane.revalidate()
+            _pane.repaint()
+        except Exception:
+            pass
+        _GrowFrame()
+        try:
+            if not _frame.isVisible():
+                _frame.setLocationRelativeTo(None)
+            _frame.setVisible(True)
+            _frame.toFront()
+        except Exception:
+            try:
+                _frame.setVisible(True)
             except Exception:
                 pass
     except Exception as ex:
@@ -266,14 +382,17 @@ def _AddMessageNow(text):
 def _ReportFlicker(block):
     name = _BlockLabel(block)
     sensor = _SensorLabel(block)
+    try:
+        key = str(block.getSystemName())
+    except Exception:
+        key = str(name)
     if sensor is not None and sensor != name:
         consoleName = str(name) + " (sensor " + str(sensor) + ")"
     else:
         consoleName = str(name)
     _Log("Flickering occupancy sensor at " + consoleName)
-    text = "flickering occupancy sensor detected at: " + str(name) + ": check for dirty track or loose wiring"
     try:
-        _InvokeOnEdt(lambda: _AddMessageNow(text))
+        _InvokeOnEdt(lambda: _AppendMessage(key, name))
     except Exception:
         pass
 
@@ -298,13 +417,13 @@ class _BlockListener(java.beans.PropertyChangeListener):
             except Exception:
                 return
             now = System.currentTimeMillis()
+            try:
+                key = str(self.block.getSystemName())
+            except Exception:
+                key = str(self.block)
             if newState == jmri.Block.UNOCCUPIED:
                 try:
                     with _lock:
-                        try:
-                            key = str(self.block.getSystemName())
-                        except Exception:
-                            key = str(self.block)
                         _lastInactiveMs[key] = long(now)
                 except Exception:
                     pass
@@ -312,16 +431,7 @@ class _BlockListener(java.beans.PropertyChangeListener):
                 gap = None
                 try:
                     with _lock:
-                        try:
-                            key = str(self.block.getSystemName())
-                        except Exception:
-                            key = str(self.block)
-                        prev = _lastInactiveMs.get(key, None)
-                        if key in _lastInactiveMs:
-                            try:
-                                del _lastInactiveMs[key]
-                            except Exception:
-                                pass
+                        prev = _lastInactiveMs.pop(key, None)
                     if prev is not None:
                         gap = long(now) - long(prev)
                 except Exception:
@@ -418,7 +528,7 @@ def Show():
                 pass
             return
         if n == 0:
-            _AddMessageNow("No flickering recorded.")
+            _ShowNotice("No occupancy sensor flickering recorded this session.")
         else:
             try:
                 _frame.setVisible(True)
