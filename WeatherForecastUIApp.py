@@ -36,7 +36,7 @@ import jmri, java, csv
 import os
 from java.awt import Color, Font, BasicStroke, RenderingHints, Dimension, GridLayout
 from java.awt.geom import RoundRectangle2D
-from javax.swing import JPanel, JLabel, BoxLayout, BorderFactory, Timer, JButton
+from javax.swing import JPanel, JLabel, BoxLayout, BorderFactory, Timer, JButton, JDialog, BorderLayout, SwingConstants
 from javax.swing.border import EmptyBorder
 import TASBeanLookup as TBL
 import TASPathResolver
@@ -78,6 +78,24 @@ WXAPP_SPINNER_LEN_MIN = 0.30
 WXAPP_LOADING_TIMEOUT_MS = 12000
 WXAPP_LOADING_WAIT_MSG = "Fetching forecast..."
 WXAPP_LOADING_STALL_MSG = "No forecast data - check the weather generator is running"
+
+# ------------------------------ Payment alert ------------------------------
+# Late-2010s iOS-style alert used by the spoof ads. Deliberately absent from
+# changelog.txt: the ads and the decline message are an easter egg.
+WXAPP_ALERT_CARD_W = 300
+WXAPP_ALERT_MARGIN = 18      # transparent margin around the card, holds the shadow
+WXAPP_ALERT_CORNER = 14
+WXAPP_ALERT_BTN_H = 44
+WXAPP_ALERT_BG = Color(255,255,255)
+WXAPP_ALERT_BORDER = Color(214,217,223)
+WXAPP_ALERT_HAIRLINE = Color(228,230,236)
+WXAPP_ALERT_TITLE_COL = Color(28,28,30)
+WXAPP_ALERT_BODY_COL = Color(94,98,106)
+WXAPP_ALERT_BLUE = Color(0,122,255)
+WXAPP_ALERT_PRESS = Color(233,235,240)
+# Fictional payment details for the spoof message. Not tied to any real card.
+WXAPP_ALERT_CARD_LAST4 = "4417"
+WXAPP_ALERT_REFERENCE = "WX-4821-KQ"
 
 # Sunrise/Sunset CSV (reuse your other scripts' location)
 try:
@@ -295,6 +313,231 @@ class _WxAppSpinnerPanel(JPanel):
                               WXAPP_SPINNER_GREY.getBlue(),
                               int(alpha * 255)))
             g2.drawLine(int(x1), int(y1), int(x2), int(y2))
+
+class _WxAppAlertButton(JButton):
+    """Flat full-width alert button: blue label, grey press highlight, no border."""
+    def __init__(self, text):
+        JButton.__init__(self, text)
+        self.setOpaque(False)
+        self.setContentAreaFilled(False)
+        self.setBorderPainted(False)
+        self.setFocusPainted(False)
+        self.setFocusable(True)
+        self.setForeground(WXAPP_ALERT_BLUE)
+        self.setFont(Font("SansSerif", Font.PLAIN, 16))
+        self.setHorizontalAlignment(SwingConstants.CENTER)
+        self.setVerticalAlignment(SwingConstants.CENTER)
+        self.setMargin(EmptyBorder(0, 0, 0, 0))
+
+    def paintComponent(self, g):
+        try:
+            if self.getModel().isPressed():
+                g2 = g.create()
+                try:
+                    g2.setColor(WXAPP_ALERT_PRESS)
+                    g2.fillRect(0, 0, self.getWidth(), self.getHeight())
+                finally:
+                    g2.dispose()
+        except Exception:
+            pass
+        super(_WxAppAlertButton, self).paintComponent(g)
+
+
+def _wxappAlertHairline():
+    p = JPanel()
+    p.setOpaque(True)
+    p.setBackground(WXAPP_ALERT_HAIRLINE)
+    p.setPreferredSize(Dimension(1, 1))
+    p.setMinimumSize(Dimension(1, 1))
+    p.setMaximumSize(Dimension(32767, 1))
+    return p
+
+
+class _WxAppAlertCard(JPanel):
+    """
+    The alert card. Paints the drop shadow, the white rounded card and its
+    border, then lets the button strip in its SOUTH slot paint over the bottom of
+    the card, then draws the centred heading and centred body above the strip.
+    Height comes from font metrics plus the strip's preferred height, so the card
+    needs no layout pass to size itself.
+    """
+    PAD_TOP = 22
+    HEAD_GAP = 6
+    BODY_GAP = 10           # clear space between the last body line and the buttons
+
+    def __init__(self, heading, bodyLines):
+        JPanel.__init__(self)
+        self.setOpaque(False)
+        self.setBackground(Color(0, 0, 0, 0))
+        self.setLayout(BorderLayout())
+        self._heading = str(heading)
+        self._bodyLines = [str(x) for x in bodyLines]
+        self._strip = None
+        self._headingFont = Font("SansSerif", Font.BOLD, 17)
+        self._bodyFont = Font("SansSerif", Font.PLAIN, 13)
+        # Offscreen graphics, so metrics are available before the card is shown.
+        img = java.awt.image.BufferedImage(1, 1, java.awt.image.BufferedImage.TYPE_INT_ARGB)
+        self._mg = img.createGraphics()
+
+    def setStrip(self, strip):
+        self._strip = strip
+        self.add(strip, BorderLayout.SOUTH)
+
+    def _stripHeight(self):
+        try:
+            if self._strip is not None:
+                return int(self._strip.getPreferredSize().height)
+        except Exception:
+            pass
+        return 0
+
+    def getPreferredSize(self):
+        h = (self.PAD_TOP
+             + self._mg.getFontMetrics(self._headingFont).getHeight()
+             + self.HEAD_GAP
+             + (self._mg.getFontMetrics(self._bodyFont).getHeight() * len(self._bodyLines))
+             + self.BODY_GAP
+             + self._stripHeight())
+        return Dimension(WXAPP_ALERT_CARD_W, h)
+
+    def getMinimumSize(self):
+        return self.getPreferredSize()
+
+    def getMaximumSize(self):
+        return self.getPreferredSize()
+
+    def paintComponent(self, g):
+        m = WXAPP_ALERT_MARGIN
+        w = self.getWidth()
+        h = self.getHeight()
+        cardW = w - (2 * m)
+        cardH = h - (2 * m)
+
+        g2 = g.create()
+        try:
+            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
+            # Soft drop shadow: concentric rounded rectangles fading outwards.
+            for i in range(5, 0, -1):
+                g2.setColor(Color(0, 0, 0, 8 + (i * 4)))
+                g2.fill(RoundRectangle2D.Float(m - i, (m - i) + (i * 1.5), cardW + (2 * i),
+                                               cardH + (2 * i),
+                                               WXAPP_ALERT_CORNER + (2 * i),
+                                               WXAPP_ALERT_CORNER + (2 * i)))
+            card = RoundRectangle2D.Float(m, m, cardW, cardH, WXAPP_ALERT_CORNER, WXAPP_ALERT_CORNER)
+            g2.setColor(WXAPP_ALERT_BG)
+            g2.fill(card)
+            g2.setColor(WXAPP_ALERT_BORDER)
+            g2.setStroke(BasicStroke(1.0))
+            g2.draw(card)
+        finally:
+            g2.dispose()
+
+        # Children: the button strip, in the SOUTH slot.
+        super(_WxAppAlertCard, self).paintComponent(g)
+
+        headFm = self._mg.getFontMetrics(self._headingFont)
+        bodyFm = self._mg.getFontMetrics(self._bodyFont)
+        g3 = g.create()
+        try:
+            g3.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
+            g3.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING,
+                                RenderingHints.VALUE_TEXT_ANTIALIAS_ON)
+            cx = w / 2.0
+            y = m + self.PAD_TOP + headFm.getAscent()
+            g3.setFont(self._headingFont)
+            g3.setColor(WXAPP_ALERT_TITLE_COL)
+            g3.drawString(self._heading, int(cx - (headFm.stringWidth(self._heading) / 2.0)), int(y))
+            y += self.HEAD_GAP + headFm.getDescent() + bodyFm.getAscent()
+            g3.setFont(self._bodyFont)
+            g3.setColor(WXAPP_ALERT_BODY_COL)
+            for line in self._bodyLines:
+                g3.drawString(line, int(cx - (bodyFm.stringWidth(line) / 2.0)), int(y))
+                y += bodyFm.getHeight()
+        finally:
+            g3.dispose()
+
+
+class _WxAppAlertDialog(JDialog):
+    """
+    Late-2010s iOS-style alert. Undecorated and transparent outside the card, so
+    it reads as an in-app alert rather than an operating system dialog.
+
+    buttons is a list of (label, callback) pairs stacked top to bottom, which is
+    how an iOS alert with two actions is arranged: the cancelling action above,
+    the default action below.
+    """
+    def __init__(self, owner, heading, bodyLines, buttons):
+        if owner is None:
+            JDialog.__init__(self, heading)
+        else:
+            JDialog.__init__(self, owner, heading)
+        self.setUndecorated(True)
+        self.setModal(True)
+        self.setBackground(Color(0, 0, 0, 0))
+        self.setDefaultCloseOperation(WindowConstants.DISPOSE_ON_CLOSE)
+
+        m = WXAPP_ALERT_MARGIN
+        root = self.getContentPane()
+        root.setBackground(Color(0, 0, 0, 0))
+        root.setOpaque(False)
+        root.setLayout(BorderLayout())
+
+        card = _WxAppAlertCard(heading, bodyLines)
+        # Inset left, right and bottom so the button strip is exactly as wide as
+        # the card. The top stays flush, because the card's shadow margin is
+        # painted rather than laid out.
+        card.setBorder(EmptyBorder(0, m, m, m))
+
+        strip = JPanel()
+        strip.setOpaque(False)
+        strip.setBackground(Color(0, 0, 0, 0))
+        strip.setLayout(BoxLayout(strip, BoxLayout.Y_AXIS))
+        strip.add(_wxappAlertHairline())
+        for label, cb in buttons:
+            b = _WxAppAlertButton(label)
+            b.setAlignmentX(0.0)
+            # BoxLayout sizes from preferred height, so the preferred size must
+            # be pinned too, otherwise the buttons collapse to their font height.
+            b.setPreferredSize(Dimension(WXAPP_ALERT_CARD_W, WXAPP_ALERT_BTN_H))
+            b.setMinimumSize(Dimension(WXAPP_ALERT_BTN_H, WXAPP_ALERT_BTN_H))
+            b.setMaximumSize(Dimension(32767, WXAPP_ALERT_BTN_H))
+            b.addActionListener(self._MakeHandler(cb))
+            strip.add(b)
+            strip.add(_wxappAlertHairline())
+        # iOS puts no hairline under the last button.
+        strip.remove(strip.getComponentCount() - 1)
+        card.setStrip(strip)
+
+        root.add(card, BorderLayout.CENTER)
+
+        self.pack()
+        self.setSize(WXAPP_ALERT_CARD_W + (2 * m), int(card.getPreferredSize().height) + (2 * m))
+        self.setLocationRelativeTo(self.getOwner())
+
+    def _MakeHandler(self, cb):
+        dlg = self
+        def _OnClick(ev):
+            try:
+                dlg.dispose()
+            except Exception:
+                pass
+            if cb is not None:
+                try:
+                    cb()
+                except Exception:
+                    pass
+        return _OnClick
+
+    def present(self):
+        """Show modally, then release the native window."""
+        try:
+            self.setVisible(True)
+        finally:
+            try:
+                self.dispose()
+            except Exception:
+                pass
+
 
 class Card(JPanel):
     def __init__(self, pad=12):
@@ -544,17 +787,50 @@ class AdBanner(Card):
         except:
             pass
 
-        # 3) Default spoof payment-declined dialog for all other ads
+        # 3) Default spoof payment-declined alert for all other ads
+        self._ShowPaymentDeclined()
+
+    def _OwnerWindow(self):
+        """The forecast window, so the alert centres on it."""
         try:
-            from javax.swing import JOptionPane
-            JOptionPane.showMessageDialog(
-                None,
-                "Payment declined.\nPlease contact your bank.",
-                "Payment Error",
-                JOptionPane.INFORMATION_MESSAGE
-            )
-        except:
+            from javax.swing import SwingUtilities
+            w = SwingUtilities.getWindowAncestor(self)
+            if w is not None:
+                return w
+        except Exception:
             pass
+        return None
+
+    def _ShowPaymentDeclined(self):
+        """
+        Late-2010s iOS-style decline alert, naming the ad that was clicked so it
+        reads as the app's own payment sheet failing. Fictional card details.
+        Try Again re-presents the alert, which is safe because each repeat needs
+        a fresh click and Cancel always escapes.
+        """
+        try:
+            name = str(self.brand.getText() or "").strip()
+            if name == "":
+                name = "This app"
+            if len(name) > 34:
+                name = name[:31] + "..."
+            body = [
+                "%s could not be charged." % name,
+                "",
+                "Your bank declined this payment.",
+                "No money has left your account.",
+                "",
+                "Card ending %s" % WXAPP_ALERT_CARD_LAST4,
+                "Reference %s" % WXAPP_ALERT_REFERENCE,
+            ]
+            _WxAppAlertDialog(
+                self._OwnerWindow(),
+                "Payment Declined",
+                body,
+                [("Cancel", None), ("Try Again", self._ShowPaymentDeclined)]
+            ).present()
+        except Exception as e:
+            print("[TAS] Weather app UI: payment decline alert failed: %s" % str(e))
     
 
     def setAd(self, brand, l1, l2, cta):
