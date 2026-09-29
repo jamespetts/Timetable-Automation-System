@@ -1372,6 +1372,8 @@ class TASSetupFrame(jmri.util.JmriJFrame):
         # Heavy content loads in background threads and swaps in on the EDT,
         # so the window appears without waiting for slow scans or file reads.
         self.WorkingsUiController = None
+        self.RunAutoProgress = None
+        self._RunAutoValidating = False
         tabs = JTabbedPane()
         ApplyTheme(tabs)
         tabs.addTab("General setup", self._MakeLazyPlaceholder("Loading general setup..."))
@@ -1880,6 +1882,22 @@ class TASSetupFrame(jmri.util.JmriJFrame):
         statusBox = Box.createVerticalBox()
         statusBox.add(self.LblRunAutoStatus)
         statusBox.add(self.LblWorkingsPathHint)
+        # Inline progress bar for the timetable/workings validation check.
+        # Shown while UpdateRunAutoControls runs its file checks in the
+        # background; hidden again once the status text is updated.
+        try:
+            self.RunAutoProgress = JProgressBar()
+            self.RunAutoProgress.setIndeterminate(True)
+            try:
+                self.RunAutoProgress.setPreferredSize(Dimension(200, 14))
+                self.RunAutoProgress.setMinimumSize(Dimension(150, 14))
+                self.RunAutoProgress.setMaximumSize(Dimension(260, 14))
+            except:
+                pass
+            self.RunAutoProgress.setVisible(False)
+            statusBox.add(self.RunAutoProgress)
+        except:
+            self.RunAutoProgress = None
         runRow.add(statusBox)
         panel.add(runRow, gbc)
         
@@ -2256,52 +2274,139 @@ class TASSetupFrame(jmri.util.JmriJFrame):
                 return
         except:
             return
-        # 1) Read current memory state
-        isEnabled = GetMemoryBool(IMTASAutoWorking, False)
-
-        # 2) Run validations (unchanged) for informative status only
-        ttOK, ttMsg, hdr = _ValidateTimetable()
-        wsOK, wsMsg, wsBaseDir, wsIsLegacy = _CheckWorkingScripts()
-
-        # 3) Concise, wrapped status: general explanation + first issue only
-        statusHtml = ""
-        if not ttOK:
-            statusHtml = "<html>Cannot enable automatic running: timetable is not valid.<br/>First issue: %s There may be more issues.</html>" % ttMsg
-        elif not wsOK:
-            statusHtml = "<html>Cannot enable automatic running: required working scripts are missing.<br/>First issue: %s There may be more issues.</html>" % wsMsg
-        else:
-            statusHtml = ""
-        self.LblRunAutoStatus.setText(statusHtml)
-
-        # Subtle hint: show where workings are being checked, and whether this is a legacy location.
+        # Only one validation check runs at a time; the wizard sync timer
+        # calls this often, so a check already in flight covers the wait.
         try:
-            hint = ''
-            if wsBaseDir is not None and str(wsBaseDir).strip() != '':
-                hint = 'Workings location: ' + str(wsBaseDir)
-                if wsIsLegacy:
-                    hint = hint + ' (legacy)'
-            self.LblWorkingsPathHint.setText('<html><span style="color:#808080;">%s</span></html>' % hint)
+            if getattr(self, "_RunAutoValidating", False):
+                return
+            self._RunAutoValidating = True
+        except:
+            pass
+        # Fast part: mirror memory to the checkbox without any file checks.
+        try:
+            isEnabled = GetMemoryBool(IMTASAutoWorking, False)
+        except:
+            isEnabled = False
+        try:
+            self.ChkRunAuto.setSelected(bool(isEnabled))
+        except:
+            pass
+        # Show the inline progress bar while the slow file checks run.
+        try:
+            bar = getattr(self, "RunAutoProgress", None)
+            if bar is not None:
+                bar.setVisible(True)
+        except:
+            pass
+        try:
+            self.LblRunAutoStatus.setText("<html>Checking timetable and working scripts...</html>")
+        except:
+            pass
+        def _Worker():
+            ttOK = False
+            ttMsg = ""
+            wsOK = False
+            wsMsg = ""
+            wsBaseDir = None
+            wsIsLegacy = False
+            try:
+                ttOK, ttMsg, hdr = _ValidateTimetable()
+            except Exception as ex:
+                ttOK = False
+                try:
+                    ttMsg = str(ex)
+                except:
+                    ttMsg = "Error reading timetable."
+            try:
+                wsOK, wsMsg, wsBaseDir, wsIsLegacy = _CheckWorkingScripts()
+            except Exception as ex:
+                wsOK = False
+                try:
+                    wsMsg = str(ex)
+                except:
+                    wsMsg = "Error checking working scripts."
+            def _Apply():
+                try:
+                    # 3) Concise, wrapped status: general explanation + first issue only
+                    statusHtml = ""
+                    if not ttOK:
+                        statusHtml = "<html>Cannot enable automatic running: timetable is not valid.<br/>First issue: %s There may be more issues.</html>" % ttMsg
+                    elif not wsOK:
+                        statusHtml = "<html>Cannot enable automatic running: required working scripts are missing.<br/>First issue: %s There may be more issues.</html>" % wsMsg
+                    else:
+                        statusHtml = ""
+                    self.LblRunAutoStatus.setText(statusHtml)
+
+                    # Subtle hint: show where workings are being checked, and whether this is a legacy location.
+                    try:
+                        hint = ''
+                        if wsBaseDir is not None and str(wsBaseDir).strip() != '':
+                            hint = 'Workings location: ' + str(wsBaseDir)
+                            if wsIsLegacy:
+                                hint = hint + ' (legacy)'
+                        self.LblWorkingsPathHint.setText('<html><span style="color:#808080;">%s</span></html>' % hint)
+                    except:
+                        try:
+                            self.LblWorkingsPathHint.setText('')
+                        except:
+                            pass
+
+                    # 4) Checkbox mirrors memory
+                    try:
+                        self.ChkRunAuto.setSelected(bool(GetMemoryBool(IMTASAutoWorking, False)))
+                    except:
+                        pass
+
+                    # 5) Grey-out rule with master toggle guard:
+                    # If the master time-based actions checkbox is disabled (missing scripts),
+                    # always disable auto-working; otherwise apply the normal validation rule.
+                    try:
+                        masterEnabled = self.ChkTimeActions.isEnabled()
+                    except:
+                        masterEnabled = True
+                    if not masterEnabled:
+                        try:
+                            self.ChkRunAuto.setEnabled(False)
+                        except:
+                            pass
+                    else:
+                        # If currently disabled and validations cannot be met -> disable (grey out).
+                        # If currently enabled -> allow interaction (you may want to turn it off).
+                        try:
+                            canEnable = ttOK and wsOK
+                            try:
+                                isOn = self.ChkRunAuto.isSelected()
+                            except:
+                                isOn = False
+                            self.ChkRunAuto.setEnabled(bool(isOn) or bool(canEnable))
+                        except:
+                            pass
+                except:
+                    pass
+                try:
+                    bar2 = getattr(self, "RunAutoProgress", None)
+                    if bar2 is not None:
+                        bar2.setVisible(False)
+                except:
+                    pass
+                try:
+                    self._RunAutoValidating = False
+                except:
+                    pass
+            try:
+                SwingUtilities.invokeLater(RunnableAdapter(_Apply))
+            except:
+                try:
+                    _Apply()
+                except:
+                    pass
+        try:
+            java.lang.Thread(RunnableAdapter(_Worker), "TASSetup-RunAutoCheck").start()
         except:
             try:
-                self.LblWorkingsPathHint.setText('')
+                _Worker()
             except:
                 pass
-
-
-        # 4) Checkbox mirrors memory
-        self.ChkRunAuto.setSelected(isEnabled)
-
-        # 5) Grey-out rule with master toggle guard:
-        # If the master time-based actions checkbox is disabled (missing scripts),
-        # always disable auto-working; otherwise apply the normal validation rule.
-        masterEnabled = self.ChkTimeActions.isEnabled()
-        if not masterEnabled:
-            self.ChkRunAuto.setEnabled(False)
-        else:
-            # If currently disabled and validations cannot be met -> disable (grey out).
-            # If currently enabled -> allow interaction (you may want to turn it off).
-            canEnable = ttOK and wsOK
-            self.ChkRunAuto.setEnabled(isEnabled or canEnable)
 
     # ------------------------ Display configuration --------------------
     def BuildDisplayTab(self):
