@@ -20,6 +20,15 @@
 # opened while the first window is open. A repeated flicker for the same Block
 # does not add a second message; the existing message flashes instead.
 # JMRI 5.16 / Jython 2.7. ASCII only. Thread-safe; Swing access on the EDT.
+#
+# NAMING RULE FOR THIS FILE
+# JMRI runs every start-up script through one shared JSR-223 script context, so
+# top-level names in this file land in the same map as the names in every other
+# start-up script. A name defined here that another start-up script also defines
+# is overwritten, and functions in this file resolve that name at call time, so
+# the other script's object would be used here. Every top-level name in this
+# file therefore starts with FLICKER_ or _Flicker, and the warning window is
+# also bound as a default argument so no later script can redirect it.
 
 import jmri
 import threading
@@ -31,64 +40,63 @@ import TASWarningWindow
 FLICKER_GAP_MS = 3000
 
 # Window geometry. Width is fixed so that wrapped text keeps a stable width.
-FRAME_WIDTH = 440
-FRAME_BASE_HEIGHT = 300
-FRAME_GROW_PER_MESSAGE = 46
-FRAME_MAX_HEIGHT = 560
-TEXT_WIDTH = 400
-TEXT_HEIGHT = 170
-FLASH_PIXELS = 700
-FLIPPER_FONT_SIZE = 12
-NAME_FONT_SIZE = 13
-TEXT_LIGHT = Color(222, 222, 222)
-TEXT_NAME = Color(255, 64, 64)
-BACKGROUND = Color(0, 0, 0)
-SYMBOL_FILL = Color(198, 40, 40)
-SYMBOL_EDGE = Color(122, 0, 0)
-SYMBOL_MARK = Color(255, 255, 255)
+FLICKER_FRAME_WIDTH = 440
+FLICKER_FRAME_BASE_HEIGHT = 300
+FLICKER_FRAME_GROW_PER_MESSAGE = 46
+FLICKER_FRAME_MAX_HEIGHT = 560
+FLICKER_TEXT_WIDTH = 400
+FLICKER_TEXT_HEIGHT = 170
+FLICKER_FLASH_PIXELS = 700
+FLICKER_FONT_SIZE = 12
+FLICKER_NAME_FONT_SIZE = 13
+FLICKER_TEXT_LIGHT = Color(222, 222, 222)
+FLICKER_BACKGROUND = Color(0, 0, 0)
+FLICKER_SYMBOL_FILL = Color(198, 40, 40)
+FLICKER_SYMBOL_EDGE = Color(122, 0, 0)
+FLICKER_SYMBOL_MARK = Color(255, 255, 255)
 
-MESSAGE_LEAD = "Flickering occupancy sensor detected at: "
-MESSAGE_TAIL = ": check for dirty track or loose wiring"
-NOTICE_TEXT = "No occupancy sensor flickering recorded this session."
-NOTICE_KEY = "__notice__"
+FLICKER_MESSAGE_LEAD = "Flickering occupancy sensor detected at: "
+FLICKER_MESSAGE_TAIL = ": check for dirty track or loose wiring"
+FLICKER_NOTICE_TEXT = "No occupancy sensor flickering recorded this session."
+FLICKER_NOTICE_KEY = "flicker-notice"
 
-# One warning window for this feature. See TASWarningWindow.py.
-_window = TASWarningWindow.TasWarningWindow({
+# One warning window for this feature. Red triangle. See TASWarningWindow.py.
+_FlickerWindow = TASWarningWindow.TasWarningWindow({
     "title": "Occupancy sensor warning",
-    "textWidth": TEXT_WIDTH,
-    "textHeight": TEXT_HEIGHT,
-    "frameWidth": FRAME_WIDTH,
-    "frameBaseHeight": FRAME_BASE_HEIGHT,
-    "frameGrowPerMessage": FRAME_GROW_PER_MESSAGE,
-    "frameMaxHeight": FRAME_MAX_HEIGHT,
-    "fontSize": FLIPPER_FONT_SIZE,
-    "nameFontSize": NAME_FONT_SIZE,
-    "background": BACKGROUND,
+    "textWidth": FLICKER_TEXT_WIDTH,
+    "textHeight": FLICKER_TEXT_HEIGHT,
+    "frameWidth": FLICKER_FRAME_WIDTH,
+    "frameBaseHeight": FLICKER_FRAME_BASE_HEIGHT,
+    "frameGrowPerMessage": FLICKER_FRAME_GROW_PER_MESSAGE,
+    "frameMaxHeight": FLICKER_FRAME_MAX_HEIGHT,
+    "fontSize": FLICKER_FONT_SIZE,
+    "nameFontSize": FLICKER_NAME_FONT_SIZE,
+    "background": FLICKER_BACKGROUND,
     "backgroundHex": "000000",
-    "textColour": TEXT_LIGHT,
+    "textColour": FLICKER_TEXT_LIGHT,
     "textHex": "dedede",
     "nameHex": "ff4040",
-    "symbolFill": SYMBOL_FILL,
-    "symbolEdge": SYMBOL_EDGE,
-    "markColour": SYMBOL_MARK,
+    "symbolFill": FLICKER_SYMBOL_FILL,
+    "symbolEdge": FLICKER_SYMBOL_EDGE,
+    "markColour": FLICKER_SYMBOL_MARK,
     "flashColour": Color(255, 255, 255),
-    "flashPixels": FLASH_PIXELS,
+    "flashPixels": FLICKER_FLASH_PIXELS,
 })
 
-_lock = threading.RLock()
-_started = False
-_listeners = []
-_lastInactiveMs = {}
+_FlickerLock = threading.RLock()
+_FlickerStarted = False
+_FlickerListeners = []
+_FlickerLastInactiveMs = {}
 
 
-def _Log(msg):
+def _FlickerLog(msg):
     try:
         print("[TAS] " + str(msg))
     except Exception:
         pass
 
 
-def _BlockLabel(block):
+def _FlickerBlockLabel(block):
     try:
         usr = block.getUserName()
         if usr is not None and str(usr).strip() != "":
@@ -105,7 +113,7 @@ def _BlockLabel(block):
         return "unknown block"
 
 
-def _SensorLabel(block):
+def _FlickerSensorLabel(block):
     try:
         s = block.getSensor()
         if s is None:
@@ -123,20 +131,20 @@ def _SensorLabel(block):
         return None
 
 
-def _ShowNoticeNow():
-    _window.AddNotice(NOTICE_KEY, NOTICE_TEXT)
+def _FlickerShowNotice(_window=_FlickerWindow):
+    _window.AddNotice(FLICKER_NOTICE_KEY, FLICKER_NOTICE_TEXT)
 
 
-def _AppendMessage(key, name):
+def _FlickerAppendMessage(key, name, _window=_FlickerWindow):
     try:
-        _window.AddMessage(key, name, MESSAGE_LEAD, MESSAGE_TAIL)
+        _window.AddMessage(key, name, FLICKER_MESSAGE_LEAD, FLICKER_MESSAGE_TAIL)
     except Exception as ex:
-        _Log("Block flicker window update failed: " + str(ex))
+        _FlickerLog("Block flicker window update failed: " + str(ex))
 
 
-def _ReportFlicker(block):
-    name = _BlockLabel(block)
-    sensor = _SensorLabel(block)
+def _FlickerReport(block):
+    name = _FlickerBlockLabel(block)
+    sensor = _FlickerSensorLabel(block)
     try:
         key = str(block.getSystemName())
     except Exception:
@@ -145,14 +153,15 @@ def _ReportFlicker(block):
         consoleName = str(name) + " (sensor " + str(sensor) + ")"
     else:
         consoleName = str(name)
-    _Log("Flickering occupancy sensor at " + consoleName)
+    _FlickerLog("Flickering occupancy sensor at " + consoleName)
     # AddMessage already marshals to the Event Dispatch Thread.
-    _AppendMessage(key, name)
+    _FlickerAppendMessage(key, name)
 
 
-class _BlockListener(java.beans.PropertyChangeListener):
+class _FlickerBlockListener(java.beans.PropertyChangeListener):
     def __init__(self, block):
         self.block = block
+
     def propertyChange(self, ev):
         try:
             try:
@@ -176,26 +185,26 @@ class _BlockListener(java.beans.PropertyChangeListener):
                 key = str(self.block)
             if newState == jmri.Block.UNOCCUPIED:
                 try:
-                    with _lock:
-                        _lastInactiveMs[key] = long(now)
+                    with _FlickerLock:
+                        _FlickerLastInactiveMs[key] = long(now)
                 except Exception:
                     pass
             elif newState == jmri.Block.OCCUPIED:
                 gap = None
                 try:
-                    with _lock:
-                        prev = _lastInactiveMs.pop(key, None)
+                    with _FlickerLock:
+                        prev = _FlickerLastInactiveMs.pop(key, None)
                     if prev is not None:
                         gap = long(now) - long(prev)
                 except Exception:
                     gap = None
                 if gap is not None and gap >= 0 and gap <= FLICKER_GAP_MS:
-                    _ReportFlicker(self.block)
+                    _FlickerReport(self.block)
         except Exception:
             pass
 
 
-def _AllBlocks():
+def _FlickerAllBlocks():
     items = []
     try:
         bm = jmri.InstanceManager.getDefault(jmri.BlockManager)
@@ -215,66 +224,66 @@ def _AllBlocks():
             if b is not None:
                 items.append(b)
     except Exception as ex:
-        _Log("Block enumeration failed: " + str(ex))
+        _FlickerLog("Block enumeration failed: " + str(ex))
     return items
 
 
-def Start():
-    global _started
+def _FlickerStart():
+    global _FlickerStarted
     try:
-        with _lock:
-            if _started:
+        with _FlickerLock:
+            if _FlickerStarted:
                 return True
-            _started = True
+            _FlickerStarted = True
     except Exception:
-        _started = True
+        _FlickerStarted = True
     count = 0
     try:
-        for b in _AllBlocks():
+        for b in _FlickerAllBlocks():
             try:
-                lst = _BlockListener(b)
+                lst = _FlickerBlockListener(b)
                 b.addPropertyChangeListener(lst)
-                _listeners.append((b, lst))
+                _FlickerListeners.append((b, lst))
                 count += 1
             except Exception:
                 pass
     except Exception as ex:
-        _Log("Block flicker start failed: " + str(ex))
+        _FlickerLog("Block flicker start failed: " + str(ex))
         return False
-    _Log("Block flicker monitor started on " + str(count) + " blocks")
+    _FlickerLog("Block flicker monitor started on " + str(count) + " blocks")
     return True
 
 
-def Stop():
-    global _started
+def _FlickerStop():
+    global _FlickerStarted
     try:
-        with _lock:
-            pairs = list(_listeners)
-            del _listeners[:]
-            _lastInactiveMs.clear()
-            _started = False
+        with _FlickerLock:
+            pairs = list(_FlickerListeners)
+            del _FlickerListeners[:]
+            _FlickerLastInactiveMs.clear()
+            _FlickerStarted = False
     except Exception:
         pairs = []
-        _started = False
+        _FlickerStarted = False
     for (b, lst) in pairs:
         try:
             b.removePropertyChangeListener(lst)
         except Exception:
             pass
-    _Log("Block flicker monitor stopped")
+    _FlickerLog("Block flicker monitor stopped")
 
 
-def Show():
+def _FlickerShow(_window=_FlickerWindow):
     def _ShowNow():
         if _window.IsOpen() or _window.MessageCount() > 0:
             _window.Show()
         else:
-            _ShowNoticeNow()
+            _FlickerShowNotice()
     TASWarningWindow.InvokeOnEdt(_ShowNow)
 
 
 try:
-    Start()
+    _FlickerStart()
 except Exception as ex:
     try:
         print("[TAS] Block flicker monitor auto-start failed: " + str(ex))
@@ -284,6 +293,6 @@ except Exception as ex:
 try:
     mgr = jmri.InstanceManager.getDefault(jmri.ShutDownManager)
     if mgr is not None:
-        mgr.addShutdownTask(TASWarningWindow.Runner(Stop))
+        mgr.addShutdownTask(TASWarningWindow.Runner(_FlickerStop))
 except Exception:
     pass
