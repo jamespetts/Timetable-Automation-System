@@ -1368,20 +1368,20 @@ class TASSetupFrame(jmri.util.JmriJFrame):
 
 
         # --- Build tabs AFTER initial/current state is ready ---
-        # Workings, Timing points and Orientation tabs are lazy: placeholders
-        # show immediately with a horizontal progress bar, heavy content
-        # loads in background threads and swaps in on the EDT.
+        # All tabs start as fast placeholders with a horizontal progress bar.
+        # Heavy content loads in background threads and swaps in on the EDT,
+        # so the window appears without waiting for slow scans or file reads.
         self.WorkingsUiController = None
         tabs = JTabbedPane()
         ApplyTheme(tabs)
-        tabs.addTab("General setup", self.BuildGeneralTab())
-        tabs.addTab("Timetable", self.BuildTimetableTab())
+        tabs.addTab("General setup", self._MakeLazyPlaceholder("Loading general setup..."))
+        tabs.addTab("Timetable", self._MakeLazyPlaceholder("Loading timetable options..."))
         tabs.addTab("Workings", self._MakeLazyPlaceholder("Loading workings..."))
         tabs.addTab("Timing points", self._MakeLazyPlaceholder("Loading timing points..."))
         tabs.addTab("Orientation", self._MakeLazyPlaceholder("Loading orientation..."))
-        tabs.addTab("Display configuration", self.BuildDisplayTab())
-        tabs.addTab("Day/night cycle", self.BuildDayNightTab())
-        tabs.addTab("Interface", self.BuildInterfaceTab())
+        tabs.addTab("Display configuration", self._MakeLazyPlaceholder("Loading display configuration..."))
+        tabs.addTab("Day/night cycle", self._MakeLazyPlaceholder("Loading day/night cycle..."))
+        tabs.addTab("Interface", self._MakeLazyPlaceholder("Loading interface options..."))
         self.SetupTabs = tabs
 
         # Finalize
@@ -1639,6 +1639,14 @@ class TASSetupFrame(jmri.util.JmriJFrame):
                     pass
 
         try:
+            _StartOne("TASSetup-General", self.BuildGeneralTab, "General setup", "_LazyGeneralDone")
+        except:
+            pass
+        try:
+            _StartOne("TASSetup-Timetable", self.BuildTimetableTab, "Timetable", "_LazyTimetableDone")
+        except:
+            pass
+        try:
             _StartOne("TASSetup-Workings", self.BuildWorkingsTab, "Workings", "_LazyWorkingsDone")
         except:
             pass
@@ -1648,6 +1656,18 @@ class TASSetupFrame(jmri.util.JmriJFrame):
             pass
         try:
             _StartOne("TASSetup-Orientation", self.BuildOrientationTab, "Orientation", "_LazyOrientationDone")
+        except:
+            pass
+        try:
+            _StartOne("TASSetup-Display", self.BuildDisplayTab, "Display configuration", "_LazyDisplayDone")
+        except:
+            pass
+        try:
+            _StartOne("TASSetup-DayNight", self.BuildDayNightTab, "Day/night cycle", "_LazyDayNightDone")
+        except:
+            pass
+        try:
+            _StartOne("TASSetup-Interface", self.BuildInterfaceTab, "Interface", "_LazyInterfaceDone")
         except:
             pass
 
@@ -2228,6 +2248,14 @@ class TASSetupFrame(jmri.util.JmriJFrame):
         return panel
 
     def UpdateRunAutoControls(self):
+        # Skip when the General tab is still a lazy placeholder.
+        try:
+            if (getattr(self, "LblRunAutoStatus", None) is None
+                    or getattr(self, "ChkRunAuto", None) is None
+                    or getattr(self, "ChkTimeActions", None) is None):
+                return
+        except:
+            return
         # 1) Read current memory state
         isEnabled = GetMemoryBool(IMTASAutoWorking, False)
 
