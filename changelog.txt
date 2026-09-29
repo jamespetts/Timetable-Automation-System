@@ -1,5 +1,7 @@
 Version 1.5
 
+* The main menu buttons that open another window (Show timetable, Public information displays, Signallers' displays, Weather forecast, Setup and Help) are now toggles: choosing one a second time closes the window, or windows, that the first choice opened instead of opening a second copy.
+
 * Setup dialogue opens faster: Workings, Timing points and Orientation tabs now load in the background with a horizontal progress bar shown until each tab is ready.
 
 * Added optional occupancy sensor flicker monitor (BlockFlickerMonitor.py, off by default, enabled in Setup General tab). Shows one non-modal warning window with one message per Block.

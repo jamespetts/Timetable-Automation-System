@@ -1,4 +1,4 @@
-Read when: Task concerns TimetableAutomation.py, main menu, scripts path check, dual-install check, startup actions check, RunExternalScript, About dialog, Licence text, changelog text.
+Read when: Task concerns TimetableAutomation.py, main menu, main menu button toggles, scripts path check, dual-install check, startup actions check, RunExternalScript, About dialog, Licence text, changelog text.
 
 # Entry and Startup
 
@@ -12,8 +12,10 @@ Functions in TimetableAutomation.py:
 - GetActiveProfileName, GetTimetableName, RunExternalScript, ReadMemStr
 - PreferredFontFamily, FitFontForSingleLine, BuildTitleLines, LoadLicenceText, LoadChangeLogText
 - RefreshMainMenuTheme, Run
-- Class CoverPanel with MakeBtn, ShowStub, ShowAbout, IsTimeWarpAllowed, UpdateTimeWarpEnabled, OnTimeWarp, OnWeatherForecast, RunConfiguredPublic, RunConfiguredSignallers, FRIENDLY_NAME, RefreshThemeFromMemories, paintComponent
+- Class CoverPanel with MakeBtn, ToggleWindows, ShowStub, ShowAbout, IsTimeWarpAllowed, UpdateTimeWarpEnabled, OnTimeWarp, OnWeatherForecast, RunConfiguredPublic, RunConfiguredSignallers, FRIENDLY_NAME, RefreshThemeFromMemories, paintComponent
 - Class AboutDialog, class TASWTTStartup
+
+CoverPanel.ToggleWindows(key, opener) uses TASWindowRegistry.Toggle so that the buttons which open another window close it on a second press. The module is imported as TASWINREG. Details in ai/details/timetableautomation.md.
 
 _TASStartUpScriptNames list in TimetableAutomation.py contains: TimetableAutomation.py, CheckWhenTimeChanges.py, DayTracker.py, TimeWarpChecker.py, DayNight.py, WeatherGenerator.py, LastReportedDirection.py, TASFastClockStartup.py, BlockFlickerMonitor.py, DccPowerOnStart.py.
 
@@ -25,6 +27,7 @@ Files read: Licence.txt and changelog.txt through TASPathResolver.FindInputStrea
 
 Detailed topics:
 - ai/details/timetableautomation.md
+- ai/details/taswindowregistry.md
 - ai/details/tasscriptspathguard.md
 - ai/details/tasfastclockstartup.md
 - ai/details/startup-power-warnings.md

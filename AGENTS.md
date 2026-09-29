@@ -119,6 +119,7 @@ TAS devel/
 ├── TimeWarp*.py                # Time warp
 ├── PID*.py                     # Public displays (20+ variants)
 ├── TASScriptsPathGuard.py      # Startup path logic
+├── TASWindowRegistry.py        # Main menu window toggles
 ├── TASHelp.py                  # Help system
 ├── tashelp/*.txt               # Help topics
 ├── config/daynight.csv         # Day/night config
