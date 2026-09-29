@@ -85,6 +85,7 @@ WXAPP_LOADING_STALL_MSG = "No forecast data - check the weather generator is run
 WXAPP_ALERT_CARD_W = 300
 WXAPP_ALERT_MARGIN = 18      # transparent margin around the card, holds the shadow
 WXAPP_ALERT_CORNER = 14
+WXAPP_ALERT_TEXT_PAD = 16  # card padding either side of the wrapped text
 WXAPP_ALERT_BTN_H = 44
 WXAPP_ALERT_BG = Color(255,255,255)
 WXAPP_ALERT_BORDER = Color(214,217,223)
@@ -370,14 +371,50 @@ class _WxAppAlertCard(JPanel):
         self.setOpaque(False)
         self.setBackground(Color(0, 0, 0, 0))
         self.setLayout(BorderLayout())
-        self._heading = str(heading)
-        self._bodyLines = [str(x) for x in bodyLines]
         self._strip = None
         self._headingFont = Font("SansSerif", Font.BOLD, 17)
         self._bodyFont = Font("SansSerif", Font.PLAIN, 13)
         # Offscreen graphics, so metrics are available before the card is shown.
         img = java.awt.image.BufferedImage(1, 1, java.awt.image.BufferedImage.TYPE_INT_ARGB)
         self._mg = img.createGraphics()
+        # Wrap once, here, so the height calculation and the paint use the same
+        # lines. Without this a long line is drawn as one string and overflows
+        # both sides of the card.
+        self._maxTextW = WXAPP_ALERT_CARD_W - (2 * WXAPP_ALERT_TEXT_PAD)
+        self._headingLines = self._Wrap(heading, self._headingFont, self._maxTextW)
+        wrapped = []
+        for ln in bodyLines:
+            wrapped.extend(self._Wrap(ln, self._bodyFont, self._maxTextW))
+        self._bodyLines = wrapped
+
+    def _Wrap(self, text, font, maxW):
+        """
+        Split one line of text into lines that fit maxW, measured with the font
+        that will draw it. A single word too wide to ever fit is broken by
+        character, so unusual input cannot escape the card either.
+        """
+        try:
+            fm = self._mg.getFontMetrics(font)
+        except Exception:
+            return [str(text)]
+        out = []
+        line = ''
+        for word in str(text).split(' '):
+            while len(word) > 1 and fm.stringWidth(word) > maxW:
+                cut = len(word) - 1
+                while cut > 1 and fm.stringWidth(word[:cut]) > maxW:
+                    cut -= 1
+                out.append(word[:cut])
+                word = word[cut:]
+            if line == '':
+                line = word
+            elif fm.stringWidth(line + ' ' + word) <= maxW:
+                line = line + ' ' + word
+            else:
+                out.append(line)
+                line = word
+        out.append(line)
+        return out
 
     def setStrip(self, strip):
         self._strip = strip
@@ -392,10 +429,12 @@ class _WxAppAlertCard(JPanel):
         return 0
 
     def getPreferredSize(self):
+        headFm = self._mg.getFontMetrics(self._headingFont)
+        bodyFm = self._mg.getFontMetrics(self._bodyFont)
         h = (self.PAD_TOP
-             + self._mg.getFontMetrics(self._headingFont).getHeight()
+             + (headFm.getHeight() * len(self._headingLines))
              + self.HEAD_GAP
-             + (self._mg.getFontMetrics(self._bodyFont).getHeight() * len(self._bodyLines))
+             + (bodyFm.getHeight() * len(self._bodyLines))
              + self.BODY_GAP
              + self._stripHeight())
         return Dimension(WXAPP_ALERT_CARD_W, h)
@@ -446,8 +485,10 @@ class _WxAppAlertCard(JPanel):
             y = m + self.PAD_TOP + headFm.getAscent()
             g3.setFont(self._headingFont)
             g3.setColor(WXAPP_ALERT_TITLE_COL)
-            g3.drawString(self._heading, int(cx - (headFm.stringWidth(self._heading) / 2.0)), int(y))
-            y += self.HEAD_GAP + headFm.getDescent() + bodyFm.getAscent()
+            for line in self._headingLines:
+                g3.drawString(line, int(cx - (headFm.stringWidth(line) / 2.0)), int(y))
+                y += headFm.getHeight()
+            y += self.HEAD_GAP + bodyFm.getAscent()
             g3.setFont(self._bodyFont)
             g3.setColor(WXAPP_ALERT_BODY_COL)
             for line in self._bodyLines:
@@ -812,8 +853,6 @@ class AdBanner(Card):
             name = str(self.brand.getText() or "").strip()
             if name == "":
                 name = "This app"
-            if len(name) > 34:
-                name = name[:31] + "..."
             body = [
                 "%s could not be charged." % name,
                 "",
