@@ -4,12 +4,16 @@ This is an optional startup script. It is off by default. Enable it in Setup, Ge
 
 When enabled, the script watches all Blocks for a short drop from occupied to unoccupied and back to occupied. A short drop often means dirty track or loose wiring.
 
-When a drop is seen, the script writes a line to the system console and shows a small warning window. The window has a warning triangle at the top and one message per Block at the bottom. The message reads:
+When a drop is seen, the script writes a line to the system console and shows a warning window. The window has a red warning triangle at the top and messages below on a black background. Text is light grey, with the name of the occupancy sensor in red.
 
-flickering occupancy sensor detected at: <block name>: check for dirty track or loose wiring
+Each message reads:
 
-All messages go in the same window. No second window is opened while the window is open. The window grows as messages are added. Each message is separated by vertical space.
+Flickering occupancy sensor detected at: <name of occupancy sensor>: check for dirty track or loose wiring
 
-The window is non-modal. It can stay open while the layout keeps running. Close it at any time. If a new flicker happens after the window was closed, a new window is opened.
+All messages go in the same window. No second window is opened while the window is open. Text wraps to the width of the window, and the window grows as messages are added. Each message is separated by vertical space.
+
+If the same Block flickers again, no second message is added. The existing message flashes to show that the Block has flickered again.
+
+The window is non-modal. It can stay open while the layout keeps running. Close it at any time. If a new Block flickers after the window was closed, a new window is opened.
 
 The monitor reports even when Dispatcher shows no error.
