@@ -428,13 +428,27 @@ class _WxAppAlertCard(JPanel):
             pass
         return 0
 
-    def getPreferredSize(self):
+    def _TextBlockHeight(self):
+        """
+        Height of the heading plus body block. paintComponent walks baselines:
+        it starts at PAD_TOP plus the heading ascent, then adds a full line height
+        per heading line, then HEAD_GAP plus the body ascent, then a full line
+        height per body line, and the last line still hangs by its descent. This
+        returns exactly that, so the height and the paint cannot disagree and
+        push the body over the button strip.
+        """
         headFm = self._mg.getFontMetrics(self._headingFont)
         bodyFm = self._mg.getFontMetrics(self._bodyFont)
+        return (headFm.getAscent()
+                + (headFm.getHeight() * len(self._headingLines))
+                + self.HEAD_GAP
+                + bodyFm.getAscent()
+                + (bodyFm.getHeight() * len(self._bodyLines))
+                + bodyFm.getDescent())
+
+    def getPreferredSize(self):
         h = (self.PAD_TOP
-             + (headFm.getHeight() * len(self._headingLines))
-             + self.HEAD_GAP
-             + (bodyFm.getHeight() * len(self._bodyLines))
+             + self._TextBlockHeight()
              + self.BODY_GAP
              + self._stripHeight())
         return Dimension(WXAPP_ALERT_CARD_W, h)
