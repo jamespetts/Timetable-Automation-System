@@ -23,12 +23,9 @@
 
 import jmri
 import threading
-from javax.swing import (JFrame, JPanel, JTextPane, JScrollPane, SwingUtilities, Timer)
-from javax.swing.text import DefaultHighlighter
-from java.awt import BorderLayout, Dimension, Color, Font, BasicStroke, Polygon, RenderingHints
-from java.awt.event import WindowAdapter, ActionListener
-from java.lang import Runnable, System
-import TASIcon
+from java.awt import Color
+from java.lang import System
+import TASWarningWindow
 
 # Short UNOCCUPIED gap treated as flicker, in milliseconds.
 FLICKER_GAP_MS = 3000
@@ -55,17 +52,33 @@ MESSAGE_TAIL = ": check for dirty track or loose wiring"
 NOTICE_TEXT = "No occupancy sensor flickering recorded this session."
 NOTICE_KEY = "__notice__"
 
+# One warning window for this feature. See TASWarningWindow.py.
+_window = TASWarningWindow.TasWarningWindow({
+    "title": "Occupancy sensor warning",
+    "textWidth": TEXT_WIDTH,
+    "textHeight": TEXT_HEIGHT,
+    "frameWidth": FRAME_WIDTH,
+    "frameBaseHeight": FRAME_BASE_HEIGHT,
+    "frameGrowPerMessage": FRAME_GROW_PER_MESSAGE,
+    "frameMaxHeight": FRAME_MAX_HEIGHT,
+    "fontSize": FLIPPER_FONT_SIZE,
+    "nameFontSize": NAME_FONT_SIZE,
+    "background": BACKGROUND,
+    "backgroundHex": "000000",
+    "textColour": TEXT_LIGHT,
+    "textHex": "dedede",
+    "nameHex": "ff4040",
+    "symbolFill": SYMBOL_FILL,
+    "symbolEdge": SYMBOL_EDGE,
+    "markColour": SYMBOL_MARK,
+    "flashColour": Color(255, 255, 255),
+    "flashPixels": FLASH_PIXELS,
+})
+
 _lock = threading.RLock()
 _started = False
 _listeners = []
 _lastInactiveMs = {}
-_frame = None
-_pane = None
-_scroll = None
-_messages = []
-_ranges = {}
-_msgCount = [0]
-_timers = []
 
 
 def _Log(msg):
@@ -110,283 +123,13 @@ def _SensorLabel(block):
         return None
 
 
-class _Runner(Runnable):
-    def __init__(self, fn):
-        self.fn = fn
-    def run(self):
-        try:
-            self.fn()
-        except Exception:
-            pass
-
-
-def _InvokeOnEdt(fn):
-    try:
-        if SwingUtilities.isEventDispatchThread():
-            fn()
-        else:
-            SwingUtilities.invokeLater(_Runner(fn))
-    except Exception:
-        try:
-            fn()
-        except Exception:
-            pass
-
-
-class _FlashEnd(ActionListener):
-    def __init__(self, pane, tag):
-        self.pane = pane
-        self.tag = tag
-    def actionPerformed(self, e):
-        try:
-            self.pane.getHighlighter().removeHighlight(self.tag)
-        except Exception:
-            pass
-
-
-class _WarningSymbolPanel(JPanel):
-    def __init__(self):
-        JPanel.__init__(self)
-        try:
-            self.setPreferredSize(Dimension(TEXT_WIDTH, 150))
-            self.setOpaque(False)
-        except Exception:
-            pass
-
-    def paintComponent(self, g):
-        try:
-            JPanel.paintComponent(self, g)
-        except Exception:
-            pass
-        try:
-            g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
-            g.setRenderingHint(RenderingHints.KEY_STROKE_CONTROL, RenderingHints.VALUE_STROKE_PURE)
-            g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON)
-            w = self.getWidth()
-            h = self.getHeight()
-            cx = w / 2.0
-            top = 6.0
-            size = min(w - 30.0, h - 14.0)
-            if size < 20:
-                return
-            half = size / 2.0
-            bottom = top + size
-            poly = Polygon()
-            poly.addPoint(int(cx), int(top))
-            poly.addPoint(int(cx + half), int(bottom))
-            poly.addPoint(int(cx - half), int(bottom))
-            g.setColor(SYMBOL_FILL)
-            g.fillPolygon(poly)
-            g.setColor(SYMBOL_EDGE)
-            g.setStroke(BasicStroke(max(4.0, size / 14.0),
-                                    BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND))
-            g.drawPolygon(poly)
-            g.setFont(Font("SansSerif", Font.BOLD, int(size * 0.46)))
-            g.setColor(SYMBOL_MARK)
-            fm = g.getFontMetrics()
-            mark = "!"
-            tw = fm.stringWidth(mark)
-            tx = int(cx - (tw / 2.0))
-            ty = int(bottom - size * 0.22)
-            g.drawString(mark, tx, ty)
-        except Exception:
-            pass
-
-
-class _CloseReset(WindowAdapter):
-    def windowClosed(self, e):
-        global _frame, _pane, _scroll
-        try:
-            with _lock:
-                _frame = None
-                _pane = None
-                _scroll = None
-                _messages = []
-                _ranges = {}
-                _msgCount[0] = 0
-                del _timers[:]
-        except Exception:
-            _frame = None
-            _pane = None
-            _scroll = None
-
-
-def _IsFrameOpen():
-    try:
-        return _frame is not None and _frame.isDisplayable()
-    except Exception:
-        return False
-
-
-def _Escape(text):
-    s = str(text)
-    s = s.replace("&", "&amp;")
-    s = s.replace("<", "&lt;")
-    s = s.replace(">", "&gt;")
-    return s
-
-
-def _CreateFrame():
-    global _frame, _pane, _scroll
-    frame = JFrame("Occupancy sensor warning")
-    frame.setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE)
-    root = JPanel(BorderLayout())
-    root.add(_WarningSymbolPanel(), BorderLayout.NORTH)
-    pane = JTextPane()
-    try:
-        pane.setEditable(False)
-        pane.setBackground(BACKGROUND)
-        pane.setForeground(TEXT_LIGHT)
-        pane.setFont(Font("SansSerif", Font.PLAIN, FLIPPER_FONT_SIZE))
-        pane.setContentType("text/html")
-    except Exception:
-        pass
-    scroll = JScrollPane(pane)
-    try:
-        scroll.setPreferredSize(Dimension(TEXT_WIDTH, TEXT_HEIGHT))
-        scroll.getViewport().setBackground(BACKGROUND)
-        scroll.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_NEVER)
-        scroll.setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED)
-    except Exception:
-        pass
-    root.add(scroll, BorderLayout.CENTER)
-    frame.add(root)
-    try:
-        frame.setSize(Dimension(FRAME_WIDTH, FRAME_BASE_HEIGHT))
-    except Exception:
-        pass
-    try:
-        TASIcon.SetFrameClockIcon(frame)
-    except Exception:
-        pass
-    try:
-        frame.addWindowListener(_CloseReset())
-    except Exception:
-        pass
-    _frame = frame
-    _pane = pane
-    _scroll = scroll
-    return frame
-
-
-def _BuildHtml():
-    body = "background-color:#000000;"
-    parts = ["<html><head><style type=\"text/css\">",
-             "body { " + body + " color:#dedede; font-family: SansSerif; font-size: " +
-             str(FLIPPER_FONT_SIZE) + "px; margin: 6px 8px 6px 8px; }",
-             "p { margin: 0px 0px " + str(FRAME_GROW_PER_MESSAGE // 2) + "px 0px; }",
-             "</style></head><body>"]
-    for m in _messages:
-        if m.get("name") is None:
-            parts.append("<p>" + _Escape(m.get("text")) + "</p>")
-        else:
-            parts.append("<p>" + _Escape(MESSAGE_LEAD) +
-                         "<span style=\"color:#ff4040; font-size:" + str(NAME_FONT_SIZE) +
-                         "px; font-weight:bold;\">" + _Escape(m.get("name")) + "</span>" +
-                         _Escape(MESSAGE_TAIL) + "</p>")
-    parts.append("</body></html>")
-    return "".join(parts)
-
-
-def _RecomputeRanges():
-    try:
-        doc = _pane.getDocument()
-        txt = doc.getText(0, doc.getLength())
-    except Exception:
-        return
-    pos = 0
-    for m in _messages:
-        needle = m.get("text")
-        if needle is None:
-            continue
-        idx = txt.find(needle, pos)
-        if idx < 0:
-            continue
-        m["start"] = idx
-        m["end"] = idx + len(needle)
-        pos = idx + len(needle)
-    _ranges.clear()
-    for m in _messages:
-        k = m.get("key")
-        if k is None:
-            continue
-        if m.get("start") is not None:
-            _ranges[k] = (m.get("start"), m.get("end"))
-
-
-def _RenderNow():
-    try:
-        _pane.setText(_BuildHtml())
-    except Exception:
-        return
-    try:
-        _pane.setCaretPosition(0)
-    except Exception:
-        pass
-    _RecomputeRanges()
-    try:
-        _pane.revalidate()
-        _pane.repaint()
-    except Exception:
-        pass
-    try:
-        h = FRAME_BASE_HEIGHT + (int(_msgCount[0]) * FRAME_GROW_PER_MESSAGE)
-        if h > FRAME_MAX_HEIGHT:
-            h = FRAME_MAX_HEIGHT
-        _frame.setSize(Dimension(FRAME_WIDTH, h))
-    except Exception:
-        pass
-
-
-def _FlashNow(key):
-    try:
-        span = _ranges.get(key, None)
-        if span is None:
-            return
-        start, end = span
-        painter = DefaultHighlighter.DefaultHighlightPainter(Color(255, 255, 255))
-        tag = _pane.getHighlighter().addHighlight(start, end, painter)
-        timer = Timer(FLASH_PIXELS, _FlashEnd(_pane, tag))
-        timer.setRepeats(False)
-        _timers.append(timer)
-        timer.start()
-    except Exception:
-        pass
-
-
-def _ShowFrame():
-    try:
-        if not _frame.isVisible():
-            _frame.setLocationRelativeTo(None)
-        _frame.setVisible(True)
-        _frame.toFront()
-    except Exception:
-        try:
-            _frame.setVisible(True)
-        except Exception:
-            pass
-
-
-def _AddRecord(key, name, text):
-    if not _IsFrameOpen():
-        _CreateFrame()
-    _messages.append({"key": key, "name": name, "text": text, "start": None, "end": None})
-    _msgCount[0] = len(_messages)
-    _RenderNow()
-    _ShowFrame()
-
-
 def _ShowNoticeNow():
-    _AddRecord(NOTICE_KEY, None, NOTICE_TEXT)
+    _window.AddNotice(NOTICE_KEY, NOTICE_TEXT)
 
 
 def _AppendMessage(key, name):
     try:
-        if key in _ranges or any(m.get("key") == key for m in _messages):
-            _FlashNow(key)
-            return
-        text = MESSAGE_LEAD + str(name) + MESSAGE_TAIL
-        _AddRecord(key, str(name), text)
+        _window.AddMessage(key, name, MESSAGE_LEAD, MESSAGE_TAIL)
     except Exception as ex:
         _Log("Block flicker window update failed: " + str(ex))
 
@@ -403,10 +146,8 @@ def _ReportFlicker(block):
     else:
         consoleName = str(name)
     _Log("Flickering occupancy sensor at " + consoleName)
-    try:
-        _InvokeOnEdt(lambda: _AppendMessage(key, name))
-    except Exception:
-        pass
+    # AddMessage already marshals to the Event Dispatch Thread.
+    _AppendMessage(key, name)
 
 
 class _BlockListener(java.beans.PropertyChangeListener):
@@ -525,25 +266,11 @@ def Stop():
 
 def Show():
     def _ShowNow():
-        try:
-            with _lock:
-                openNow = _IsFrameOpen()
-                n = int(_msgCount[0])
-        except Exception:
-            openNow = False
-            n = 0
-        if openNow:
-            try:
-                _frame.setVisible(True)
-                _frame.toFront()
-            except Exception:
-                pass
-            return
-        if n == 0:
-            _ShowNoticeNow()
+        if _window.IsOpen() or _window.MessageCount() > 0:
+            _window.Show()
         else:
-            _ShowFrame()
-    _InvokeOnEdt(_ShowNow)
+            _ShowNoticeNow()
+    TASWarningWindow.InvokeOnEdt(_ShowNow)
 
 
 try:
@@ -557,6 +284,6 @@ except Exception as ex:
 try:
     mgr = jmri.InstanceManager.getDefault(jmri.ShutDownManager)
     if mgr is not None:
-        mgr.addShutdownTask(_Runner(Stop))
+        mgr.addShutdownTask(TASWarningWindow.Runner(Stop))
 except Exception:
     pass

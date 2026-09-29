@@ -1,0 +1,19 @@
+DCC power on at start-up
+
+This is an optional startup script. It is off by default. Enable it in Setup, General tab, with "Turn DCC power on at start-up (requires restart)". Restart JMRI after changing the setting.
+
+When enabled, the script checks the DCC track power each time JMRI starts.
+
+* If the power is already on, nothing is done. The power is not interrupted.
+* If the power is off or idle, the script turns it on.
+* If the power state is not known, the script never changes it. It waits for the state to become known and then acts as above. If the state is still not known after 15 seconds, the script shows a warning window and leaves the power alone.
+
+The script waits up to 30 seconds for a hardware connection to publish a power manager, so it is safe to have it run at start-up.
+
+The warning window has an orange warning triangle at the top and the message below it on a black background, in the same style as the occupancy sensor flicker monitor window.
+
+Turning this option on also disables any enabled JMRI Start-Up entry that runs the script PowerOn.py that JMRI supplies with the program. Without this, JMRI would turn the power on unconditionally at start-up, which would interrupt power that is already on and would leave an unknown power state unknown.
+
+The change to the Start-Up list applies to the current profile only, and takes effect at the next start of JMRI. If you turn this option off again and you want JMRI's own script to turn the power on, re-enable that entry in Edit, Preferences, Start Up.
+
+The script writes its findings to the system console, each line starting with [TAS].
