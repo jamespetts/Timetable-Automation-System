@@ -674,6 +674,9 @@ def IsDayNightEnabled():
 def IsFlickerMonitorEnabled():
     return _IsScriptEnabled("BlockFlickerMonitor.py")
 
+def IsDccPowerOnStartEnabled():
+    return _IsScriptEnabled("DccPowerOnStart.py")
+
 def IsStreetLightControllerEnabled():
     return _IsScriptEnabled("StreetLightController.py")
 
@@ -1338,6 +1341,9 @@ class TASSetupFrame(jmri.util.JmriJFrame):
         # Occupancy flicker monitor (BlockFlickerMonitor.py) at Start-Up, off by default
         self.InitialFlickerMonitor = _IsScriptEnabled("BlockFlickerMonitor.py")
         self.CurrentFlickerMonitor = self.InitialFlickerMonitor
+        # DCC power on at Start-Up (DccPowerOnStart.py), off by default
+        self.InitialDccPowerOnStart = _IsScriptEnabled("DccPowerOnStart.py")
+        self.CurrentDccPowerOnStart = self.InitialDccPowerOnStart
         
         # TAS menu on Start-Up (TimetableAutomation.py)
         self.InitialTASMenu = _IsScriptEnabled("TimetableAutomation.py")
@@ -1854,6 +1860,34 @@ class TASSetupFrame(jmri.util.JmriJFrame):
             self.ChkFlickerMonitor.setSelected(False)
             self.ChkFlickerMonitor.setEnabled(False)
             self.LblFlickerMonitorError.setText("Missing script: BlockFlickerMonitor.py")
+
+        # DCC power on at Start-Up (DccPowerOnStart.py), off by default
+        gbc.gridy += 1
+        dccPowerRow = Box.createHorizontalBox()
+        self.ChkDccPowerOnStart = JCheckBox("Turn DCC power on at start-up (requires restart)")
+        self.ChkDccPowerOnStart.setOpaque(False)
+        self.ChkDccPowerOnStart.setSelected(self.InitialDccPowerOnStart)
+        def OnDccPowerOnStart(e=None):
+            want = self.ChkDccPowerOnStart.isSelected()
+            ok = _EnsureScriptEnabled("DccPowerOnStart.py", want)
+            actual = _IsScriptEnabled("DccPowerOnStart.py")
+            self.CurrentDccPowerOnStart = actual
+            self.ChkDccPowerOnStart.setSelected(actual)
+            if not ok:
+                LogWarn("Could not change Start-Up for DccPowerOnStart.py", alsoDialog=True)
+        self.ChkDccPowerOnStart.addActionListener(OnDccPowerOnStart)
+        dccPowerRow.add(self.ChkDccPowerOnStart)
+        panel.add(dccPowerRow, gbc)
+
+        gbc.gridy += 1
+        self.LblDccPowerOnStartError = JLabel("")
+        ApplyTheme(self.LblDccPowerOnStartError)
+        panel.add(self.LblDccPowerOnStartError, gbc)
+
+        if not ScriptExists("DccPowerOnStart.py"):
+            self.ChkDccPowerOnStart.setSelected(False)
+            self.ChkDccPowerOnStart.setEnabled(False)
+            self.LblDccPowerOnStartError.setText("Missing script: DccPowerOnStart.py")
 
         # (B) "Run trains automatically" row (checkbox + status label) - NOW uses IMTASAutoWorking memory only
         gbc.gridwidth = 3
@@ -5472,6 +5506,7 @@ class TASSetupFrame(jmri.util.JmriJFrame):
                    self.InitialWeather != self.CurrentWeather or
                    self.InitialDirectionSensing != self.CurrentDirectionSensing or
                    self.InitialFlickerMonitor != self.CurrentFlickerMonitor or
+                   self.InitialDccPowerOnStart != self.CurrentDccPowerOnStart or
                    bool(getattr(self, 'FastClockStartupNeedsRestart', (self.InitialFastClockStartup != self.CurrentFastClockStartup))))
         if changed:
             try:

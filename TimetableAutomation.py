@@ -404,6 +404,7 @@ _TASStartUpScriptNames = [
     'LastReportedDirection.py',
     'TASFastClockStartup.py',
     'BlockFlickerMonitor.py',
+    'DccPowerOnStart.py',
 ]
 
 _StartupPathCheckDone = False
