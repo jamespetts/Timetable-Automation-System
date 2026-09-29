@@ -18,7 +18,8 @@
 # - Disruption inheritance, smooth alternation/scrolling preserved
 # - Platform alteration hook via Memory "PID_PLATFORM_OVERRIDES"
 #
-# * A working is removed ONLY when it is recorded as having DEPARTED at the configured timing point(s).
+# * A working is removed when it is recorded as having DEPARTED at the configured timing point(s).
+#   Cancelled workings never record a departure; they are removed once booked Dep has passed.
 #   Default timing point = active profile name (base TP). Override via Memory "PID_DEPARTURE_TP"
 #   (single TP name or a comma/semicolon separated list). This makes the PID compatible with future
 #   use of other physical/virtual timing points.
@@ -758,6 +759,10 @@ class PIDWindow(object):
             display_time = formatTo24Hour(depTime)  # scheduled by default ("HH:mm")
 
             if chosen_kind == "cancel":
+                # Cancelled workings never record a departure. Display CANCELLED
+                # until booked time passes, then remove. Matches PIDLargeSingle.
+                if depMinutes < currentMinutes:
+                    continue
                 status = "CANCELLED"
                 display_time = "CANCELLED"
                 adjustedMinutes = 9999  # push to end but still show
