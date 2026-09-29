@@ -60,6 +60,7 @@ Jython 2.7 scripts for JMRI (Java Model Railroad Interface). Provides timetable 
 - **Thread-safe** — treat JMRI as threaded; protect shared state and perform Swing UI access on the Event Dispatch Thread
 - **Jython 2.7 syntax** — no f-strings, type hints, or Python 3 features
 - **Imports:** Use Jython-compatible imports for JMRI and Java classes, following existing local patterns
+- **Startup script names:** JMRI runs every Start-Up script through one shared Jython JSR-223 context, so top-level names collide between start-up scripts and a later script silently replaces an earlier script's object. Give every top-level name in a start-up script a per-script prefix (for example `FLICKER_` / `_Flicker`, `DCCPOWER_` / `_DccPower`), and bind any object a function uses later as a default argument. See `ai/details/startup-power-warnings.md`.
 - **Window icons:** Use `TASIcon.SetFrameClockIcon()` for new TAS top-level windows; do not duplicate the clock-icon drawing code
 - **Error handling:** Follow existing local patterns; log useful diagnostics and use JOptionPane only for errors requiring user attention
 - **Version:** Defined by `VERSION` in TimetableAutomation.py
