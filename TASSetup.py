@@ -21,7 +21,7 @@ from java.awt import (BorderLayout, Color, Dimension, Font,
     GridBagConstraints, GridBagLayout, Insets, RenderingHints)
 from java.awt.image import BufferedImage
 from java.io import File  # canonical path comparisons
-from java.lang import Runnable
+from java.lang import Runnable, Boolean, String
 from java.awt.event import FocusAdapter, MouseAdapter, MouseEvent
 from javax.swing import (Box, JButton, JCheckBox, JFileChooser, JLabel, JDialog,
     JList, JOptionPane, JPanel, JScrollPane, JTabbedPane, JTextField,
@@ -42,6 +42,7 @@ from jmri.util import FileUtil  # portable profile/scripts paths
 
 from java.awt import GraphicsEnvironment
 from javax.swing import JColorChooser
+from javax.swing.table import AbstractTableModel
 
 # ------------------------------- Logging -------------------------------
 TAG = "[TASSetup] "
@@ -680,109 +681,6 @@ def IsDccPowerOnStartEnabled():
 def IsRailComFixEnabled():
     return _IsScriptEnabled("RailComFix.py")
 
-def _RailComFixConfigPath():
-    try:
-        return FileUtil.getExternalFilename("profile:jython/config/railcomfix.tsv")
-    except:
-        return os.path.join("jython", "config", "railcomfix.tsv")
-
-def _RailComFixParseAddresses(text):
-    result = []
-    try:
-        parts = str(text).replace(";", ",").split(",")
-    except:
-        return result
-    for part in parts:
-        s = str(part).strip()
-        if s == "":
-            continue
-        try:
-            value = int(s)
-        except:
-            continue
-        if value >= 1 and value <= 9999:
-            if value not in result:
-                result.append(value)
-    return result
-
-def _RailComFixLoad():
-    funcNum = 4
-    addrs = [1323, 1824]
-    try:
-        path = _RailComFixConfigPath()
-        if not os.path.isfile(path):
-            return (funcNum, addrs)
-        fh = open(path, "r")
-        try:
-            reader = csv.DictReader(fh, delimiter="\t")
-            for row in reader:
-                try:
-                    rawFunc = str(row.get("function", "")).strip()
-                    if rawFunc != "":
-                        parsed = int(rawFunc)
-                        if parsed >= 0 and parsed <= 28:
-                            funcNum = parsed
-                except:
-                    pass
-                try:
-                    rawAddr = str(row.get("addresses", "")).strip()
-                    if rawAddr != "":
-                        parsedAddrs = _RailComFixParseAddresses(rawAddr)
-                        if len(parsedAddrs) > 0:
-                            addrs = parsedAddrs
-                except:
-                    pass
-                break
-        finally:
-            fh.close()
-    except:
-        pass
-    return (funcNum, addrs)
-
-def _RailComFixSave(funcNum, addrs):
-    try:
-        funcVal = int(funcNum)
-    except:
-        return False
-    if funcVal < 0 or funcVal > 28:
-        return False
-    clean = []
-    try:
-        for addr in list(addrs):
-            try:
-                value = int(str(addr).strip())
-            except:
-                continue
-            if value >= 1 and value <= 9999:
-                if value not in clean:
-                    clean.append(value)
-    except:
-        pass
-    if len(clean) == 0:
-        return False
-    try:
-        path = _RailComFixConfigPath()
-        parent = os.path.dirname(path)
-        if parent and not os.path.isdir(parent):
-            os.makedirs(parent)
-        tempPath = path + ".tmp"
-        fh = open(tempPath, "w")
-        try:
-            writer = csv.DictWriter(fh, fieldnames=["function", "addresses"],
-                                    delimiter="\t", lineterminator="\n",
-                                    extrasaction="ignore")
-            writer.writeheader()
-            writer.writerow({"function": str(funcVal),
-                             "addresses": ";".join([str(a) for a in clean])})
-        finally:
-            fh.close()
-        if os.path.isfile(path):
-            os.remove(path)
-        os.rename(tempPath, path)
-        return True
-    except Exception as ex:
-        LogWarn("Could not save RailCom fix configuration: " + str(ex))
-        return False
 
 def IsStreetLightControllerEnabled():
     return _IsScriptEnabled("StreetLightController.py")
@@ -4241,6 +4139,14 @@ class TASSetupFrame(jmri.util.JmriJFrame):
         return root
 
     def BuildTrainDetectionTab(self):
+        # Train detection settings. The RailCom capable and not capable halves of the
+        # roster, the per-entry RailCom initialisation fix list, and the startup option.
+        #
+        # RailComDetect.ScanRoster reads every roster entry's stored variable values, so
+        # the scan runs on a worker thread and the lists are filled on the Event Dispatch
+        # Thread. This tab is built on a worker thread by the lazy tab loader.
+        import RailComDetect as RCD
+
         panel = MakePaperPanel()
         panel.setLayout(GridBagLayout())
         gbc = GridBagConstraints()
@@ -4253,13 +4159,365 @@ class TASSetupFrame(jmri.util.JmriJFrame):
         gbc.gridwidth = 1
         panel.add(MakeHeading("Train detection"), gbc)
 
-        # RailCom fix at Start-Up (RailComFix.py), off by default
         gbc.gridy += 1
-        railRow = Box.createHorizontalBox()
-        self.ChkRailComFix = JCheckBox("Send RailCom fix at start-up (requires restart)")
-        self.ChkRailComFix.setOpaque(False)
-        self.ChkRailComFix.setSelected(self.InitialRailComFix)
-        def OnRailComFix(e=None):
+        panel.add(MakeWrappedLabel(
+            "RailCom capability is read from each roster entry's decoder definition. "
+            "Entries whose decoder offers RailCom appear on the left, the rest on the right.",
+            widthPx=760), gbc)
+
+        gbc.gridy += 1
+        self.LblTrainDetectionStatus = JLabel("Reading the roster...")
+        ApplyTheme(self.LblTrainDetectionStatus)
+        panel.add(self.LblTrainDetectionStatus, gbc)
+
+        # ---- Upper split pane: RailCom capable / not capable ----
+        capableModel = DefaultListModel()
+        notCapableModel = DefaultListModel()
+        self.TrainDetectionCapable = JList(capableModel)
+        self.TrainDetectionNotCapable = JList(notCapableModel)
+        for lst in (self.TrainDetectionCapable, self.TrainDetectionNotCapable):
+            try:
+                lst.setSelectionMode(ListSelectionModel.SINGLE_SELECTION)
+            except:
+                pass
+
+        # Colours: dark grey for no support, dark blue for support but switched off and
+        # enableable, black when the entry has been marked not capable by the user, and a
+        # lighter grey for capable and switched on.
+        def _RcRow(rec):
+            # One display row: roster ID plus its DCC address, so the list is readable.
+            try:
+                addr = str(rec.address)
+            except:
+                addr = ""
+            return str(rec.rosterId) + "  [" + addr + "]"
+
+        def _CapableColour(rec, pomAvailable):
+            if rec.notCapable:
+                return Color(0, 0, 0)
+            if not rec.detectedCapable:
+                return Color(90, 90, 90)
+            if rec.storedOn:
+                return Color(30, 30, 30)
+            if pomAvailable:
+                return Color(0, 0, 110)
+            return Color(0, 0, 0)
+
+        pomAvailable = False
+        try:
+            pomAvailable = bool(RCD.PomAvailable())
+        except:
+            pomAvailable = False
+        self.TrainDetectionPom = pomAvailable
+
+        class _RcRenderer(DefaultListCellRenderer):
+            def __init__(self, renderer):
+                DefaultListCellRenderer.__init__(self)
+                self._renderer = renderer
+
+            def setValue(self, value):
+                rec = value
+                if isinstance(value, tuple) or not hasattr(value, "rosterId"):
+                    DefaultListCellRenderer.setValue(self, value)
+                    return
+                text = _RcRow(rec)
+                DefaultListCellRenderer.setValue(self, text)
+                try:
+                    self.setForeground(_CapableColour(rec, pomAvailable))
+                except:
+                    pass
+
+        try:
+            self.TrainDetectionCapable.setCellRenderer(_RcRenderer(None))
+            self.TrainDetectionNotCapable.setCellRenderer(_RcRenderer(None))
+        except:
+            pass
+
+        leftBox = Box.createVerticalBox()
+        leftBox.add(JLabel("RailCom capable"))
+        leftBox.add(JScrollPane(self.TrainDetectionCapable))
+        rightBox = Box.createVerticalBox()
+        rightBox.add(JLabel("Not RailCom capable"))
+        rightBox.add(JScrollPane(self.TrainDetectionNotCapable))
+        upper = JSplitPane(JSplitPane.HORIZONTAL_SPLIT, leftBox, rightBox)
+        try:
+            upper.setResizeWeight(0.5)
+        except:
+            pass
+
+        gbc.gridy += 1
+        gbc.weighty = 1.0
+        gbc.fill = GridBagConstraints.BOTH
+        gbc.gridwidth = 1
+        panel.add(upper, gbc)
+
+        # ---- Buttons acting on the selected entry ----
+        gbc.gridy += 1
+        gbc.weighty = 0.0
+        gbc.fill = GridBagConstraints.HORIZONTAL
+        actionRow = Box.createHorizontalBox()
+        self.BtnRailComEnable = JButton("Enable RailCom on selected")
+        self.BtnRailComToggle = JButton("Mark selected as not RailCom capable")
+        actionRow.add(self.BtnRailComEnable)
+        actionRow.add(Box.createHorizontalStrut(10))
+        actionRow.add(self.BtnRailComToggle)
+        actionRow.add(Box.createHorizontalGlue())
+        panel.add(actionRow, gbc)
+
+        gbc.gridy += 1
+        self.LblTrainDetectionAction = JLabel("")
+        ApplyTheme(self.LblTrainDetectionAction)
+        panel.add(self.LblTrainDetectionAction, gbc)
+
+        # ---- Lower pane: RailCom initialisation fix ----
+        gbc.gridy += 1
+        panel.add(MakeWrappedLabel(
+            "Some RailCom decoders have an error in that they will not broadcast their "
+            "address until they have been addressed by the command station. This enables "
+            "a workaround to this error by sending a brief command to the decoder on "
+            "startup. Choose to which roster entries to apply this fix. You can choose a "
+            "different function for each.", widthPx=760), gbc)
+
+        # The fix list needs a real tick box per entry, so it is a table with a check box
+        # column rather than a list. The single function input beside it applies to
+        # whichever entry is selected.
+        fixRows = {"rows": []}
+        suppressFixEvents = [False]
+
+        class _FixTableModel(AbstractTableModel):
+            COLUMNS = ["Apply fix", "Roster entry", "DCC address"]
+
+            def __init__(self, store):
+                AbstractTableModel.__init__(self)
+                self._store = store
+
+            def getRowCount(self):
+                return len(self._store["rows"])
+
+            def getColumnCount(self):
+                return len(self.COLUMNS)
+
+            def getColumnName(self, index):
+                try:
+                    return String(self.COLUMNS[int(index)])
+                except:
+                    return String("")
+
+            def getColumnClass(self, index):
+                if int(index) == 0:
+                    return java.lang.Boolean.TYPE
+                return String
+
+            def isCellEditable(self, rowIndex, columnIndex):
+                return int(columnIndex) == 0
+
+            def getValueAt(self, rowIndex, columnIndex):
+                try:
+                    rec = self._store["rows"][int(rowIndex)]
+                    col = int(columnIndex)
+                    if col == 0:
+                        return java.lang.Boolean(bool(rec.fix))
+                    if col == 1:
+                        return String(str(rec.rosterId))
+                    return String(str(rec.address))
+                except:
+                    return String("")
+
+            def setValueAt(self, value, rowIndex, columnIndex):
+                if suppressFixEvents[0]:
+                    return
+                try:
+                    if int(columnIndex) != 0:
+                        return
+                    rec = self._store["rows"][int(rowIndex)]
+                    rec.fix = bool(value)
+                    RecordConfig(rec)["fix"] = bool(value)
+                    Persist(("The fix now applies to " if rec.fix else
+                             "The fix no longer applies to ") + str(rec.rosterId) + ".")
+                except Exception:
+                    pass
+
+        fixTableModel = _FixTableModel(fixRows)
+        self.TrainDetectionFixTable = JTable(fixTableModel)
+        try:
+            self.TrainDetectionFixTable.setRowHeight(22)
+        except:
+            pass
+        gbc.gridy += 1
+        gbc.weighty = 1.0
+        gbc.fill = GridBagConstraints.BOTH
+        fixRow = Box.createHorizontalBox()
+        fixRow.add(JScrollPane(self.TrainDetectionFixTable))
+        fixRow.add(Box.createHorizontalStrut(10))
+        fnBox = Box.createVerticalBox()
+        fnBox.add(JLabel("Function for the selected entry"))
+        fnBox.add(self.TrainDetectionFixFunction)
+        fnBox.add(Box.createVerticalGlue())
+        fixRow.add(fnBox)
+        panel.add(fixRow, gbc)
+        # ---- Behaviour ----
+        # Shared stores and helpers, defined before any handler uses them.
+        records = {"all": [], "capable": [], "notCapable": []}
+        config = {}
+
+        def RecordConfig(rec):
+            # The configuration record for one roster entry, created on first use.
+            key = str(rec.rosterId).lower()
+            record = config.get(key)
+            if record is None:
+                record = {"rosterId": rec.rosterId, "notCapable": bool(rec.notCapable),
+                          "fix": bool(rec.fix), "function": int(rec.function)}
+                config[key] = record
+            return record
+
+        def Persist(message):
+            if not RCD.SaveConfig(config):
+                self.LblTrainDetectionAction.setText("Could not save; see the system console.")
+                return False
+            self.LblTrainDetectionAction.setText(message)
+            return True
+
+        def SelectedCapable():
+            try:
+                return self.TrainDetectionCapable.getSelectedValue()
+            except:
+                return None
+
+        def SelectedFixRow():
+            try:
+                viewRow = int(self.TrainDetectionFixTable.getSelectedRow())
+            except:
+                return None
+            if viewRow < 0:
+                return None
+            try:
+                modelRow = int(self.TrainDetectionFixTable.convertRowIndexToModel(viewRow))
+                return fixRows["rows"][modelRow]
+            except:
+                return None
+
+        def RefreshLists():
+            def _Fill():
+                try:
+                    capableModel.clear()
+                    notCapableModel.clear()
+                    for rec in records["capable"]:
+                        capableModel.addElement(rec)
+                    for rec in records["notCapable"]:
+                        notCapableModel.addElement(rec)
+                    self.TrainDetectionCapable.repaint()
+                    self.TrainDetectionNotCapable.repaint()
+                except:
+                    pass
+            SwingUtilities.invokeLater(RunnableAdapter(_Fill))
+
+        def RefreshFixTable():
+            def _Fill():
+                try:
+                    suppressFixEvents[0] = True
+                    fixRows["rows"] = list(RCD.FixEntries(records["all"]))
+                    fixTableModel.fireTableDataChanged()
+                    count = len(fixRows["rows"])
+                    marked = len([r for r in fixRows["rows"] if r.fix])
+                    self.LblRailComFixStatus.setText(
+                        "The fix is applied to " + str(marked) + " of " + str(count) +
+                        " RailCom capable roster entry/entries at start-up.")
+                except:
+                    pass
+                finally:
+                    suppressFixEvents[0] = False
+            SwingUtilities.invokeLater(RunnableAdapter(_Fill))
+
+        def OnEnable(e=None):
+            rec = SelectedCapable()
+            if rec is None:
+                self.LblTrainDetectionAction.setText("Select an entry in the left-hand list first.")
+                return
+            if rec.notCapable:
+                self.LblTrainDetectionAction.setText(
+                    "That entry is marked not RailCom capable; clear the mark first.")
+                return
+            if not rec.detectedCapable:
+                self.LblTrainDetectionAction.setText("That decoder does not offer RailCom.")
+                return
+            if rec.storedOn:
+                self.LblTrainDetectionAction.setText(
+                    "RailCom is already switched on for " + str(rec.rosterId) + ".")
+                return
+            if not pomAvailable:
+                self.LblTrainDetectionAction.setText(
+                    "This layout cannot program on main, so RailCom cannot be enabled here.")
+                return
+            mgr = RCD.PomManager()
+            if mgr is None:
+                self.LblTrainDetectionAction.setText("No programming on main available.")
+                return
+            self.LblTrainDetectionAction.setText("Writing CV" + RCD.RC_CV + " to " +
+                                                 str(rec.rosterId) + ", please wait...")
+
+            def _Done(record, ok):
+                def _Apply():
+                    if ok:
+                        self.LblTrainDetectionAction.setText(
+                            "RailCom switched on for " + str(record.rosterId) + ".")
+                        record.storedOn = True
+                        RefreshLists()
+                    else:
+                        self.LblTrainDetectionAction.setText(
+                            "JMRI reported a failure writing to " + str(record.rosterId) + ".")
+                SwingUtilities.invokeLater(RunnableAdapter(_Apply))
+
+            try:
+                RCD.EnableRailCom(rec, mgr, _Done)
+            except Exception as ex:
+                self.LblTrainDetectionAction.setText("Could not write to the decoder: " + str(ex))
+
+        def OnToggle(e=None):
+            # Marks a RailCom capable entry as not RailCom capable, or clears the mark.
+            rec = SelectedCapable()
+            if rec is None:
+                self.LblTrainDetectionAction.setText("Select an entry in the left-hand list first.")
+                return
+            record = RecordConfig(rec)
+            record["notCapable"] = not bool(record.get("notCapable"))
+            rec.notCapable = bool(record["notCapable"])
+            (capable, notCapable) = RCD.SplitEntries(records["all"])
+            records["capable"] = capable
+            records["notCapable"] = notCapable
+            message = ("Marked " + str(rec.rosterId) + " as not RailCom capable." if rec.notCapable
+                       else "Cleared the mark on " + str(rec.rosterId) + ".")
+            if Persist(message):
+                RefreshLists()
+                RefreshFixTable()
+
+        def OnFixSelection(e=None):
+            # Shows the stored function for the newly selected fix entry.
+            rec = SelectedFixRow()
+            if rec is None:
+                return
+            try:
+                suppressFixEvents[0] = True
+                self.TrainDetectionFixFunction.setValue(int(rec.function))
+            except:
+                pass
+            finally:
+                suppressFixEvents[0] = False
+
+        def OnFunctionChanged(e=None):
+            if suppressFixEvents[0]:
+                return
+            rec = SelectedFixRow()
+            if rec is None:
+                return
+            try:
+                value = int(str(self.TrainDetectionFixFunction.getValue()))
+            except:
+                return
+            rec.function = value
+            RecordConfig(rec)["function"] = value
+            Persist("Function for " + str(rec.rosterId) + " set to F" + str(value) + ".")
+
+        def OnRailComFixStartup(e=None):
             want = self.ChkRailComFix.isSelected()
             ok = _EnsureScriptEnabled("RailComFix.py", want)
             actual = _IsScriptEnabled("RailComFix.py")
@@ -4267,64 +4525,80 @@ class TASSetupFrame(jmri.util.JmriJFrame):
             self.ChkRailComFix.setSelected(actual)
             if not ok:
                 LogWarn("Could not change Start-Up for RailComFix.py", alsoDialog=True)
-        self.ChkRailComFix.addActionListener(OnRailComFix)
-        railRow.add(self.ChkRailComFix)
-        panel.add(railRow, gbc)
 
-        gbc.gridy += 1
-        railCfgRow = Box.createHorizontalBox()
-        railCfgRow.add(JLabel("Decoder addresses (; or , separated):"))
-        railCfgRow.add(Box.createHorizontalStrut(6))
-        try:
-            (railInitFunc, railInitAddrs) = _RailComFixLoad()
-        except:
-            railInitFunc = 4
-            railInitAddrs = [1323, 1824]
-        self.TxtRailComFixAddresses = JTextField(";".join([str(a) for a in railInitAddrs]), 20)
-        railCfgRow.add(self.TxtRailComFixAddresses)
-        railCfgRow.add(Box.createHorizontalStrut(12))
-        railCfgRow.add(JLabel("Function:"))
-        railCfgRow.add(Box.createHorizontalStrut(6))
-        try:
-            self.SpnRailComFixFunction = JSpinner(SpinnerNumberModel(int(railInitFunc), 0, 28, 1))
-        except:
-            self.SpnRailComFixFunction = JSpinner(SpinnerNumberModel(4, 0, 28, 1))
-        railCfgRow.add(self.SpnRailComFixFunction)
-        railCfgRow.add(Box.createHorizontalStrut(12))
-        self.BtnRailComFixSave = JButton("Save RailCom fix")
-        railCfgRow.add(self.BtnRailComFixSave)
-        panel.add(railCfgRow, gbc)
+        class _FixSelectionHook(ListSelectionListener):
+            def valueChanged(innerSelf, e):
+                try:
+                    if e.getValueIsAdjusting():
+                        return
+                except:
+                    pass
+                OnFixSelection()
 
-        gbc.gridy += 1
-        self.LblRailComFixError = JLabel("")
-        ApplyTheme(self.LblRailComFixError)
-        panel.add(self.LblRailComFixError, gbc)
-
-        def OnRailComFixSave(e=None):
-            try:
-                funcVal = int(str(self.SpnRailComFixFunction.getValue()))
-            except:
-                funcVal = 4
-            addrVal = _RailComFixParseAddresses(self.TxtRailComFixAddresses.getText())
-            if len(addrVal) == 0:
-                self.LblRailComFixError.setText("Enter at least one address 1-9999.")
-                return
-            if _RailComFixSave(funcVal, addrVal):
-                self.LblRailComFixError.setText("Saved.")
-            else:
-                self.LblRailComFixError.setText("Save failed; see system console.")
         try:
-            self.BtnRailComFixSave.addActionListener(OnRailComFixSave)
+            self.BtnRailComEnable.addActionListener(OnEnable)
+            self.BtnRailComToggle.addActionListener(OnToggle)
+            self.ChkRailComFix.addActionListener(OnRailComFixStartup)
+            self.TrainDetectionFixFunction.addChangeListener(OnFunctionChanged)
+            self.TrainDetectionFixTable.getSelectionModel().addListSelectionListener(
+                _FixSelectionHook())
         except:
             pass
 
         if not ScriptExists("RailComFix.py"):
             self.ChkRailComFix.setSelected(False)
             self.ChkRailComFix.setEnabled(False)
-            self.TxtRailComFixAddresses.setEnabled(False)
-            self.SpnRailComFixFunction.setEnabled(False)
-            self.BtnRailComFixSave.setEnabled(False)
-            self.LblRailComFixError.setText("Missing script: RailComFix.py")
+            self.LblRailComFixStatus.setText("Missing script: RailComFix.py")
+
+        # ---- Populate from the roster on a worker thread ----
+        def _Load():
+            try:
+                entries = RCD.ScanRoster()
+                loaded = RCD.LoadConfig()
+                (capable, notCapable) = RCD.SplitEntries(entries)
+            except Exception as ex:
+                def _Fail():
+                    self.LblTrainDetectionStatus.setText("Could not read the roster: " + str(ex))
+                SwingUtilities.invokeLater(RunnableAdapter(_Fail))
+                return
+
+            def _Apply():
+                records["all"] = entries
+                records["capable"] = capable
+                records["notCapable"] = notCapable
+                config.clear()
+                config.update(loaded)
+                summary = (str(len(capable)) + " RailCom capable, " +
+                           str(len(notCapable)) + " not RailCom capable. ")
+                summary = summary + ("Programming on main is available." if pomAvailable
+                                     else "This layout cannot program on main.")
+                self.LblTrainDetectionStatus.setText(summary)
+                if not pomAvailable:
+                    self.BtnRailComEnable.setEnabled(False)
+                capableModel.clear()
+                notCapableModel.clear()
+                for rec in capable:
+                    capableModel.addElement(rec)
+                for rec in notCapable:
+                    notCapableModel.addElement(rec)
+                self.TrainDetectionCapable.repaint()
+                self.TrainDetectionNotCapable.repaint()
+                suppressFixEvents[0] = True
+                try:
+                    fixRows["rows"] = list(RCD.FixEntries(entries))
+                    fixTableModel.fireTableDataChanged()
+                    marked = len([r for r in fixRows["rows"] if r.fix])
+                    self.LblRailComFixStatus.setText(
+                        "The fix is applied to " + str(marked) + " of " +
+                        str(len(fixRows["rows"])) +
+                        " RailCom capable roster entry/entries at start-up.")
+                finally:
+                    suppressFixEvents[0] = False
+            SwingUtilities.invokeLater(RunnableAdapter(_Apply))
+
+        th = java.lang.Thread(RunnableAdapter(_Load))
+        th.setDaemon(True)
+        th.start()
         return panel
 
     def BuildOrientationTab(self):

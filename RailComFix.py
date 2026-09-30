@@ -12,12 +12,19 @@
 # If not, see <https://www.gnu.org/licenses/>.
 #
 # RailComFix.py
-# Optional startup script. Disabled by default; enable in TASSetup.py General tab.
-# Sends a spurious function-off command to listed decoder addresses so faulty
-# decoders report on RailCom. Configuration is in profile:jython/config/railcomfix.tsv
-# (tab separated, header: function<TAB>addresses, addresses separated by ";").
-# The script runs once at start-up. Manual trigger is via Show(), called by the
-# main menu through RunExternalScript.
+# Optional startup script. Disabled by default; enable in TASSetup.py Train detection tab.
+# Applies the RailCom initialisation fix: for each roster entry marked for the fix, a
+# brief function-off command is sent to that entry's DCC address, so the decoder is
+# addressed by the command station and then broadcasts on RailCom. The throttle is
+# released straight afterwards and no speed setting is touched.
+#
+# Which entries get the fix, and which function is sent to each, are held in
+# profile:jython/config/railcomfix.tsv and edited in TASSetup.py. Entry selection and
+# RailCom capability are decided by RailComDetect.py.
+#
+# The script also runs when started manually through Scripting, Run script, so the fix
+# can be applied without restarting JMRI.
+#
 # JMRI 5.16 / Jython 2.7. ASCII only. Thread-safe; Swing access on the EDT.
 #
 # NAMING RULE FOR THIS FILE
@@ -29,21 +36,9 @@
 # file therefore starts with RAILCOMFIX_ or _RailComFix, and objects used by
 # functions are bound as default arguments so no later script can redirect them.
 
-import os
-import csv
 import jmri
 from java.lang import Runnable, Thread
-from java.awt import BorderLayout, FlowLayout
-from javax.swing import JButton, JDialog, JLabel, JPanel, JTextField
-from javax.swing import JSpinner, SpinnerNumberModel, SwingUtilities
-
-RAILCOMFIX_CONFIG_PROFILE_PATH = "profile:jython/config/railcomfix.tsv"
-RAILCOMFIX_DEFAULT_FUNCTION = 4
-RAILCOMFIX_DEFAULT_ADDRESSES = [1323, 1824]
-RAILCOMFIX_MIN_ADDRESS = 1
-RAILCOMFIX_MAX_ADDRESS = 9999
-RAILCOMFIX_MIN_FUNCTION = 0
-RAILCOMFIX_MAX_FUNCTION = 28
+import RailComDetect as RCD
 
 
 def _RailComFixLog(msg):
@@ -53,291 +48,92 @@ def _RailComFixLog(msg):
         pass
 
 
-def RAILCOMFIX_GetConfigPath():
-    try:
-        return jmri.util.FileUtil.getExternalFilename(RAILCOMFIX_CONFIG_PROFILE_PATH)
-    except Exception:
-        return os.path.join("jython", "config", "railcomfix.tsv")
-
-
-def RAILCOMFIX_ParseAddresses(text):
-    result = []
-    try:
-        parts = str(text).replace(";", ",").split(",")
-    except Exception:
-        return result
-    for part in parts:
-        s = str(part).strip()
-        if s == "":
-            continue
+def _RailComFixCollect(_detect=RCD):
+    # Roster entries the fix applies to, as (address, longAddress, function, rosterId).
+    targets = []
+    for rec in _detect.FixEntries(_detect.ScanRoster()):
         try:
-            value = int(s)
+            targets.append((int(str(rec.address).strip()), bool(rec.longAddress),
+                            int(rec.function), str(rec.rosterId)))
         except Exception:
             continue
-        if value >= RAILCOMFIX_MIN_ADDRESS and value <= RAILCOMFIX_MAX_ADDRESS:
-            if value not in result:
-                result.append(value)
-    return result
-
-
-def RAILCOMFIX_LoadConfig():
-    function = RAILCOMFIX_DEFAULT_FUNCTION
-    addresses = list(RAILCOMFIX_DEFAULT_ADDRESSES)
-    path = RAILCOMFIX_GetConfigPath()
-    try:
-        if not os.path.isfile(path):
-            return (function, addresses)
-        fh = open(path, "r")
-        try:
-            reader = csv.DictReader(fh, delimiter="\t")
-            for row in reader:
-                try:
-                    rawFunc = str(row.get("function", "")).strip()
-                    if rawFunc != "":
-                        parsed = int(rawFunc)
-                        if parsed >= RAILCOMFIX_MIN_FUNCTION and parsed <= RAILCOMFIX_MAX_FUNCTION:
-                            function = parsed
-                except Exception:
-                    pass
-                try:
-                    rawAddr = str(row.get("addresses", "")).strip()
-                    if rawAddr != "":
-                        parsedAddrs = RAILCOMFIX_ParseAddresses(rawAddr.replace(";", ","))
-                        if len(parsedAddrs) > 0:
-                            addresses = parsedAddrs
-                except Exception:
-                    pass
-                break
-        finally:
-            fh.close()
-    except Exception as ex:
-        _RailComFixLog("Could not load RailCom fix configuration: " + str(ex))
-    return (function, addresses)
-
-
-def RAILCOMFIX_SaveConfig(function, addresses):
-    try:
-        funcNum = int(function)
-    except Exception:
-        funcNum = RAILCOMFIX_DEFAULT_FUNCTION
-    if funcNum < RAILCOMFIX_MIN_FUNCTION or funcNum > RAILCOMFIX_MAX_FUNCTION:
-        funcNum = RAILCOMFIX_DEFAULT_FUNCTION
-    clean = []
-    try:
-        for addr in list(addresses):
-            try:
-                value = int(str(addr).strip())
-            except Exception:
-                continue
-            if value >= RAILCOMFIX_MIN_ADDRESS and value <= RAILCOMFIX_MAX_ADDRESS:
-                if value not in clean:
-                    clean.append(value)
-    except Exception:
-        pass
-    path = RAILCOMFIX_GetConfigPath()
-    parent = os.path.dirname(path)
-    try:
-        if parent and not os.path.isdir(parent):
-            os.makedirs(parent)
-    except Exception as ex:
-        _RailComFixLog("Could not create RailCom fix config directory: " + str(ex))
-        return False
-    tempPath = path + ".tmp"
-    try:
-        fh = open(tempPath, "w")
-        try:
-            writer = csv.DictWriter(fh, fieldnames=["function", "addresses"],
-                                    delimiter="\t", lineterminator="\n",
-                                    extrasaction="ignore")
-            writer.writeheader()
-            writer.writerow({"function": str(funcNum),
-                             "addresses": ";".join([str(a) for a in clean])})
-        finally:
-            fh.close()
-        try:
-            if os.path.isfile(path):
-                os.remove(path)
-            os.rename(tempPath, path)
-        except Exception as ex:
-            _RailComFixLog("Could not replace RailCom fix configuration: " + str(ex))
-            return False
-    except Exception as ex:
-        _RailComFixLog("Could not save RailCom fix configuration: " + str(ex))
-        return False
-    return True
-
-
-def RAILCOMFIX_ApplyAll(_log=_RailComFixLog, _loader=RAILCOMFIX_LoadConfig):
-    try:
-        (function, addresses) = _loader()
-    except Exception as ex:
-        _log("RailCom fix load failed: " + str(ex))
-        return False
-    if len(addresses) == 0:
-        _log("RailCom fix: no addresses configured; nothing sent")
-        return True
-    worker = _RailComFixWorker(list(addresses), int(function))
-    worker.setName("RailCom fix")
-    worker.start()
-    return True
+    return targets
 
 
 class _RailComFixWorker(jmri.jmrit.automat.AbstractAutomaton):
-    def __init__(self, addresses, function):
+    # Sends the function-off command to each address in turn. Each throttle is released
+    # immediately after its command, so no throttle is held.
+    def __init__(self, targets):
         jmri.jmrit.automat.AbstractAutomaton.__init__(self)
-        self._addrs = list(addresses)
-        try:
-            self._func = int(function)
-        except Exception:
-            self._func = RAILCOMFIX_DEFAULT_FUNCTION
+        self._targets = list(targets)
 
     def init(self):
         pass
 
     def handle(self):
-        for addr in list(self._addrs):
+        for (address, longAddress, function, rosterId) in list(self._targets):
+            throttle = None
             try:
-                thr = self.getThrottle(int(addr), True)
+                throttle = self.getThrottle(int(address), bool(longAddress))
             except Exception as ex:
-                _RailComFixLog("RailCom fix: throttle not acquired for " + str(addr) + ": " + str(ex))
+                _RailComFixLog("RailCom fix: no throttle for " + rosterId + " (address " +
+                               str(address) + "): " + str(ex))
                 continue
-            if thr is None:
-                _RailComFixLog("RailCom fix: throttle not acquired for " + str(addr))
+            if throttle is None:
+                _RailComFixLog("RailCom fix: no throttle acquired for " + rosterId +
+                               " (address " + str(address) + ")")
                 continue
             try:
-                thr.setFunction(int(self._func), False)
-                _RailComFixLog("RailCom fix: sent F" + str(int(self._func)) + " off to " + str(addr))
+                throttle.setFunction(int(function), False)
+                _RailComFixLog("RailCom fix: sent F" + str(int(function)) + " off to " +
+                               rosterId + " (address " + str(address) + ")")
             except Exception as ex:
-                _RailComFixLog("RailCom fix: send failed for " + str(addr) + ": " + str(ex))
+                _RailComFixLog("RailCom fix: command failed for " + rosterId + ": " + str(ex))
             try:
-                thr.release(None)
-            except Exception:
-                pass
+                throttle.release(None)
+            except Exception as ex:
+                _RailComFixLog("RailCom fix: could not release the throttle for " +
+                               rosterId + ": " + str(ex))
         return False
 
 
-class _RailComFixApplyTask(Runnable):
+def _RailComFixApply(_detect=RCD, _log=_RailComFixLog):
+    # Applies the fix now, on a worker thread, and returns the number of entries used.
+    targets = []
+    try:
+        targets = _RailComFixCollect(_detect)
+    except Exception as ex:
+        _log("RailCom fix: could not read the roster: " + str(ex))
+        return 0
+    if len(targets) == 0:
+        _log("RailCom fix: no roster entries are marked for the fix")
+        return 0
+    worker = _RailComFixWorker(targets)
+    worker.setName("RailCom fix")
+    worker.start()
+    _log("RailCom fix: applying to " + str(len(targets)) + " roster entry/entries")
+    return len(targets)
+
+
+def _RailComFixTask(Runnable):
     def run(self):
         try:
-            RAILCOMFIX_ApplyAll()
+            _RailComFixApply()
         except Exception as ex:
-            _RailComFixLog("RailCom fix apply failed: " + str(ex))
+            _RailComFixLog("RailCom fix could not be applied: " + str(ex))
 
 
 def _RailComFixStart():
-    th = Thread(_RailComFixApplyTask())
+    # Run on a background thread so the JMRI start-up action list is not held up.
+    th = Thread(_RailComFixTask())
     th.setDaemon(True)
     th.start()
-
-
-def Show():
-    try:
-        (function, addresses) = RAILCOMFIX_LoadConfig()
-    except Exception:
-        function = RAILCOMFIX_DEFAULT_FUNCTION
-        addresses = list(RAILCOMFIX_DEFAULT_ADDRESSES)
-
-    def _BuildAndShow(_func=function, _addrs=list(addresses)):
-        try:
-            import TASIcon
-        except Exception:
-            TASIcon = None
-        dlg = JDialog(None, "RailCom fix", False)
-        try:
-            if TASIcon is not None:
-                TASIcon.SetFrameClockIcon(dlg, 32)
-        except Exception:
-            pass
-        dlg.setLayout(BorderLayout(8, 8))
-        form = JPanel(FlowLayout(FlowLayout.LEFT, 8, 8))
-        form.add(JLabel("Addresses (separated by ; or ,):"))
-        addrField = JTextField(";".join([str(a) for a in _addrs]), 20)
-        form.add(addrField)
-        form.add(JLabel("Function:"))
-        funcModel = SpinnerNumberModel(int(_func), RAILCOMFIX_MIN_FUNCTION,
-                                      RAILCOMFIX_MAX_FUNCTION, 1)
-        funcSpinner = JSpinner(funcModel)
-        form.add(funcSpinner)
-        dlg.add(form, BorderLayout.CENTER)
-        status = JLabel("Sends function-off once per address, then releases the throttle.")
-        btnPanel = JPanel(FlowLayout(FlowLayout.RIGHT, 8, 8))
-        applyBtn = JButton("Send now")
-        saveBtn = JButton("Save")
-        closeBtn = JButton("Close")
-        btnPanel.add(status)
-        btnPanel.add(applyBtn)
-        btnPanel.add(saveBtn)
-        btnPanel.add(closeBtn)
-        dlg.add(btnPanel, BorderLayout.SOUTH)
-
-        def _ReadDialog():
-            try:
-                funcVal = int(str(funcSpinner.getValue()))
-            except Exception:
-                funcVal = RAILCOMFIX_DEFAULT_FUNCTION
-            addrVal = RAILCOMFIX_ParseAddresses(addrField.getText())
-            return (funcVal, addrVal)
-
-        def OnApply(e=None, _field=addrField, _spinner=funcSpinner, _status=status):
-            try:
-                (funcVal, addrVal) = _ReadDialog()
-                if len(addrVal) == 0:
-                    _status.setText("Enter at least one address 1-9999.")
-                    return
-                ok = RAILCOMFIX_ApplyAll()
-                if ok:
-                    _status.setText("Sent F" + str(funcVal) + " off to " + str(len(addrVal)) + " address(es).")
-                else:
-                    _status.setText("Send failed; see system console.")
-            except Exception as ex:
-                try:
-                    _status.setText("Send failed: " + str(ex))
-                except Exception:
-                    pass
-
-        def OnSave(e=None, _field=addrField, _spinner=funcSpinner, _status=status):
-            try:
-                (funcVal, addrVal) = _ReadDialog()
-                if len(addrVal) == 0:
-                    _status.setText("Enter at least one address 1-9999.")
-                    return
-                if RAILCOMFIX_SaveConfig(funcVal, addrVal):
-                    _status.setText("Saved.")
-                else:
-                    _status.setText("Save failed; see system console.")
-            except Exception as ex:
-                try:
-                    _status.setText("Save failed: " + str(ex))
-                except Exception:
-                    pass
-
-        def OnClose(e=None, _dlg=dlg):
-            try:
-                _dlg.setVisible(False)
-                _dlg.dispose()
-            except Exception:
-                pass
-
-        applyBtn.addActionListener(OnApply)
-        saveBtn.addActionListener(OnSave)
-        closeBtn.addActionListener(OnClose)
-        dlg.pack()
-        try:
-            dlg.setLocationRelativeTo(None)
-        except Exception:
-            pass
-        dlg.setVisible(True)
-
-    try:
-        SwingUtilities.invokeLater(_BuildAndShow)
-    except Exception:
-        _BuildAndShow()
 
 
 try:
     _RailComFixStart()
 except Exception as ex:
     try:
-        print("[TAS] RailCom fix auto-start failed: " + str(ex))
+        print("[TAS] RailCom fix could not start: " + str(ex))
     except Exception:
         pass
