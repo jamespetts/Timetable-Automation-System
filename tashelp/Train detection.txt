@@ -1,13 +1,46 @@
 Train detection
 
-RailCom fix
+This tab lists the roster and decides, for each entry, whether its decoder supports RailCom and whether RailCom is switched on. Nothing is listed by name. The decision is taken from the JMRI decoder definition for the entry's decoder family and model, so a decoder this system has not seen before is handled the same way as a known one.
 
-This is an optional startup script. It is off by default. Enable it in Setup, Train detection tab, with "Send RailCom fix at start-up (requires restart)". Restart JMRI after changing the setting.
+Upper half: the two lists
 
-When enabled, the script sends a function-off command once to each listed decoder address each time JMRI starts, then releases the throttle. This prompts faulty decoders to report on RailCom. The command is spurious: it sets the selected function off even when it is already off.
+The upper pane is split in two. RailCom capable entries are on the left, the rest on the right. Each entry shows its roster ID and its DCC address.
 
-Decoder addresses and the function number are stored in profile:jython/config/railcomfix.tsv (tab separated, header: function and addresses, addresses separated by ";" or ","). Edit the values in Setup, Train detection tab, then choose "Save RailCom fix". The default function is 4. Valid functions are 0 to 28. Valid addresses are 1 to 9999. The default addresses are 1323 and 1824.
+The colour of an entry in the left-hand list tells you its state.
 
-To send the command manually without restarting, run RailComFix.py with Scripting, Run Script. The script sends the command on load and then opens the RailCom fix window. The window shows the current addresses and function, with "Send now", "Save" and "Close" buttons. "Send now" sends the command without saving. "Save" writes the configuration file without sending.
+* Dark blue: the decoder supports RailCom, RailCom is switched off, and this layout can program on main, so the entry can be enabled from here.
+* Black: the decoder supports RailCom but RailCom is switched off and this layout cannot program on main, or you have marked the entry as not RailCom capable.
+* Dark grey: the decoder does not support RailCom at all. These entries are on the right.
+* Near black: RailCom is switched on for this entry.
 
-The script writes its findings to the system console, each line starting with [TAS].
+Enabling RailCom
+
+Select an entry in the left-hand list and choose "Enable RailCom on selected". This writes the RailCom switch through programming on main, so the entry must be on the track with power applied. JMRI does not report a read of the present value during a programming on main write, so the value written is the decoder definition's own default for that switch with RailCom set on. The entry's roster values are not changed by this; the decoder itself is written.
+
+Programming on main support is tested when the tab opens. If your layout cannot program on main, the enable button is disabled and RailCom must be enabled in DecoderPro instead.
+
+Marking an entry as not RailCom capable
+
+Some decoders report RailCom capability that the layout does not use, or a decoder reports itself as RailCom capable when no RailCom detector is fitted. Select the entry and choose "Mark selected as not RailCom capable". The entry moves to the right-hand list and is treated as having no RailCom, including by the initialisation fix below. Choose the same command again to clear the mark. This is stored in the configuration file, so it survives a restart.
+
+Lower half: the RailCom initialisation fix
+
+Some RailCom decoders have an error in that they will not broadcast their address until they have been addressed by the command station. This enables a workaround to this error by sending a brief command to the decoder on startup. Choose to which roster entries to apply this fix. You can choose a different function for each.
+
+The table repeats the roster entries whose RailCom is fully switched on. Tick "Apply fix" for each entry that needs it. Select a row and set "Function for the selected entry" to choose which function is sent to that entry; the input follows whichever row is selected. The default is F4.
+
+The fix is optional and off by default. Tick "Send the fix at start-up (requires restart)" to have it applied each time JMRI starts. Restart JMRI after changing this. You can also apply the fix at any time by running RailComFix.py with Scripting, Run script.
+
+For each entry ticked, the fix acquires a throttle for that entry's DCC address, sends one function-off command, and releases the throttle. No speed setting is touched and no function is left on.
+
+Configuration file
+
+Entry selections, marks, and functions are stored in profile:jython/config/railcomfix.tsv, which is tab separated with the columns roster_id, not_capable, fix and function. It is written each time you change a setting.
+
+How capability is decided
+
+Across all 2112 decoder definitions shipped with JMRI, every decoder that offers RailCom offers an on and off switch on CV 29 at bit 3. This is true for every brand found, and it is the bit the NMRA specification gives to RailCom. Other CVs carry RailCom channel selection, quality of service and vendor extras, which change behaviour but do not switch RailCom on, so they are not used. CV 12 and CV 127 carry "CTC/Railcommand Power Conversion", which matches a RailCom name search but is unrelated to RailCom, so the CV number is checked as well as the name.
+
+Whether RailCom is on is read from the value stored for the entry, not from the decoder definition default, so an entry that has been programmed is reported as it is.
+
+All findings are written to the system console, each line starting with [TAS].
