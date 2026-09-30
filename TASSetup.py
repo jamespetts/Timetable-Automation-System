@@ -4283,6 +4283,9 @@ class TASSetupFrame(jmri.util.JmriJFrame):
         # whichever entry is selected.
         fixRows = {"rows": []}
         suppressFixEvents = [False]
+        # One function input, following whichever fix entry is selected.
+        self.TrainDetectionFixFunction = JSpinner(SpinnerNumberModel(
+            RCD.RC_FUNCTION_DEFAULT, RCD.RC_FUNCTION_MIN, RCD.RC_FUNCTION_MAX, 1))
 
         class _FixTableModel(AbstractTableModel):
             COLUMNS = ["Apply fix", "Roster entry", "DCC address"]
@@ -4355,6 +4358,23 @@ class TASSetupFrame(jmri.util.JmriJFrame):
         fnBox.add(Box.createVerticalGlue())
         fixRow.add(fnBox)
         panel.add(fixRow, gbc)
+
+        # ---- Start-up option and fix status ----
+        gbc.gridy += 1
+        gbc.weighty = 0.0
+        gbc.fill = GridBagConstraints.HORIZONTAL
+        startupRow = Box.createHorizontalBox()
+        self.ChkRailComFix = JCheckBox("Send the RailCom fix at start-up (requires restart)")
+        self.ChkRailComFix.setOpaque(False)
+        self.ChkRailComFix.setSelected(self.InitialRailComFix)
+        startupRow.add(self.ChkRailComFix)
+        panel.add(startupRow, gbc)
+
+        gbc.gridy += 1
+        self.LblRailComFixStatus = JLabel("")
+        ApplyTheme(self.LblRailComFixStatus)
+        panel.add(self.LblRailComFixStatus, gbc)
+
         # ---- Behaviour ----
         # Shared stores and helpers, defined before any handler uses them.
         records = {"all": [], "capable": [], "notCapable": []}
