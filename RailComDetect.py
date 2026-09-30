@@ -180,44 +180,60 @@ def _RcDecoderVariables(family, model):
     # and model, with XInclude resolved. Cached per family and model, because the roster
     # commonly holds many entries of one decoder.
     #
-    # DecoderFile.getModelElement returns only the <model> element, and DecoderFile keeps
-    # the whole <decoder> element private, so the definition file is read here instead.
-    # jmri.jmrit.XmlFile uses JMRI's SAXBuilder, which has XInclude enabled and resolves
-    # the http://jmri.org/xml/decoders/... includes locally, so no include handling is
-    # needed here. DecoderFile.getFileName and DecoderFile.fileLocation give the path.
+    # Two JMRI facts matter here. DecoderFile holds the <model> element, not the whole
+    # <decoder> element, and exposes no accessor for the definition file's variables, so
+    # the definition file is read here instead. jmri.jmrit.XmlFile uses JMRI's SAXBuilder,
+    # which has XInclude enabled and resolves the http://jmri.org/xml/decoders/...
+    # includes locally, so no include handling is needed here.
     key = (str(family), str(model))
     if key in _DecoderFileCache:
         return _DecoderFileCache[key]
     result = []
     index = _RcDecoderFiles()
     if index is None:
+        RCLog("RailCom: no decoder index, so no decoder definitions can be read")
         _DecoderFileCache[key] = result
         return result
     fileName = None
     try:
-        matches = index.matchingDecoderList(str(family) + ":" + str(model))
-        seq = list(matches) if matches else []
-        if len(seq) == 0:
-            matches = index.matchingDecoderList(str(family), str(model), "", "", "", "")
-            seq = list(matches) if matches else []
+        # The six argument form matches on mfg, family, manufacturer ID, version ID,
+        # product ID and model, with null for "any". The one argument form matches on
+        # programming mode, so it must not be used here.
+        matches = index.matchingDecoderList(None, str(family), None, None, None, str(model))
+        seq = list(matches) if matches is not None else []
+        if len(seq) == 0 and str(model) != str(family):
+            # Some roster entries name the family as the model.
+            matches = index.matchingDecoderList(None, str(family), None, None, None, None)
+            seq = list(matches) if matches is not None else []
         if len(seq) > 0:
             fileName = str(seq[0].getFileName() or "")
     except Exception as ex:
-        RCLog("Could not look up the decoder definition for " + str(family) + " " +
-              str(model) + ": " + str(ex))
+        RCLog("RailCom: could not look up the decoder definition for " + str(family) +
+              " " + str(model) + ": " + str(ex))
         _DecoderFileCache[key] = result
         return result
-    if fileName == "":
+    if not fileName:
+        RCLog("RailCom: no decoder definition matches family '" + str(family) +
+              "' with model '" + str(model) + "'")
         _DecoderFileCache[key] = result
         return result
-    path = os.path.join(str(_DecoderFile.fileLocation), fileName)
+    # DecoderFile.fileLocation is relative to the JMRI xml folder, so it must be joined
+    # to XmlFile.xmlDir() to give a usable path.
+    try:
+        path = os.path.join(str(jmri.jmrit.XmlFile.xmlDir()),
+                            str(_DecoderFile.fileLocation), fileName)
+    except Exception as ex:
+        RCLog("RailCom: could not build a path for " + fileName + ": " + str(ex))
+        _DecoderFileCache[key] = result
+        return result
     try:
         if not os.path.isfile(path):
+            RCLog("RailCom: decoder definition file not found: " + str(path))
             _DecoderFileCache[key] = result
             return result
         element = jmri.jmrit.XmlFile().rootFromFile(_JavaFile(path))
     except Exception as ex:
-        RCLog("Could not read the decoder definition " + fileName + ": " + str(ex))
+        RCLog("RailCom: could not read the decoder definition " + fileName + ": " + str(ex))
         _DecoderFileCache[key] = result
         return result
     try:
@@ -227,7 +243,9 @@ def _RcDecoderVariables(family, model):
                 for var in variables.getChildren("variable"):
                     result.append(var)
     except Exception as ex:
-        RCLog("Could not read variables from " + fileName + ": " + str(ex))
+        RCLog("RailCom: could not read variables from " + fileName + ": " + str(ex))
+    if len(result) == 0:
+        RCLog("RailCom: no variables read from " + fileName)
     _DecoderFileCache[key] = result
     return result
 
@@ -342,10 +360,14 @@ def ScanRoster():
         return entries
     try:
         allEntries = roster.getAllEntries()
-        seq = list(allEntries) if allEntries else []
+        if allEntries is None:
+            RCLog("RailCom: the roster returned no entry list")
+            return entries
+        seq = list(allEntries)
     except Exception as ex:
-        RCLog("Could not list roster entries: " + str(ex))
+        RCLog("RailCom: could not list the roster entries: " + str(ex))
         return entries
+    RCLog("RailCom: scanning " + str(len(seq)) + " roster entry/entries")
     for entry in seq:
         try:
             rec = RcEntry()
@@ -381,7 +403,10 @@ def ScanRoster():
                 rec.function = int(saved.get("function", RC_FUNCTION_DEFAULT))
             entries.append(rec)
         except Exception as ex:
-            RCLog("Skipped a roster entry: " + str(ex))
+            RCLog("RailCom: skipped a roster entry: " + str(ex))
+    capable = [r for r in entries if r.detectedCapable]
+    RCLog("RailCom: " + str(len(capable)) + " of " + str(len(entries)) +
+          " roster entries have a decoder definition offering RailCom")
     return entries
 
 
@@ -428,17 +453,34 @@ def PomManager():
 
 
 def PomAvailable():
-    # True when this layout can program on main. The user needs this to know whether
-    # RailCom can be enabled from the setup window.
-    if PomManager() is None:
+    # True when this layout can program on main. Tested by asking the
+    # AddressedProgrammerManager for a real addressed programmer and checking that it
+    # writes in direct mode, because that is exactly what enabling RailCom needs.
+    mgr = PomManager()
+    if mgr is None:
+        RCLog("RailCom: no programming on main is available on this layout")
+        return False
+    prog = None
+    try:
+        prog = mgr.getAddressedProgrammer(False, 0)
+    except Exception as ex:
+        RCLog("RailCom: could not obtain a programming on main programmer: " + str(ex))
+    if prog is None:
+        RCLog("RailCom: programming on main returned no programmer")
         return False
     try:
-        prog = jmri.InstanceManager.getNullableDefault(jmri.GlobalProgrammerManager).getGlobalProgrammer()
-        if prog is None:
-            return True
-        return prog.getMode() == jmri.ProgrammingMode.DIRECTMODE
-    except Exception:
-        return True
+        if prog.getMode() != jmri.ProgrammingMode.DIRECTMODE:
+            RCLog("RailCom: programming on main is in mode " + str(prog.getMode()) +
+                  " rather than direct mode")
+            return False
+        if not prog.getCanWrite():
+            RCLog("RailCom: programming on main cannot write")
+            return False
+    except Exception as ex:
+        RCLog("RailCom: could not read the programming on main programmer: " + str(ex))
+        return False
+    RCLog("RailCom: programming on main is available")
+    return True
 
 
 class _RcPomListener(jmri.ProgListener):
