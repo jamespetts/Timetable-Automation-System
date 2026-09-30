@@ -1,0 +1,13 @@
+Train detection
+
+RailCom fix
+
+This is an optional startup script. It is off by default. Enable it in Setup, Train detection tab, with "Send RailCom fix at start-up (requires restart)". Restart JMRI after changing the setting.
+
+When enabled, the script sends a function-off command once to each listed decoder address each time JMRI starts, then releases the throttle. This prompts faulty decoders to report on RailCom. The command is spurious: it sets the selected function off even when it is already off.
+
+Decoder addresses and the function number are stored in profile:jython/config/railcomfix.tsv (tab separated, header: function and addresses, addresses separated by ";" or ","). Edit the values in Setup, Train detection tab, then choose "Save RailCom fix". The default function is 4. Valid functions are 0 to 28. Valid addresses are 1 to 9999. The default addresses are 1323 and 1824.
+
+To send the command manually without restarting, run RailComFix.py with Scripting, Run Script. The script sends the command on load and then opens the RailCom fix window. The window shows the current addresses and function, with "Send now", "Save" and "Close" buttons. "Send now" sends the command without saving. "Save" writes the configuration file without sending.
+
+The script writes its findings to the system console, each line starting with [TAS].

@@ -677,6 +677,113 @@ def IsFlickerMonitorEnabled():
 def IsDccPowerOnStartEnabled():
     return _IsScriptEnabled("DccPowerOnStart.py")
 
+def IsRailComFixEnabled():
+    return _IsScriptEnabled("RailComFix.py")
+
+def _RailComFixConfigPath():
+    try:
+        return FileUtil.getExternalFilename("profile:jython/config/railcomfix.tsv")
+    except:
+        return os.path.join("jython", "config", "railcomfix.tsv")
+
+def _RailComFixParseAddresses(text):
+    result = []
+    try:
+        parts = str(text).replace(";", ",").split(",")
+    except:
+        return result
+    for part in parts:
+        s = str(part).strip()
+        if s == "":
+            continue
+        try:
+            value = int(s)
+        except:
+            continue
+        if value >= 1 and value <= 9999:
+            if value not in result:
+                result.append(value)
+    return result
+
+def _RailComFixLoad():
+    funcNum = 4
+    addrs = [1323, 1824]
+    try:
+        path = _RailComFixConfigPath()
+        if not os.path.isfile(path):
+            return (funcNum, addrs)
+        fh = open(path, "r")
+        try:
+            reader = csv.DictReader(fh, delimiter="\t")
+            for row in reader:
+                try:
+                    rawFunc = str(row.get("function", "")).strip()
+                    if rawFunc != "":
+                        parsed = int(rawFunc)
+                        if parsed >= 0 and parsed <= 28:
+                            funcNum = parsed
+                except:
+                    pass
+                try:
+                    rawAddr = str(row.get("addresses", "")).strip()
+                    if rawAddr != "":
+                        parsedAddrs = _RailComFixParseAddresses(rawAddr)
+                        if len(parsedAddrs) > 0:
+                            addrs = parsedAddrs
+                except:
+                    pass
+                break
+        finally:
+            fh.close()
+    except:
+        pass
+    return (funcNum, addrs)
+
+def _RailComFixSave(funcNum, addrs):
+    try:
+        funcVal = int(funcNum)
+    except:
+        return False
+    if funcVal < 0 or funcVal > 28:
+        return False
+    clean = []
+    try:
+        for addr in list(addrs):
+            try:
+                value = int(str(addr).strip())
+            except:
+                continue
+            if value >= 1 and value <= 9999:
+                if value not in clean:
+                    clean.append(value)
+    except:
+        pass
+    if len(clean) == 0:
+        return False
+    try:
+        path = _RailComFixConfigPath()
+        parent = os.path.dirname(path)
+        if parent and not os.path.isdir(parent):
+            os.makedirs(parent)
+        tempPath = path + ".tmp"
+        fh = open(tempPath, "w")
+        try:
+            writer = csv.DictWriter(fh, fieldnames=["function", "addresses"],
+                                    delimiter="\t", lineterminator="\n",
+                                    extrasaction="ignore")
+            writer.writeheader()
+            writer.writerow({"function": str(funcVal),
+                             "addresses": ";".join([str(a) for a in clean])})
+        finally:
+            fh.close()
+        if os.path.isfile(path):
+            os.remove(path)
+        os.rename(tempPath, path)
+        return True
+    except Exception as ex:
+        LogWarn("Could not save RailCom fix configuration: " + str(ex))
+        return False
+
 def IsStreetLightControllerEnabled():
     return _IsScriptEnabled("StreetLightController.py")
 
@@ -1344,6 +1451,9 @@ class TASSetupFrame(jmri.util.JmriJFrame):
         # DCC power on at Start-Up (DccPowerOnStart.py), off by default
         self.InitialDccPowerOnStart = _IsScriptEnabled("DccPowerOnStart.py")
         self.CurrentDccPowerOnStart = self.InitialDccPowerOnStart
+        # RailCom fix at Start-Up (RailComFix.py), off by default
+        self.InitialRailComFix = _IsScriptEnabled("RailComFix.py")
+        self.CurrentRailComFix = self.InitialRailComFix
         
         # TAS menu on Start-Up (TimetableAutomation.py)
         self.InitialTASMenu = _IsScriptEnabled("TimetableAutomation.py")
@@ -1384,6 +1494,7 @@ class TASSetupFrame(jmri.util.JmriJFrame):
         tabs.addTab("Timetable", self._MakeLazyPlaceholder("Loading timetable options..."))
         tabs.addTab("Workings", self._MakeLazyPlaceholder("Loading workings..."))
         tabs.addTab("Timing points", self._MakeLazyPlaceholder("Loading timing points..."))
+        tabs.addTab("Train detection", self._MakeLazyPlaceholder("Loading train detection..."))
         tabs.addTab("Orientation", self._MakeLazyPlaceholder("Loading orientation..."))
         tabs.addTab("Display configuration", self._MakeLazyPlaceholder("Loading display configuration..."))
         tabs.addTab("Day/night cycle", self._MakeLazyPlaceholder("Loading day/night cycle..."))
@@ -1658,6 +1769,10 @@ class TASSetupFrame(jmri.util.JmriJFrame):
             pass
         try:
             _StartOne("TASSetup-TimingPoints", self.BuildTimingPointsTab, "Timing points", "_LazyTimingDone")
+        except:
+            pass
+        try:
+            _StartOne("TASSetup-TrainDetection", self.BuildTrainDetectionTab, "Train detection", "_LazyTrainDetectionDone")
         except:
             pass
         try:
@@ -4124,7 +4239,94 @@ class TASSetupFrame(jmri.util.JmriJFrame):
 
         RefreshLists()
         return root
-    
+
+    def BuildTrainDetectionTab(self):
+        panel = MakePaperPanel()
+        panel.setLayout(GridBagLayout())
+        gbc = GridBagConstraints()
+        gbc.insets = Insets(10, 10, 10, 10)
+        gbc.fill = GridBagConstraints.HORIZONTAL
+        gbc.weightx = 0.0
+        gbc.weighty = 0.0
+        gbc.gridx = 0
+        gbc.gridy = 0
+        gbc.gridwidth = 1
+        panel.add(MakeHeading("Train detection"), gbc)
+
+        # RailCom fix at Start-Up (RailComFix.py), off by default
+        gbc.gridy += 1
+        railRow = Box.createHorizontalBox()
+        self.ChkRailComFix = JCheckBox("Send RailCom fix at start-up (requires restart)")
+        self.ChkRailComFix.setOpaque(False)
+        self.ChkRailComFix.setSelected(self.InitialRailComFix)
+        def OnRailComFix(e=None):
+            want = self.ChkRailComFix.isSelected()
+            ok = _EnsureScriptEnabled("RailComFix.py", want)
+            actual = _IsScriptEnabled("RailComFix.py")
+            self.CurrentRailComFix = actual
+            self.ChkRailComFix.setSelected(actual)
+            if not ok:
+                LogWarn("Could not change Start-Up for RailComFix.py", alsoDialog=True)
+        self.ChkRailComFix.addActionListener(OnRailComFix)
+        railRow.add(self.ChkRailComFix)
+        panel.add(railRow, gbc)
+
+        gbc.gridy += 1
+        railCfgRow = Box.createHorizontalBox()
+        railCfgRow.add(JLabel("Decoder addresses (; or , separated):"))
+        railCfgRow.add(Box.createHorizontalStrut(6))
+        try:
+            (railInitFunc, railInitAddrs) = _RailComFixLoad()
+        except:
+            railInitFunc = 4
+            railInitAddrs = [1323, 1824]
+        self.TxtRailComFixAddresses = JTextField(";".join([str(a) for a in railInitAddrs]), 20)
+        railCfgRow.add(self.TxtRailComFixAddresses)
+        railCfgRow.add(Box.createHorizontalStrut(12))
+        railCfgRow.add(JLabel("Function:"))
+        railCfgRow.add(Box.createHorizontalStrut(6))
+        try:
+            self.SpnRailComFixFunction = JSpinner(SpinnerNumberModel(int(railInitFunc), 0, 28, 1))
+        except:
+            self.SpnRailComFixFunction = JSpinner(SpinnerNumberModel(4, 0, 28, 1))
+        railCfgRow.add(self.SpnRailComFixFunction)
+        railCfgRow.add(Box.createHorizontalStrut(12))
+        self.BtnRailComFixSave = JButton("Save RailCom fix")
+        railCfgRow.add(self.BtnRailComFixSave)
+        panel.add(railCfgRow, gbc)
+
+        gbc.gridy += 1
+        self.LblRailComFixError = JLabel("")
+        ApplyTheme(self.LblRailComFixError)
+        panel.add(self.LblRailComFixError, gbc)
+
+        def OnRailComFixSave(e=None):
+            try:
+                funcVal = int(str(self.SpnRailComFixFunction.getValue()))
+            except:
+                funcVal = 4
+            addrVal = _RailComFixParseAddresses(self.TxtRailComFixAddresses.getText())
+            if len(addrVal) == 0:
+                self.LblRailComFixError.setText("Enter at least one address 1-9999.")
+                return
+            if _RailComFixSave(funcVal, addrVal):
+                self.LblRailComFixError.setText("Saved.")
+            else:
+                self.LblRailComFixError.setText("Save failed; see system console.")
+        try:
+            self.BtnRailComFixSave.addActionListener(OnRailComFixSave)
+        except:
+            pass
+
+        if not ScriptExists("RailComFix.py"):
+            self.ChkRailComFix.setSelected(False)
+            self.ChkRailComFix.setEnabled(False)
+            self.TxtRailComFixAddresses.setEnabled(False)
+            self.SpnRailComFixFunction.setEnabled(False)
+            self.BtnRailComFixSave.setEnabled(False)
+            self.LblRailComFixError.setText("Missing script: RailComFix.py")
+        return panel
+
     def BuildOrientationTab(self):
         import OrientationRegister as OR       
         from jmri import InstanceManager
@@ -5507,6 +5709,7 @@ class TASSetupFrame(jmri.util.JmriJFrame):
                    self.InitialDirectionSensing != self.CurrentDirectionSensing or
                    self.InitialFlickerMonitor != self.CurrentFlickerMonitor or
                    self.InitialDccPowerOnStart != self.CurrentDccPowerOnStart or
+                   self.InitialRailComFix != self.CurrentRailComFix or
                    bool(getattr(self, 'FastClockStartupNeedsRestart', (self.InitialFastClockStartup != self.CurrentFastClockStartup))))
         if changed:
             try:
