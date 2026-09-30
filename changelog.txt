@@ -14,6 +14,8 @@ Version 1.5
 
 * Added optional DCC power on at start-up (DccPowerOnStart.py, off by default, enabled in Setup General tab). Power already on is left unchanged; an unknown power state is never changed and is warned about in an orange-triangle warning window after a short wait. Also disables JMRI's built-in PowerOn.py Start-Up entry for the active profile so that power is turned on in one place only.
 
+* Added optional RailCom fix (RailComFix.py, off by default, enabled in the new Setup Train detection tab). Sends a function-off command once per configured decoder address at start-up so faulty decoders report on RailCom, then releases each throttle. Addresses and function (default 4) are stored in profile:jython/config/railcomfix.tsv. Manual trigger is by running RailComFix.py with Scripting, Run Script.
+
 * The occupancy sensor flicker monitor and the DCC power on start-up script now share one warning window implementation (TASWarningWindow.py).
 
 * The option to resume with the same fast clock time as the last shut down now also saves and restores the day of the week.
