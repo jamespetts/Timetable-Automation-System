@@ -27,7 +27,7 @@ from javax.swing import (Box, JButton, JCheckBox, JFileChooser, JLabel, JDialog,
     JList, JOptionPane, JPanel, JScrollPane, JTabbedPane, JTextField,
     ListSelectionModel, SwingUtilities, UIManager, DefaultListModel,
     DefaultListCellRenderer, BorderFactory, JComboBox, JRadioButton, ButtonGroup,
-    JSpinner, SpinnerNumberModel, Timer, JProgressBar)
+    JSpinner, SpinnerNumberModel, Timer, JProgressBar, JSplitPane)
 from javax.swing.filechooser import FileNameExtensionFilter
 from javax.swing import JTextPane
 from javax.swing.event import DocumentListener, ListSelectionListener, ChangeListener
