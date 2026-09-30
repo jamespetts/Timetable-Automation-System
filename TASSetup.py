@@ -4211,25 +4211,22 @@ class TASSetupFrame(jmri.util.JmriJFrame):
         self.TrainDetectionPom = pomAvailable
 
         class _RcRenderer(DefaultListCellRenderer):
-            def __init__(self, renderer):
-                DefaultListCellRenderer.__init__(self)
-                self._renderer = renderer
-
-            def setValue(self, value):
-                rec = value
-                if isinstance(value, tuple) or not hasattr(value, "rosterId"):
-                    DefaultListCellRenderer.setValue(self, value)
-                    return
-                text = _RcRow(rec)
-                DefaultListCellRenderer.setValue(self, text)
+            # DefaultListCellRenderer draws value.toString(), so the readable text and
+            # the colour have to be set in getListCellRendererComponent.
+            def getListCellRendererComponent(self, owner, value, index, isSelected, cellHasFocus):
+                comp = DefaultListCellRenderer.getListCellRendererComponent(
+                    self, owner, value, index, isSelected, cellHasFocus)
                 try:
-                    self.setForeground(_CapableColour(rec, pomAvailable))
+                    if hasattr(value, "rosterId"):
+                        self.setText(_RcRow(value))
+                        self.setForeground(_CapableColour(value, pomAvailable))
                 except:
                     pass
+                return comp
 
         try:
-            self.TrainDetectionCapable.setCellRenderer(_RcRenderer(None))
-            self.TrainDetectionNotCapable.setCellRenderer(_RcRenderer(None))
+            self.TrainDetectionCapable.setCellRenderer(_RcRenderer())
+            self.TrainDetectionNotCapable.setCellRenderer(_RcRenderer())
         except:
             pass
 

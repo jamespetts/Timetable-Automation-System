@@ -39,7 +39,6 @@
 import os
 import jmri
 from java.io import File as _JavaFile
-import jmri.jmrit.decoderdefn.DecoderFile as _DecoderFile
 
 # The CV and bit that switch RailCom on and off, per the NMRA specification and every
 # JMRI decoder definition that offers RailCom.
@@ -165,67 +164,87 @@ def _RcFunction(value, default):
 # ------------------------------------------------------- decoder definition reading
 
 _DecoderFileCache = {}
+_DecoderIndexCache = {"loaded": False, "families": None}
 
 
-def _RcDecoderFiles():
+def _RcXmlDir():
+    # The JMRI xml folder, which holds decoderIndex.xml and the decoders folder.
+    return os.path.join(str(jmri.jmrit.XmlFile.xmlDir()), "")
+
+
+def _RcFamilyList():
+    # The family list from decoderIndex.xml, read once. JMRI's own DecoderIndexFile is
+    # not used here: this reads the same shipped index directly, so no dependence on
+    # InstanceManager initialisation order or on which matchingDecoderList overload is
+    # called. Each family element carries name, mfg and file; its model children carry
+    # the model names.
+    if _DecoderIndexCache["loaded"]:
+        return _DecoderIndexCache["families"]
+    _DecoderIndexCache["loaded"] = True
+    families = None
     try:
-        return jmri.InstanceManager.getDefault(jmri.jmrit.decoderdefn.DecoderIndexFile)
+        path = os.path.join(_RcXmlDir(), "decoderIndex.xml")
+        if not os.path.isfile(path):
+            RCLog("RailCom: decoder index not found at " + str(path))
+            _DecoderIndexCache["families"] = None
+            return None
+        element = jmri.jmrit.XmlFile().rootFromFile(_JavaFile(path))
+        index = element.getChild("decoderIndex")
+        if index is not None:
+            families = index.getChild("familyList")
+        if families is None:
+            RCLog("RailCom: decoder index has no familyList")
     except Exception as ex:
-        RCLog("JMRI decoder index unavailable: " + str(ex))
+        RCLog("RailCom: could not read the decoder index: " + str(ex))
+        families = None
+    _DecoderIndexCache["families"] = families
+    return families
+
+
+def _RcDecoderFileName(family, model):
+    # The decoder definition file name for a decoder family and model, or None.
+    families = _RcFamilyList()
+    if families is None:
         return None
+    fallback = None
+    try:
+        for fam in families.getChildren("family"):
+            if str(fam.getAttributeValue("name") or "") != str(family):
+                continue
+            if fallback is None:
+                fallback = str(fam.getAttributeValue("file") or "")
+            for mod in fam.getChildren("model"):
+                if str(mod.getAttributeValue("model") or "") == str(model):
+                    return str(fam.getAttributeValue("file") or "")
+    except Exception as ex:
+        RCLog("RailCom: could not search the decoder index: " + str(ex))
+        return None
+    # Some roster entries record the family name as the model.
+    if fallback:
+        return fallback
+    return None
 
 
 def _RcDecoderVariables(family, model):
-    # Returns the list of variable elements for the decoder definition matching family
-    # and model, with XInclude resolved. Cached per family and model, because the roster
-    # commonly holds many entries of one decoder.
+    # The variable elements of the decoder definition for a family and model, with
+    # XInclude resolved. Cached per family and model, because the roster commonly holds
+    # many entries of one decoder.
     #
-    # Two JMRI facts matter here. DecoderFile holds the <model> element, not the whole
-    # <decoder> element, and exposes no accessor for the definition file's variables, so
-    # the definition file is read here instead. jmri.jmrit.XmlFile uses JMRI's SAXBuilder,
-    # which has XInclude enabled and resolves the http://jmri.org/xml/decoders/...
-    # includes locally, so no include handling is needed here.
+    # DecoderFile holds the <model> element rather than the whole <decoder> element and
+    # exposes no accessor for a definition file's variables, so the file is read here.
+    # jmri.jmrit.XmlFile uses JMRI's SAXBuilder, which has XInclude enabled and resolves
+    # the http://jmri.org/xml/decoders/... includes locally, so includes need no handling.
     key = (str(family), str(model))
     if key in _DecoderFileCache:
         return _DecoderFileCache[key]
     result = []
-    index = _RcDecoderFiles()
-    if index is None:
-        RCLog("RailCom: no decoder index, so no decoder definitions can be read")
-        _DecoderFileCache[key] = result
-        return result
-    fileName = None
-    try:
-        # The six argument form matches on mfg, family, manufacturer ID, version ID,
-        # product ID and model, with null for "any". The one argument form matches on
-        # programming mode, so it must not be used here.
-        matches = index.matchingDecoderList(None, str(family), None, None, None, str(model))
-        seq = list(matches) if matches is not None else []
-        if len(seq) == 0 and str(model) != str(family):
-            # Some roster entries name the family as the model.
-            matches = index.matchingDecoderList(None, str(family), None, None, None, None)
-            seq = list(matches) if matches is not None else []
-        if len(seq) > 0:
-            fileName = str(seq[0].getFileName() or "")
-    except Exception as ex:
-        RCLog("RailCom: could not look up the decoder definition for " + str(family) +
-              " " + str(model) + ": " + str(ex))
-        _DecoderFileCache[key] = result
-        return result
+    fileName = _RcDecoderFileName(family, model)
     if not fileName:
         RCLog("RailCom: no decoder definition matches family '" + str(family) +
               "' with model '" + str(model) + "'")
         _DecoderFileCache[key] = result
         return result
-    # DecoderFile.fileLocation is relative to the JMRI xml folder, so it must be joined
-    # to XmlFile.xmlDir() to give a usable path.
-    try:
-        path = os.path.join(str(jmri.jmrit.XmlFile.xmlDir()),
-                            str(_DecoderFile.fileLocation), fileName)
-    except Exception as ex:
-        RCLog("RailCom: could not build a path for " + fileName + ": " + str(ex))
-        _DecoderFileCache[key] = result
-        return result
+    path = os.path.join(_RcXmlDir(), "decoders", fileName)
     try:
         if not os.path.isfile(path):
             RCLog("RailCom: decoder definition file not found: " + str(path))
@@ -344,6 +363,10 @@ class RcEntry(object):
 
     def FullyEnabled(self):
         return (self.EffectiveCapable() and self.storedOn and self.definitionKnown)
+
+    def __str__(self):
+        # Used by any Swing renderer that falls back to toString().
+        return str(self.rosterId) + "  [" + str(self.address) + "]"
 
 
 def ScanRoster():
