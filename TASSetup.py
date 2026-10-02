@@ -18,7 +18,7 @@ import os, csv, re
 import java
 import traceback
 from java.awt import (BorderLayout, Color, Dimension, Font,
-    GridBagConstraints, GridBagLayout, Insets, RenderingHints)
+    GridBagConstraints, GridBagLayout, Insets, Point, RenderingHints)
 from java.awt.image import BufferedImage
 from java.io import File  # canonical path comparisons
 from java.lang import Runnable, Boolean, String
@@ -4147,6 +4147,40 @@ class TASSetupFrame(jmri.util.JmriJFrame):
         # Thread. This tab is built on a worker thread by the lazy tab loader.
         import RailComDetect as RCD
 
+        # Tooltips in this tab wrap at a fixed width and open right of the pointer, so
+        # the first word is never under the pointer. Plain setToolTipText makes one
+        # unwrapped line and uses the default position, so each widget below is a tiny
+        # subclass carrying its own wrapped text and offset.
+        def _RcTip(text):
+            return ("<html><div style='width:320px;'>" + str(text) + "</div></html>")
+
+        class _TippedMixin(object):
+            def getToolTipLocation(self, e):
+                try:
+                    return Point(int(e.getX()) + 24, int(e.getY()) + 20)
+                except Exception:
+                    return None
+
+        class _TipList(_TippedMixin, JList):
+            def __init__(self, model):
+                JList.__init__(self, model)
+
+        class _TipTable(_TippedMixin, JTable):
+            def __init__(self, model):
+                JTable.__init__(self, model)
+
+        class _TipButton(_TippedMixin, JButton):
+            def __init__(self, text):
+                JButton.__init__(self, text)
+
+        class _TipCheck(_TippedMixin, JCheckBox):
+            def __init__(self, text):
+                JCheckBox.__init__(self, text)
+
+        class _TipSpin(_TippedMixin, JSpinner):
+            def __init__(self, model):
+                JSpinner.__init__(self, model)
+
         panel = MakePaperPanel()
         panel.setLayout(GridBagLayout())
         gbc = GridBagConstraints()
@@ -4169,22 +4203,19 @@ class TASSetupFrame(jmri.util.JmriJFrame):
         # ---- Upper split pane: RailCom capable / not capable ----
         capableModel = DefaultListModel()
         notCapableModel = DefaultListModel()
-        self.TrainDetectionCapable = JList(capableModel)
-        self.TrainDetectionNotCapable = JList(notCapableModel)
+        self.TrainDetectionCapable = _TipList(capableModel)
+        self.TrainDetectionNotCapable = _TipList(notCapableModel)
         for lst in (self.TrainDetectionCapable, self.TrainDetectionNotCapable):
             try:
                 lst.setSelectionMode(ListSelectionModel.SINGLE_SELECTION)
             except:
                 pass
         try:
-            self.TrainDetectionCapable.setToolTipText(
-                "Roster entries whose decoder definition offers RailCom. Blue entries "
-                "have RailCom switched off and can be enabled here when programming "
-                "on main is available. Near-black entries have RailCom switched on. "
-                "Black entries are marked as not RailCom capable.")
-            self.TrainDetectionNotCapable.setToolTipText(
-                "Roster entries whose decoder definition offers no RailCom, plus "
-                "entries marked as not RailCom capable.")
+            self.TrainDetectionCapable.setToolTipText(_RcTip(
+                "Entries whose decoder offers RailCom. Blue: switched off, can be "
+                "enabled here. Near-black: switched on. Black: marked not capable."))
+            self.TrainDetectionNotCapable.setToolTipText(_RcTip(
+                "Entries with no RailCom support, plus entries marked as not capable."))
         except:
             pass
 
@@ -4271,15 +4302,14 @@ class TASSetupFrame(jmri.util.JmriJFrame):
         gbc.weighty = 0.0
         gbc.fill = GridBagConstraints.HORIZONTAL
         actionRow = Box.createHorizontalBox()
-        self.BtnRailComEnable = JButton("Enable RailCom on selected")
-        self.BtnRailComToggle = JButton("Mark selected as not RailCom capable")
+        self.BtnRailComEnable = _TipButton("Enable RailCom on selected")
+        self.BtnRailComToggle = _TipButton("Mark selected as not RailCom capable")
         try:
-            self.BtnRailComEnable.setToolTipText(
-                "Writes the RailCom switch on for the selected entry through "
-                "programming on main. The entry must be on powered track.")
-            self.BtnRailComToggle.setToolTipText(
-                "Marks the selected entry as not RailCom capable, or clears the "
-                "mark. Stored in the configuration file.")
+            self.BtnRailComEnable.setToolTipText(_RcTip(
+                "Switches RailCom on for the selected entry over programming on "
+                "main. The entry must be on powered track."))
+            self.BtnRailComToggle.setToolTipText(_RcTip(
+                "Marks the selected entry as not RailCom capable, or clears the mark."))
         except:
             pass
         actionRow.add(self.BtnRailComEnable)
@@ -4322,7 +4352,7 @@ class TASSetupFrame(jmri.util.JmriJFrame):
         fixRows = {"rows": []}
         suppressFixEvents = [False]
         # One function input, following whichever fix entry is selected.
-        self.TrainDetectionFixFunction = JSpinner(SpinnerNumberModel(
+        self.TrainDetectionFixFunction = _TipSpin(SpinnerNumberModel(
             RCD.RC_FUNCTION_DEFAULT, RCD.RC_FUNCTION_MIN, RCD.RC_FUNCTION_MAX, 1))
 
         class _FixTableModel(AbstractTableModel):
@@ -4379,11 +4409,10 @@ class TASSetupFrame(jmri.util.JmriJFrame):
                     pass
 
         fixTableModel = _FixTableModel(fixRows)
-        self.TrainDetectionFixTable = JTable(fixTableModel)
+        self.TrainDetectionFixTable = _TipTable(fixTableModel)
         try:
-            self.TrainDetectionFixTable.setToolTipText(
-                "Tick each roster entry the RailCom initialisation fix applies to "
-                "at start-up. Only entries with RailCom switched on are listed.")
+            self.TrainDetectionFixTable.setToolTipText(_RcTip(
+                "Tick the entries the fix applies to at start-up."))
             self.TrainDetectionFixTable.setRowHeight(22)
             self.TrainDetectionFixTable.setAutoResizeMode(JTable.AUTO_RESIZE_ALL_COLUMNS)
             columns = self.TrainDetectionFixTable.getColumnModel()
@@ -4419,9 +4448,8 @@ class TASSetupFrame(jmri.util.JmriJFrame):
             fnBox.setMaximumSize(Dimension(220, 32767))
             fnBox.setPreferredSize(Dimension(205, 170))
             self.TrainDetectionFixFunction.setMaximumSize(Dimension(190, 30))
-            self.TrainDetectionFixFunction.setToolTipText(
-                "Function sent to the selected roster entry by the RailCom "
-                "initialisation fix. Applies when saved.")
+            self.TrainDetectionFixFunction.setToolTipText(_RcTip(
+                "Function sent to the selected entry by the fix."))
         except:
             pass
         fixRow.add(fnBox)
@@ -4432,13 +4460,12 @@ class TASSetupFrame(jmri.util.JmriJFrame):
         gbc.weighty = 0.0
         gbc.fill = GridBagConstraints.HORIZONTAL
         startupRow = Box.createHorizontalBox()
-        self.ChkRailComFix = JCheckBox("Send the RailCom fix at start-up (requires restart)")
+        self.ChkRailComFix = _TipCheck("Send the RailCom fix at start-up (requires restart)")
         self.ChkRailComFix.setOpaque(False)
         self.ChkRailComFix.setSelected(self.InitialRailComFix)
         try:
-            self.ChkRailComFix.setToolTipText(
-                "Applies the RailCom initialisation fix to ticked entries each time "
-                "JMRI starts. Takes effect after restart.")
+            self.ChkRailComFix.setToolTipText(_RcTip(
+                "Applies the fix to ticked entries at each start. Needs a restart."))
         except:
             pass
         startupRow.add(self.ChkRailComFix)
@@ -4509,7 +4536,7 @@ class TASSetupFrame(jmri.util.JmriJFrame):
             def _Fill():
                 try:
                     suppressFixEvents[0] = True
-                    fixRows["rows"] = list(RCD.FixEntries(records["all"]))
+                    fixRows["rows"] = list(RCD.EnabledEntries(records["all"]))
                     fixTableModel.fireTableDataChanged()
                     count = len(fixRows["rows"])
                     marked = len([r for r in fixRows["rows"] if r.fix])
@@ -4679,7 +4706,7 @@ class TASSetupFrame(jmri.util.JmriJFrame):
                 self.TrainDetectionNotCapable.repaint()
                 suppressFixEvents[0] = True
                 try:
-                    fixRows["rows"] = list(RCD.FixEntries(entries))
+                    fixRows["rows"] = list(RCD.EnabledEntries(entries))
                     fixTableModel.fireTableDataChanged()
                     marked = len([r for r in fixRows["rows"] if r.fix])
                     self.LblRailComFixStatus.setText(

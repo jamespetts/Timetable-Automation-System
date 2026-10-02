@@ -668,6 +668,12 @@ def FixEntries(entries):
     return [rec for rec in entries if rec.fix and rec.FullyEnabled()]
 
 
+def EnabledEntries(entries):
+    # Roster entries whose RailCom is fully switched on, whether ticked for the fix or
+    # not. The setup table lists these with a tick box each.
+    return [rec for rec in entries if rec.FullyEnabled()]
+
+
 # --------------------------------------------------------- programming on main (POM)
 
 def PomManager():
