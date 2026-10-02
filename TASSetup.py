@@ -4351,7 +4351,8 @@ class TASSetupFrame(jmri.util.JmriJFrame):
             RCD.RC_FUNCTION_DEFAULT, RCD.RC_FUNCTION_MIN, RCD.RC_FUNCTION_MAX, 1))
 
         class _FixTableModel(AbstractTableModel):
-            COLUMNS = ["Apply fix", "Roster entry", "DCC address"]
+            COLUMNS = ["Apply fix", "Roster entry", "DCC address",
+                       "Make", "Model", "Firmware"]
 
             def __init__(self, store):
                 AbstractTableModel.__init__(self)
@@ -4387,7 +4388,13 @@ class TASSetupFrame(jmri.util.JmriJFrame):
                         return java.lang.Boolean(bool(rec.fix))
                     if col == 1:
                         return String(str(rec.rosterId))
-                    return String(str(rec.address))
+                    if col == 2:
+                        return String(str(rec.address))
+                    if col == 3:
+                        return String(str(rec.decoderMake))
+                    if col == 4:
+                        return String(str(rec.decoderModel))
+                    return String(str(rec.decoderFirmware))
                 except:
                     return String("")
 
@@ -4440,16 +4447,20 @@ class TASSetupFrame(jmri.util.JmriJFrame):
             self.TrainDetectionFixTable.setRowHeight(22)
             self.TrainDetectionFixTable.setAutoResizeMode(JTable.AUTO_RESIZE_ALL_COLUMNS)
             columns = self.TrainDetectionFixTable.getColumnModel()
-            columns.getColumn(0).setPreferredWidth(70)
-            columns.getColumn(0).setMaxWidth(90)
-            columns.getColumn(1).setPreferredWidth(220)
-            columns.getColumn(2).setPreferredWidth(90)
+            columns.getColumn(0).setPreferredWidth(60)
+            columns.getColumn(0).setMaxWidth(80)
+            columns.getColumn(1).setPreferredWidth(150)
+            columns.getColumn(2).setPreferredWidth(70)
+            columns.getColumn(3).setPreferredWidth(80)
+            columns.getColumn(4).setPreferredWidth(170)
+            columns.getColumn(5).setPreferredWidth(60)
+            columns.getColumn(5).setMaxWidth(80)
         except:
             pass
         fixScroll = JScrollPane(self.TrainDetectionFixTable)
         try:
-            fixScroll.setPreferredSize(Dimension(420, 170))
-            fixScroll.setMinimumSize(Dimension(280, 110))
+            fixScroll.setPreferredSize(Dimension(560, 170))
+            fixScroll.setMinimumSize(Dimension(360, 110))
         except:
             pass
         gbc.gridy += 1

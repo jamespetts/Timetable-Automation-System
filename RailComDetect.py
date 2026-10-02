@@ -328,6 +328,34 @@ def _RcDecoderFileName(family, model):
     return None
 
 
+def _RcDecoderMfg(family):
+    # The decoder manufacturer for a decoder family, from the decoder index. The
+    # family element carries the mfg attribute, so no brand list is needed.
+    families = _RcFamilyList()
+    if families is None:
+        return u""
+    try:
+        want = _RcSafe(family)
+        for fam in families.getChildren("family"):
+            if _RcSafe(fam.getAttributeValue("name")) == want:
+                return _RcSafe(fam.getAttributeValue("mfg"))
+    except Exception:
+        pass
+    return u""
+
+
+def _RcFirmwareValue(values):
+    # The stored decoder firmware version: the shared "Decoder Version" item (CV 7),
+    # which the NMRA include gives every definition. Blank when the entry holds none.
+    try:
+        for (item, value) in values.items():
+            if _RcSafe(item).strip().lower() == u"decoder version":
+                return _RcSafe(value).strip()
+    except Exception:
+        pass
+    return u""
+
+
 def _RcDecoderVariables(family, model):
     # The variable elements of the decoder definition for a family and model, with
     # XInclude resolved. Cached per family and model, because the roster commonly holds
@@ -563,6 +591,8 @@ class RcEntry(object):
         self.longAddress = False
         self.decoderFamily = ""
         self.decoderModel = ""
+        self.decoderMake = ""
+        self.decoderFirmware = ""
         self.definitionKnown = False   # a decoder definition was found for this entry
         self.detectedCapable = False   # the definition offers a RailCom on/off switch
         self.storedOn = False         # the entry's stored value has that switch on
@@ -628,12 +658,14 @@ def ScanRoster():
             variables = _RcDecoderVariables(rec.decoderFamily, rec.decoderModel)
             switch = _RcRailComSwitch(variables)
             rec.definitionKnown = len(variables) > 0
+            rec.decoderMake = _RcDecoderMfg(rec.decoderFamily)
             if switch is not None:
                 rec.detectedCapable = True
                 rec.enableItem = switch[0]
                 rec.enableDefault = switch[1]
                 values = _RcEntryVarValues(entry)
                 rec.storedOn = _RcStoredIsOn(values, switch[0], switch[1])
+                rec.decoderFirmware = _RcFirmwareValue(values)
             key = rec.rosterId.lower()
             saved = config.get(key)
             if saved is not None:
