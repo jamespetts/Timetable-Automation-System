@@ -1317,11 +1317,11 @@ class TASSetupFrame(jmri.util.JmriJFrame):
         # Base frame setup
         jmri.util.JmriJFrame.__init__(self, "Timetable Automation System setup")
         self.setDefaultCloseOperation(JDialog.DISPOSE_ON_CLOSE)
-        self.setSize(820, 760)
+        self.setSize(860, 760)
            
         # Prevent the frame from ever packing smaller than the baseline.
         try:
-            self.setMinimumSize(Dimension(820, 760))
+            self.setMinimumSize(Dimension(860, 760))
         except:
             pass
 
@@ -4435,7 +4435,6 @@ class TASSetupFrame(jmri.util.JmriJFrame):
                         else:
                             LogWarn("Could not change Start-Up for RailComFix.py",
                                     alsoDialog=True)
-                    RefreshFixStatus()
                 except Exception:
                     pass
 
@@ -4447,12 +4446,12 @@ class TASSetupFrame(jmri.util.JmriJFrame):
             self.TrainDetectionFixTable.setRowHeight(22)
             self.TrainDetectionFixTable.setAutoResizeMode(JTable.AUTO_RESIZE_ALL_COLUMNS)
             columns = self.TrainDetectionFixTable.getColumnModel()
-            columns.getColumn(0).setPreferredWidth(55)
-            columns.getColumn(0).setMaxWidth(75)
+            columns.getColumn(0).setPreferredWidth(70)
+            columns.getColumn(0).setMaxWidth(90)
             columns.getColumn(1).setPreferredWidth(140)
             columns.getColumn(2).setPreferredWidth(65)
             columns.getColumn(3).setPreferredWidth(75)
-            columns.getColumn(4).setPreferredWidth(160)
+            columns.getColumn(4).setPreferredWidth(145)
             columns.getColumn(5).setPreferredWidth(75)
             columns.getColumn(5).setMaxWidth(95)
         except:
@@ -4470,20 +4469,19 @@ class TASSetupFrame(jmri.util.JmriJFrame):
         fixRow = Box.createHorizontalBox()
         fixRow.add(fixScroll)
         fixRow.add(Box.createHorizontalStrut(10))
-        fnLabel = JLabel("<html><div style='width:130px;'>Function for selected "
-                          "roster entry</div></html>")
+        fnLabel = JLabel("Use function:")
         fnBox = Box.createVerticalBox()
         fnBox.add(fnLabel)
         fnBox.add(self.TrainDetectionFixFunction)
         fnBox.add(Box.createVerticalGlue())
         try:
-            # Left align the label over the input, and keep the box narrow so it cannot
-            # push past the right edge. The number field only ever holds two digits.
+            # Left align the label over the input, and keep the box narrow so the
+            # table keeps its width. The number field only ever holds two digits.
             fnLabel.setAlignmentX(java.awt.Component.LEFT_ALIGNMENT)
             self.TrainDetectionFixFunction.setAlignmentX(java.awt.Component.LEFT_ALIGNMENT)
-            fnBox.setMaximumSize(Dimension(160, 32767))
-            fnBox.setPreferredSize(Dimension(150, 170))
-            self.TrainDetectionFixFunction.setMaximumSize(Dimension(120, 30))
+            fnBox.setMaximumSize(Dimension(130, 32767))
+            fnBox.setPreferredSize(Dimension(120, 170))
+            self.TrainDetectionFixFunction.setMaximumSize(Dimension(100, 30))
             try:
                 self.TrainDetectionFixFunction.getEditor().getTextField().setColumns(2)
             except:
@@ -4510,17 +4508,6 @@ class TASSetupFrame(jmri.util.JmriJFrame):
             pass
         fixRow.add(fnBox)
         panel.add(fixRow, gbc)
-
-        # ---- Fix status: the start-up script follows the tick boxes ----
-        # Ticking the first entry runs the fix at once and enables RailComFix.py at
-        # start-up; unticking the last one disables it again. No restart prompt: the
-        # change takes effect at the next start of JMRI.
-        gbc.gridy += 1
-        gbc.weighty = 0.0
-        gbc.fill = GridBagConstraints.HORIZONTAL
-        self.LblRailComFixStatus = JLabel("")
-        ApplyTheme(self.LblRailComFixStatus)
-        panel.add(self.LblRailComFixStatus, gbc)
 
         # ---- Behaviour ----
         # Shared stores and helpers, defined before any handler uses them.
@@ -4578,29 +4565,12 @@ class TASSetupFrame(jmri.util.JmriJFrame):
                     pass
             SwingUtilities.invokeLater(RunnableAdapter(_Fill))
 
-        def RefreshFixStatus():
-            # States how many entries the fix applies to and whether it runs at start-up.
-            # The start-up script follows the tick boxes, so this only reports.
-            try:
-                marked = len([r for r in records["all"] if r.fix and r.FullyEnabled()])
-                count = len([r for r in records["all"] if r.FullyEnabled()])
-                text = ("The fix is applied to " + str(marked) + " of " + str(count) +
-                        " RailCom capable roster entry/entries at start-up.")
-                if _IsScriptEnabled("RailComFix.py"):
-                    text = text + " The fix runs at start-up."
-                else:
-                    text = text + " The fix does not run at start-up."
-                self.LblRailComFixStatus.setText(text)
-            except:
-                pass
-
         def RefreshFixTable():
             def _Fill():
                 try:
                     suppressFixEvents[0] = True
                     fixRows["rows"] = list(RCD.EnabledEntries(records["all"]))
                     fixTableModel.fireTableDataChanged()
-                    RefreshFixStatus()
                 except:
                     pass
                 finally:
@@ -4717,7 +4687,7 @@ class TASSetupFrame(jmri.util.JmriJFrame):
         if not ScriptExists("RailComFix.py"):
             self.TrainDetectionFixTable.setEnabled(False)
             self.TrainDetectionFixFunction.setEnabled(False)
-            self.LblRailComFixStatus.setText("Missing script: RailComFix.py")
+            self.LblTrainDetectionAction.setText("Missing script: RailComFix.py")
 
         # ---- Populate from the roster on a worker thread ----
         def _Load():
@@ -4756,7 +4726,6 @@ class TASSetupFrame(jmri.util.JmriJFrame):
                 try:
                     fixRows["rows"] = list(RCD.EnabledEntries(entries))
                     fixTableModel.fireTableDataChanged()
-                    RefreshFixStatus()
                 finally:
                     suppressFixEvents[0] = False
             SwingUtilities.invokeLater(RunnableAdapter(_Apply))
