@@ -4157,9 +4157,6 @@ class TASSetupFrame(jmri.util.JmriJFrame):
         gbc.gridx = 0
         gbc.gridy = 0
         gbc.gridwidth = 1
-        panel.add(MakeHeading("Train detection"), gbc)
-
-        gbc.gridy += 1
         panel.add(MakeWrappedLabel(
             "RailCom capability is read from each roster entry's decoder definition. "
             "Entries whose decoder offers RailCom appear on the left, the rest on the right."), gbc)
@@ -4281,6 +4278,9 @@ class TASSetupFrame(jmri.util.JmriJFrame):
         gbc.weightx = 0.0
         gbc.weighty = 0.0
         gbc.fill = GridBagConstraints.HORIZONTAL
+        panel.add(MakeHeading("RailCom initialisation fix"), gbc)
+
+        gbc.gridy += 1
         panel.add(MakeWrappedLabel(
             "Some RailCom decoders have an error in that they will not broadcast their "
             "address until they have been addressed by the command station. This enables "
@@ -4376,7 +4376,7 @@ class TASSetupFrame(jmri.util.JmriJFrame):
         fixRow.add(fixScroll)
         fixRow.add(Box.createHorizontalStrut(10))
         fnBox = Box.createVerticalBox()
-        fnBox.add(JLabel("Function for the selected entry"))
+        fnBox.add(JLabel("Function for selected"))
         fnBox.add(self.TrainDetectionFixFunction)
         fnBox.add(Box.createVerticalGlue())
         try:

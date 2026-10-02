@@ -708,9 +708,16 @@ def PomAvailable():
         RCLog("RailCom: programming on main returned no programmer")
         return False
     try:
-        if prog.getMode() != jmri.ProgrammingMode.DIRECTMODE:
-            RCLog("RailCom: programming on main is in mode " + str(prog.getMode()) +
-                  " rather than direct mode")
+        mode = prog.getMode()
+        try:
+            modeName = str(mode.getStandardName() or "")
+        except Exception:
+            modeName = ""
+        # An addressed programmer is a programming on main programmer. Its mode is an
+        # operations mode such as OPSBYTEMODE, never the service mode DIRECTMODE.
+        if not modeName.startswith("OPS"):
+            RCLog("RailCom: programming on main is in mode " + _RcSafe(mode) +
+                  " rather than an operations mode")
             return False
         if not prog.getCanWrite():
             RCLog("RailCom: programming on main cannot write")
