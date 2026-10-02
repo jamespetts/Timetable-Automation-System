@@ -39,6 +39,7 @@
 import os
 import jmri
 from java.io import File as _JavaFile
+from org.jdom2.input import SAXBuilder
 
 # The CV and bit that switch RailCom on and off, per the NMRA specification and every
 # JMRI decoder definition that offers RailCom.
@@ -56,9 +57,28 @@ RC_FUNCTION_MIN = 0
 RC_FUNCTION_MAX = 28
 
 
+def _RcSafe(value):
+    # Text-safe conversion for values that can hold any character, notably XML
+    # attribute values such as decoder family names with umlauts. Jython's str() on
+    # such a Java string raises UnicodeEncodeError under the ASCII default encoding,
+    # so unicode space is used throughout and nothing here can raise.
+    if value is None:
+        return u""
+    if isinstance(value, unicode):
+        return value
+    try:
+        return unicode(value)
+    except Exception:
+        pass
+    try:
+        return unicode(str(value), "utf-8", "replace")
+    except Exception:
+        return u"?"
+
+
 def RCLog(msg):
     try:
-        print("[TAS] " + str(msg))
+        print(u"[TAS] " + _RcSafe(msg))
     except Exception:
         pass
 
@@ -103,7 +123,7 @@ def LoadConfig():
         finally:
             fh.close()
     except Exception as ex:
-        RCLog("Could not read train detection configuration: " + str(ex))
+        RCLog("Could not read train detection configuration: " + _RcSafe(ex))
     return result
 
 
@@ -114,7 +134,7 @@ def SaveConfig(config):
         if parent and not os.path.isdir(parent):
             os.makedirs(parent)
     except Exception as ex:
-        RCLog("Could not create train detection configuration folder: " + str(ex))
+        RCLog("Could not create train detection configuration folder: " + _RcSafe(ex))
         return False
     tempPath = path + ".tmp"
     try:
@@ -138,7 +158,7 @@ def SaveConfig(config):
             os.remove(path)
         os.rename(tempPath, path)
     except Exception as ex:
-        RCLog("Could not write train detection configuration: " + str(ex))
+        RCLog("Could not write train detection configuration: " + _RcSafe(ex))
         return False
     return True
 
@@ -172,6 +192,89 @@ def _RcXmlDir():
     return os.path.join(str(jmri.jmrit.XmlFile.xmlDir()), "")
 
 
+def _RcReadXml(path):
+    # Reads one XML file with a plain non-validating parser: no DTD, no schema, no
+    # network, no XInclude processing. Includes are resolved by hand in
+    # _RcCollectVariables, because that keeps every file read working the same way
+    # whether JMRI validates or not.
+    builder = SAXBuilder(False)
+    try:
+        builder.setFeature("http://apache.org/xml/features/nonvalidating/load-external-dtd", False)
+    except Exception:
+        pass
+    document = builder.build(_JavaFile(_RcSafe(path)))
+    if document is None:
+        return None
+    return document.getRootElement()
+
+
+def _RcHrefPath(href):
+    # Maps a decoder definition include reference to a local file. The references read
+    # http://jmri.org/xml/decoders/..., which is the shipped xml folder.
+    try:
+        text = str(href or "")
+    except Exception:
+        return None
+    marker = "xml/decoders/"
+    found = text.find(marker)
+    if found < 0:
+        return None
+    relative = text[found + len(marker):].replace("/", os.path.sep)
+    return os.path.join(_RcXmlDir(), "decoders", relative)
+
+
+def _RcCollectVariables(node, depth, visiting, found):
+    # Gathers every variable element under a decoder element, following one include at
+    # a time through local files. Included files whose root is <variables> contribute
+    # their <variable> children directly.
+    if node is None or depth > 24:
+        return
+    try:
+        tag = str(node.getName() or "")
+    except Exception:
+        return
+    if tag == "variable":
+        found.append(node)
+        return
+    try:
+        children = list(node.getChildren())
+    except Exception:
+        return
+    for child in children:
+        try:
+            name = str(child.getName() or "")
+        except Exception:
+            continue
+        if name == "variable":
+            found.append(child)
+        elif name == "variables":
+            _RcCollectVariables(child, depth + 1, visiting, found)
+        elif name == "include":
+            try:
+                uri = str(child.getNamespaceURI() or "")
+            except Exception:
+                uri = ""
+            if uri.find("XInclude") < 0:
+                continue
+            try:
+                href = str(child.getAttributeValue("href") or "")
+            except Exception:
+                continue
+            path = _RcHrefPath(href)
+            if path is None or path in visiting or not os.path.isfile(path):
+                continue
+            visiting.add(path)
+            try:
+                included = _RcReadXml(path)
+            except Exception:
+                included = None
+            if included is not None:
+                _RcCollectVariables(included, depth + 1, visiting, found)
+            visiting.discard(path)
+        else:
+            _RcCollectVariables(child, depth + 1, visiting, found)
+
+
 def _RcFamilyList():
     # The family list from decoderIndex.xml, read once. JMRI's own DecoderIndexFile is
     # not used here: this reads the same shipped index directly, so no dependence on
@@ -185,17 +288,17 @@ def _RcFamilyList():
     try:
         path = os.path.join(_RcXmlDir(), "decoderIndex.xml")
         if not os.path.isfile(path):
-            RCLog("RailCom: decoder index not found at " + str(path))
+            RCLog("RailCom: decoder index not found at " + _RcSafe(path))
             _DecoderIndexCache["families"] = None
             return None
-        element = jmri.jmrit.XmlFile().rootFromFile(_JavaFile(path))
-        index = element.getChild("decoderIndex")
+        element = _RcReadXml(path)
+        index = element.getChild("decoderIndex") if element is not None else None
         if index is not None:
             families = index.getChild("familyList")
         if families is None:
             RCLog("RailCom: decoder index has no familyList")
     except Exception as ex:
-        RCLog("RailCom: could not read the decoder index: " + str(ex))
+        RCLog("RailCom: could not read the decoder index: " + _RcSafe(ex))
         families = None
     _DecoderIndexCache["families"] = families
     return families
@@ -209,15 +312,15 @@ def _RcDecoderFileName(family, model):
     fallback = None
     try:
         for fam in families.getChildren("family"):
-            if str(fam.getAttributeValue("name") or "") != str(family):
+            if _RcSafe(fam.getAttributeValue("name")) != _RcSafe(family):
                 continue
             if fallback is None:
-                fallback = str(fam.getAttributeValue("file") or "")
+                fallback = _RcSafe(fam.getAttributeValue("file"))
             for mod in fam.getChildren("model"):
-                if str(mod.getAttributeValue("model") or "") == str(model):
-                    return str(fam.getAttributeValue("file") or "")
+                if _RcSafe(mod.getAttributeValue("model")) == _RcSafe(model):
+                    return _RcSafe(fam.getAttributeValue("file"))
     except Exception as ex:
-        RCLog("RailCom: could not search the decoder index: " + str(ex))
+        RCLog("RailCom: could not search the decoder index: " + _RcSafe(ex))
         return None
     # Some roster entries record the family name as the model.
     if fallback:
@@ -234,7 +337,7 @@ def _RcDecoderVariables(family, model):
     # exposes no accessor for a definition file's variables, so the file is read here.
     # jmri.jmrit.XmlFile uses JMRI's SAXBuilder, which has XInclude enabled and resolves
     # the http://jmri.org/xml/decoders/... includes locally, so includes need no handling.
-    key = (str(family), str(model))
+    key = (_RcSafe(family), _RcSafe(model))
     if key in _DecoderFileCache:
         return _DecoderFileCache[key]
     result = []
@@ -247,22 +350,20 @@ def _RcDecoderVariables(family, model):
     path = os.path.join(_RcXmlDir(), "decoders", fileName)
     try:
         if not os.path.isfile(path):
-            RCLog("RailCom: decoder definition file not found: " + str(path))
+            RCLog("RailCom: decoder definition file not found: " + _RcSafe(path))
             _DecoderFileCache[key] = result
             return result
-        element = jmri.jmrit.XmlFile().rootFromFile(_JavaFile(path))
+        element = _RcReadXml(path)
     except Exception as ex:
-        RCLog("RailCom: could not read the decoder definition " + fileName + ": " + str(ex))
+        RCLog("RailCom: could not read the decoder definition " + fileName + ": " + _RcSafe(ex))
         _DecoderFileCache[key] = result
         return result
     try:
-        decoder = element.getChild("decoder")
+        decoder = element.getChild("decoder") if element is not None else None
         if decoder is not None:
-            for variables in decoder.getChildren("variables"):
-                for var in variables.getChildren("variable"):
-                    result.append(var)
+            _RcCollectVariables(decoder, 0, set([path]), result)
     except Exception as ex:
-        RCLog("RailCom: could not read variables from " + fileName + ": " + str(ex))
+        RCLog("RailCom: could not read variables from " + fileName + ": " + _RcSafe(ex))
     if len(result) == 0:
         RCLog("RailCom: no variables read from " + fileName)
     _DecoderFileCache[key] = result
@@ -274,9 +375,9 @@ def _RcRailComSwitch(variables):
     # returns (itemName, defaultValue) or None when the decoder has no such switch.
     for var in variables:
         try:
-            item = str(var.getAttributeValue("item") or "")
-            cv = str(var.getAttributeValue("CV") or "")
-            mask = str(var.getAttributeValue("mask") or "")
+            item = _RcSafe(var.getAttributeValue("item"))
+            cv = _RcSafe(var.getAttributeValue("CV"))
+            mask = _RcSafe(var.getAttributeValue("mask"))
         except Exception:
             continue
         if item.lower().find("railcom") < 0:
@@ -284,7 +385,7 @@ def _RcRailComSwitch(variables):
         if cv != RC_CV or mask != RC_MASK:
             continue
         try:
-            defaultValue = int(str(var.getAttributeValue("default") or "0").strip())
+            defaultValue = int(_RcSafe(var.getAttributeValue("default") or "0").strip())
         except Exception:
             defaultValue = 0
         return (item, defaultValue)
@@ -298,7 +399,7 @@ def _RcEntryVarValues(entry):
     # file holds them as varValue elements.
     values = {}
     try:
-        path = entry.getPathName()
+        path = _RcSafe(entry.getPathName())
     except Exception:
         path = None
     if not path:
@@ -306,18 +407,30 @@ def _RcEntryVarValues(entry):
     try:
         if not os.path.isfile(path):
             return values
-        element = jmri.jmrit.XmlFile().rootFromFile(_JavaFile(str(path)))
+        element = _RcReadXml(path)
     except Exception as ex:
-        RCLog("Could not read roster entry file " + str(path) + ": " + str(ex))
+        RCLog("Could not read roster entry file " + _RcSafe(path) + ": " + _RcSafe(ex))
         return values
     try:
-        for varValue in element.getChildren("varValue"):
+        if element is None:
+            return values
+        loco = element.getChild("locomotive")
+        if loco is None:
+            loco = element
+        # The stored values sit in values/decoderDef/varValue in the roster file.
+        container = loco.getChild("values")
+        if container is None:
+            container = loco
+        inner = container.getChild("decoderDef")
+        if inner is not None:
+            container = inner
+        for varValue in container.getChildren("varValue"):
             try:
-                item = str(varValue.getAttributeValue("item") or "")
-                value = str(varValue.getAttributeValue("value") or "")
+                item = _RcSafe(varValue.getAttributeValue("item"))
+                value = _RcSafe(varValue.getAttributeValue("value"))
             except Exception:
                 continue
-            if item != "":
+            if item != u"":
                 values[item] = value
     except Exception:
         pass
@@ -325,16 +438,119 @@ def _RcEntryVarValues(entry):
 
 
 def _RcStoredIsOn(values, item, defaultValue):
-    # True when the entry's stored value for the RailCom switch reads as on. An entry
-    # with no stored value falls back to the decoder definition default.
+    # True when the entry's stored value for the RailCom switch reads as on. The stored
+    # value is the variable's own value (an enum index for an on/off switch, where the
+    # standard disabled/enabled list reads Disabled as 0 and Enabled as 1), not a CV
+    # byte, so a plain zero test is used rather than a bit test. An entry with no stored
+    # value falls back to the decoder definition default.
     if item in values:
-        raw = str(values[item]).strip()
+        raw = _RcSafe(values[item]).strip()
         try:
-            return ((int(raw) >> RC_BIT) & 1) != 0
+            return int(raw) != 0
         except Exception:
             s = raw.lower()
-            return s in ("1", "true", "yes", "on")
-    return ((int(defaultValue) >> RC_BIT) & 1) != 0
+            return s in ("1", "true", "yes", "on", "enabled")
+    try:
+        return int(_RcSafe(defaultValue).strip()) != 0
+    except Exception:
+        return False
+
+
+def _RcPlaceBits(byteValue, mask, value):
+    # Places an integer variable value into the V positions of an 8 character mask,
+    # rightmost V taking the value's lowest bit. Returns the updated byte value.
+    try:
+        remaining = int(value)
+    except Exception:
+        return int(byteValue)
+    result = int(byteValue)
+    position = 0
+    for bit in range(len(mask)):
+        if mask[len(mask) - 1 - bit] == "V":
+            if ((remaining >> position) & 1) != 0:
+                result = result | (1 << bit)
+            else:
+                result = result & (~(1 << bit) & 0xFF)
+            position += 1
+    return result & 0xFF
+
+
+def _RcSwitchOnValue(switchVar):
+    # The numeric value that switches RailCom on for one switch variable. The switch is
+    # an on/off list, so this counts its enumChoice entries (resolving one include level
+    # for the shared disabled/enabled list) and takes the position of the first entry
+    # whose name reads as enabled, defaulting to 1.
+    choices = []
+    try:
+        for choice in switchVar.getChildren("enumChoice"):
+            try:
+                choices.append(_RcSafe(choice.getAttributeValue("choice")))
+            except Exception:
+                continue
+        if len(choices) == 0:
+            for child in list(switchVar):
+                try:
+                    tag = _RcSafe(child.getName())
+                    uri = _RcSafe(child.getNamespaceURI())
+                except Exception:
+                    continue
+                if tag != u"include" or uri.find(u"XInclude") < 0:
+                    continue
+                try:
+                    href = _RcSafe(child.getAttributeValue("href"))
+                except Exception:
+                    continue
+                path = _RcHrefPath(href)
+                if path is None or not os.path.isfile(path):
+                    continue
+                try:
+                    root = _RcReadXml(path)
+                except Exception:
+                    continue
+                if root is None:
+                    continue
+                for choice in root.getChildren("enumChoice"):
+                    try:
+                        choices.append(_RcSafe(choice.getAttributeValue("choice")))
+                    except Exception:
+                        continue
+    except Exception:
+        pass
+    for index in range(len(choices)):
+        if choices[index].lower().find("enabl") >= 0:
+            return index
+    return 1
+
+
+def _RcCv29WriteValue(variables, values, switchItem, onValue):
+    # Builds the full CV 29 byte to write: every CV 29 variable contributes its stored
+    # entry value, else its definition default, placed through its mask, with the RailCom
+    # switch forced to its on value. Starting from zero means an unknown bit reads as
+    # the variable default, never as the present decoder value, because POM cannot read.
+    byteValue = 0
+    for var in variables:
+        try:
+            cv = _RcSafe(var.getAttributeValue("CV"))
+            mask = _RcSafe(var.getAttributeValue("mask"))
+            item = _RcSafe(var.getAttributeValue("item"))
+        except Exception:
+            continue
+        if cv != RC_CV or len(mask) == 0:
+            continue
+        if item == switchItem:
+            contributed = onValue
+        elif item in values:
+            try:
+                contributed = int(_RcSafe(values[item]).strip())
+            except Exception:
+                continue
+        else:
+            try:
+                contributed = int(_RcSafe(var.getAttributeValue("default") or "0").strip())
+            except Exception:
+                continue
+        byteValue = _RcPlaceBits(byteValue, mask, contributed)
+    return byteValue & 0xFF
 
 
 # ------------------------------------------------------------------- public results
@@ -366,7 +582,7 @@ class RcEntry(object):
 
     def __str__(self):
         # Used by any Swing renderer that falls back to toString().
-        return str(self.rosterId) + "  [" + str(self.address) + "]"
+        return _RcSafe(self.rosterId) + u"  [" + _RcSafe(self.address) + u"]"
 
 
 def ScanRoster():
@@ -377,7 +593,7 @@ def ScanRoster():
     try:
         roster = jmri.jmrit.roster.Roster.getDefault()
     except Exception as ex:
-        RCLog("JMRI roster unavailable: " + str(ex))
+        RCLog("JMRI roster unavailable: " + _RcSafe(ex))
         return entries
     if roster is None:
         return entries
@@ -388,27 +604,27 @@ def ScanRoster():
             return entries
         seq = list(allEntries)
     except Exception as ex:
-        RCLog("RailCom: could not list the roster entries: " + str(ex))
+        RCLog("RailCom: could not list the roster entries: " + _RcSafe(ex))
         return entries
     RCLog("RailCom: scanning " + str(len(seq)) + " roster entry/entries")
     for entry in seq:
         try:
             rec = RcEntry()
-            rec.rosterId = str(entry.getId())
+            rec.rosterId = _RcSafe(entry.getId())
             try:
-                rec.address = str(entry.getDccAddress() or "")
+                rec.address = _RcSafe(entry.getDccAddress())
             except Exception:
-                rec.address = ""
+                rec.address = u""
             try:
                 rec.longAddress = bool(entry.isLongAddress())
             except Exception:
                 rec.longAddress = False
             try:
-                rec.decoderFamily = str(entry.getDecoderFamily() or "")
-                rec.decoderModel = str(entry.getDecoderModel() or "")
+                rec.decoderFamily = _RcSafe(entry.getDecoderFamily())
+                rec.decoderModel = _RcSafe(entry.getDecoderModel())
             except Exception:
-                rec.decoderFamily = ""
-                rec.decoderModel = ""
+                rec.decoderFamily = u""
+                rec.decoderModel = u""
             variables = _RcDecoderVariables(rec.decoderFamily, rec.decoderModel)
             switch = _RcRailComSwitch(variables)
             rec.definitionKnown = len(variables) > 0
@@ -426,7 +642,7 @@ def ScanRoster():
                 rec.function = int(saved.get("function", RC_FUNCTION_DEFAULT))
             entries.append(rec)
         except Exception as ex:
-            RCLog("RailCom: skipped a roster entry: " + str(ex))
+            RCLog("RailCom: skipped a roster entry: " + _RcSafe(ex))
     capable = [r for r in entries if r.detectedCapable]
     RCLog("RailCom: " + str(len(capable)) + " of " + str(len(entries)) +
           " roster entries have a decoder definition offering RailCom")
@@ -462,7 +678,7 @@ def PomManager():
     try:
         mgr = jmri.InstanceManager.getNullableDefault(jmri.AddressedProgrammerManager)
     except Exception as ex:
-        RCLog("Programmer manager lookup failed: " + str(ex))
+        RCLog("Programmer manager lookup failed: " + _RcSafe(ex))
         return None
     if mgr is None:
         return None
@@ -470,7 +686,7 @@ def PomManager():
         if not mgr.isAddressedModePossible():
             return None
     except Exception as ex:
-        RCLog("Could not read the addressed mode capability: " + str(ex))
+        RCLog("Could not read the addressed mode capability: " + _RcSafe(ex))
         return None
     return mgr
 
@@ -487,7 +703,7 @@ def PomAvailable():
     try:
         prog = mgr.getAddressedProgrammer(False, 0)
     except Exception as ex:
-        RCLog("RailCom: could not obtain a programming on main programmer: " + str(ex))
+        RCLog("RailCom: could not obtain a programming on main programmer: " + _RcSafe(ex))
     if prog is None:
         RCLog("RailCom: programming on main returned no programmer")
         return False
@@ -500,7 +716,7 @@ def PomAvailable():
             RCLog("RailCom: programming on main cannot write")
             return False
     except Exception as ex:
-        RCLog("RailCom: could not read the programming on main programmer: " + str(ex))
+        RCLog("RailCom: could not read the programming on main programmer: " + _RcSafe(ex))
         return False
     RCLog("RailCom: programming on main is available")
     return True
@@ -518,7 +734,7 @@ class _RcPomListener(jmri.ProgListener):
             try:
                 self.callback(self.record, ok)
             except Exception as ex:
-                RCLog("RailCom enable callback failed: " + str(ex))
+                RCLog("RailCom enable callback failed: " + _RcSafe(ex))
         if self.done is not None:
             try:
                 self.done()
@@ -527,28 +743,53 @@ class _RcPomListener(jmri.ProgListener):
 
 
 def EnableRailCom(rec, mgr, callback=None):
-    # Writes the RailCom switch on for one roster entry over programming on main. The
-    # value written is the decoder definition's default for that switch with the RailCom
-    # bit set, because POM cannot read the present value.
+    # Switches RailCom on for one roster entry over programming on main. The full CV 29
+    # byte is rebuilt from the entry's stored variable values, else the definition
+    # defaults, with the RailCom switch forced to its on value: POM cannot read, so the
+    # present decoder value cannot be preserved, and a bare switch bit would clear the
+    # direction and speed step bits.
     if rec is None or mgr is None:
         return False
     try:
-        address = int(str(rec.address).strip())
+        address = int(_RcSafe(rec.address).strip())
     except Exception:
-        RCLog("No DCC address for " + str(rec.rosterId) + "; RailCom not enabled")
+        RCLog("No DCC address for " + _RcSafe(rec.rosterId) + "; RailCom not enabled")
         return False
-    value = (int(rec.enableDefault) | (1 << RC_BIT)) & 0xFF
+    variables = _RcDecoderVariables(rec.decoderFamily, rec.decoderModel)
+    switchVar = None
+    for var in variables:
+        try:
+            if _RcSafe(var.getAttributeValue("item")) == _RcSafe(rec.enableItem):
+                switchVar = var
+                break
+        except Exception:
+            continue
+    if switchVar is None:
+        RCLog("RailCom: no RailCom switch in the decoder definition for " + _RcSafe(rec.rosterId))
+        return False
+    values = {}
+    try:
+        roster = jmri.jmrit.roster.Roster.getDefault()
+        found = roster.getEntryForId(_RcSafe(rec.rosterId)) if roster is not None else None
+        if found is not None:
+            values = _RcEntryVarValues(found)
+    except Exception as ex:
+        RCLog("RailCom: could not re-read " + _RcSafe(rec.rosterId) + ": " + _RcSafe(ex))
+    value = _RcCv29WriteValue(variables, values, _RcSafe(rec.enableItem),
+                              _RcSwitchOnValue(switchVar))
+    RCLog("RailCom: writing CV" + RC_CV + "=" + _RcSafe(value) + " to " + _RcSafe(rec.rosterId) +
+          " (address " + _RcSafe(address) + ")")
     try:
         prog = mgr.getAddressedProgrammer(bool(rec.longAddress), address)
     except Exception as ex:
-        RCLog("Could not get a programmer for " + str(rec.rosterId) + ": " + str(ex))
+        RCLog("Could not get a programmer for " + _RcSafe(rec.rosterId) + ": " + _RcSafe(ex))
         return False
     if prog is None:
-        RCLog("No programmer available for " + str(rec.rosterId))
+        RCLog("No programmer available for " + _RcSafe(rec.rosterId))
         return False
     try:
         prog.writeCV(RC_CV, value, _RcPomListener(rec, callback, None))
     except Exception as ex:
-        RCLog("Could not write CV" + RC_CV + " to " + str(rec.rosterId) + ": " + str(ex))
+        RCLog("Could not write CV" + RC_CV + " to " + _RcSafe(rec.rosterId) + ": " + _RcSafe(ex))
         return False
     return True

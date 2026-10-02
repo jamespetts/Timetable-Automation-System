@@ -4162,8 +4162,7 @@ class TASSetupFrame(jmri.util.JmriJFrame):
         gbc.gridy += 1
         panel.add(MakeWrappedLabel(
             "RailCom capability is read from each roster entry's decoder definition. "
-            "Entries whose decoder offers RailCom appear on the left, the rest on the right.",
-            widthPx=760), gbc)
+            "Entries whose decoder offers RailCom appear on the left, the rest on the right."), gbc)
 
         gbc.gridy += 1
         self.LblTrainDetectionStatus = JLabel("Reading the roster...")
@@ -4217,6 +4216,8 @@ class TASSetupFrame(jmri.util.JmriJFrame):
                 comp = DefaultListCellRenderer.getListCellRendererComponent(
                     self, owner, value, index, isSelected, cellHasFocus)
                 try:
+                    # Keep the text clear of the left edge of the list.
+                    self.setBorder(BorderFactory.createEmptyBorder(1, 4, 1, 2))
                     if hasattr(value, "rosterId"):
                         self.setText(_RcRow(value))
                         self.setForeground(_CapableColour(value, pomAvailable))
@@ -4232,17 +4233,26 @@ class TASSetupFrame(jmri.util.JmriJFrame):
 
         leftBox = Box.createVerticalBox()
         leftBox.add(JLabel("RailCom capable"))
-        leftBox.add(JScrollPane(self.TrainDetectionCapable))
+        leftScroll = JScrollPane(self.TrainDetectionCapable)
+        leftScroll.setPreferredSize(Dimension(290, 210))
+        leftScroll.setMinimumSize(Dimension(180, 120))
+        leftBox.add(leftScroll)
         rightBox = Box.createVerticalBox()
         rightBox.add(JLabel("Not RailCom capable"))
-        rightBox.add(JScrollPane(self.TrainDetectionNotCapable))
+        rightScroll = JScrollPane(self.TrainDetectionNotCapable)
+        rightScroll.setPreferredSize(Dimension(290, 210))
+        rightScroll.setMinimumSize(Dimension(180, 120))
+        rightBox.add(rightScroll)
         upper = JSplitPane(JSplitPane.HORIZONTAL_SPLIT, leftBox, rightBox)
         try:
             upper.setResizeWeight(0.5)
+            upper.setPreferredSize(Dimension(600, 230))
+            upper.setMinimumSize(Dimension(400, 140))
         except:
             pass
 
         gbc.gridy += 1
+        gbc.weightx = 1.0
         gbc.weighty = 1.0
         gbc.fill = GridBagConstraints.BOTH
         gbc.gridwidth = 1
@@ -4268,12 +4278,15 @@ class TASSetupFrame(jmri.util.JmriJFrame):
 
         # ---- Lower pane: RailCom initialisation fix ----
         gbc.gridy += 1
+        gbc.weightx = 0.0
+        gbc.weighty = 0.0
+        gbc.fill = GridBagConstraints.HORIZONTAL
         panel.add(MakeWrappedLabel(
             "Some RailCom decoders have an error in that they will not broadcast their "
             "address until they have been addressed by the command station. This enables "
             "a workaround to this error by sending a brief command to the decoder on "
             "startup. Choose to which roster entries to apply this fix. You can choose a "
-            "different function for each.", widthPx=760), gbc)
+            "different function for each."), gbc)
 
         # The fix list needs a real tick box per entry, so it is a table with a check box
         # column rather than a list. The single function input beside it applies to
@@ -4341,18 +4354,38 @@ class TASSetupFrame(jmri.util.JmriJFrame):
         self.TrainDetectionFixTable = JTable(fixTableModel)
         try:
             self.TrainDetectionFixTable.setRowHeight(22)
+            self.TrainDetectionFixTable.setAutoResizeMode(JTable.AUTO_RESIZE_ALL_COLUMNS)
+            columns = self.TrainDetectionFixTable.getColumnModel()
+            columns.getColumn(0).setPreferredWidth(70)
+            columns.getColumn(0).setMaxWidth(90)
+            columns.getColumn(1).setPreferredWidth(220)
+            columns.getColumn(2).setPreferredWidth(90)
+        except:
+            pass
+        fixScroll = JScrollPane(self.TrainDetectionFixTable)
+        try:
+            fixScroll.setPreferredSize(Dimension(420, 170))
+            fixScroll.setMinimumSize(Dimension(280, 110))
         except:
             pass
         gbc.gridy += 1
+        gbc.weightx = 1.0
         gbc.weighty = 1.0
         gbc.fill = GridBagConstraints.BOTH
         fixRow = Box.createHorizontalBox()
-        fixRow.add(JScrollPane(self.TrainDetectionFixTable))
+        fixRow.add(fixScroll)
         fixRow.add(Box.createHorizontalStrut(10))
         fnBox = Box.createVerticalBox()
         fnBox.add(JLabel("Function for the selected entry"))
         fnBox.add(self.TrainDetectionFixFunction)
         fnBox.add(Box.createVerticalGlue())
+        try:
+            # Keep the function box narrow so it cannot push past the right edge.
+            fnBox.setMaximumSize(Dimension(180, 32767))
+            fnBox.setPreferredSize(Dimension(170, 170))
+            self.TrainDetectionFixFunction.setMaximumSize(Dimension(160, 30))
+        except:
+            pass
         fixRow.add(fnBox)
         panel.add(fixRow, gbc)
 
