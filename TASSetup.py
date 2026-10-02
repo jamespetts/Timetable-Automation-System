@@ -4176,10 +4176,21 @@ class TASSetupFrame(jmri.util.JmriJFrame):
                 lst.setSelectionMode(ListSelectionModel.SINGLE_SELECTION)
             except:
                 pass
+        try:
+            self.TrainDetectionCapable.setToolTipText(
+                "Roster entries whose decoder definition offers RailCom. Blue entries "
+                "have RailCom switched off and can be enabled here when programming "
+                "on main is available. Near-black entries have RailCom switched on. "
+                "Black entries are marked as not RailCom capable.")
+            self.TrainDetectionNotCapable.setToolTipText(
+                "Roster entries whose decoder definition offers no RailCom, plus "
+                "entries marked as not RailCom capable.")
+        except:
+            pass
 
-        # Colours: dark grey for no support, dark blue for support but switched off and
-        # enableable, black when the entry has been marked not capable by the user, and a
-        # lighter grey for capable and switched on.
+        # Colours: dark grey for no support, the orientation sensing blue for support
+        # but switched off and enableable, black when the entry has been marked not
+        # capable by the user, and near-black for capable and switched on.
         def _RcRow(rec):
             # One display row: roster ID plus its DCC address, so the list is readable.
             try:
@@ -4196,7 +4207,7 @@ class TASSetupFrame(jmri.util.JmriJFrame):
             if rec.storedOn:
                 return Color(30, 30, 30)
             if pomAvailable:
-                return Color(0, 0, 110)
+                return Color(0, 51, 102)
             return Color(0, 0, 0)
 
         pomAvailable = False
@@ -4262,6 +4273,15 @@ class TASSetupFrame(jmri.util.JmriJFrame):
         actionRow = Box.createHorizontalBox()
         self.BtnRailComEnable = JButton("Enable RailCom on selected")
         self.BtnRailComToggle = JButton("Mark selected as not RailCom capable")
+        try:
+            self.BtnRailComEnable.setToolTipText(
+                "Writes the RailCom switch on for the selected entry through "
+                "programming on main. The entry must be on powered track.")
+            self.BtnRailComToggle.setToolTipText(
+                "Marks the selected entry as not RailCom capable, or clears the "
+                "mark. Stored in the configuration file.")
+        except:
+            pass
         actionRow.add(self.BtnRailComEnable)
         actionRow.add(Box.createHorizontalStrut(10))
         actionRow.add(self.BtnRailComToggle)
@@ -4278,7 +4298,15 @@ class TASSetupFrame(jmri.util.JmriJFrame):
         gbc.weightx = 0.0
         gbc.weighty = 0.0
         gbc.fill = GridBagConstraints.HORIZONTAL
-        panel.add(MakeHeading("RailCom initialisation fix"), gbc)
+        # HTML markup, because the lazy tab loader resets every component font to plain
+        # 13 afterwards and markup is the only styling that survives that pass.
+        fixHeading = MakeHeading("RailCom initialisation fix")
+        try:
+            fixHeading.setText("<html><b><font size='+1'>RailCom initialisation fix"
+                               "</font></b></html>")
+        except:
+            pass
+        panel.add(fixHeading, gbc)
 
         gbc.gridy += 1
         panel.add(MakeWrappedLabel(
@@ -4353,6 +4381,9 @@ class TASSetupFrame(jmri.util.JmriJFrame):
         fixTableModel = _FixTableModel(fixRows)
         self.TrainDetectionFixTable = JTable(fixTableModel)
         try:
+            self.TrainDetectionFixTable.setToolTipText(
+                "Tick each roster entry the RailCom initialisation fix applies to "
+                "at start-up. Only entries with RailCom switched on are listed.")
             self.TrainDetectionFixTable.setRowHeight(22)
             self.TrainDetectionFixTable.setAutoResizeMode(JTable.AUTO_RESIZE_ALL_COLUMNS)
             columns = self.TrainDetectionFixTable.getColumnModel()
@@ -4375,15 +4406,22 @@ class TASSetupFrame(jmri.util.JmriJFrame):
         fixRow = Box.createHorizontalBox()
         fixRow.add(fixScroll)
         fixRow.add(Box.createHorizontalStrut(10))
+        fnLabel = JLabel("Function for selected roster entry")
         fnBox = Box.createVerticalBox()
-        fnBox.add(JLabel("Function for selected"))
+        fnBox.add(fnLabel)
         fnBox.add(self.TrainDetectionFixFunction)
         fnBox.add(Box.createVerticalGlue())
         try:
-            # Keep the function box narrow so it cannot push past the right edge.
-            fnBox.setMaximumSize(Dimension(180, 32767))
-            fnBox.setPreferredSize(Dimension(170, 170))
-            self.TrainDetectionFixFunction.setMaximumSize(Dimension(160, 30))
+            # Left align the label over the input, and keep the box narrow so it cannot
+            # push past the right edge.
+            fnLabel.setAlignmentX(java.awt.Component.LEFT_ALIGNMENT)
+            self.TrainDetectionFixFunction.setAlignmentX(java.awt.Component.LEFT_ALIGNMENT)
+            fnBox.setMaximumSize(Dimension(220, 32767))
+            fnBox.setPreferredSize(Dimension(205, 170))
+            self.TrainDetectionFixFunction.setMaximumSize(Dimension(190, 30))
+            self.TrainDetectionFixFunction.setToolTipText(
+                "Function sent to the selected roster entry by the RailCom "
+                "initialisation fix. Applies when saved.")
         except:
             pass
         fixRow.add(fnBox)
@@ -4397,6 +4435,12 @@ class TASSetupFrame(jmri.util.JmriJFrame):
         self.ChkRailComFix = JCheckBox("Send the RailCom fix at start-up (requires restart)")
         self.ChkRailComFix.setOpaque(False)
         self.ChkRailComFix.setSelected(self.InitialRailComFix)
+        try:
+            self.ChkRailComFix.setToolTipText(
+                "Applies the RailCom initialisation fix to ticked entries each time "
+                "JMRI starts. Takes effect after restart.")
+        except:
+            pass
         startupRow.add(self.ChkRailComFix)
         panel.add(startupRow, gbc)
 
