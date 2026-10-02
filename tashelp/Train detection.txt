@@ -27,9 +27,9 @@ Lower half: the RailCom initialisation fix
 
 Some RailCom decoders have an error in that they will not broadcast their address until they have been addressed by the command station. This enables a workaround to this error by sending a brief command to the decoder on startup. Choose to which roster entries to apply this fix. You can choose a different function for each.
 
-The table repeats the roster entries whose RailCom is fully switched on. Tick "Apply fix" for each entry that needs it. Select a row and set "Function for the selected entry" to choose which function is sent to that entry; the input follows whichever row is selected. The default is F4.
+The table repeats the roster entries whose RailCom is fully switched on. Tick "Apply fix" for each entry that needs it. Select a row and set "Function for selected roster entry" to choose which function is sent to that entry; the input follows whichever row is selected. The default is F4.
 
-The fix is optional and off by default. Tick "Send the fix at start-up (requires restart)" to have it applied each time JMRI starts. Restart JMRI after changing this. You can also apply the fix at any time by running RailComFix.py with Scripting, Run script.
+There is no separate start-up switch. Ticking the first entry runs the fix at once and sets RailComFix.py to run at start-up, so the fix applies each time JMRI starts. Unticking the last entry removes it from start-up again. You can also apply the fix at any time by running RailComFix.py with Scripting, Run script.
 
 For each entry ticked, the fix acquires a throttle for that entry's DCC address, sends one function-off command, and releases the throttle. No speed setting is touched and no function is left on.
 

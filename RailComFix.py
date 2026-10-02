@@ -12,15 +12,16 @@
 # If not, see <https://www.gnu.org/licenses/>.
 #
 # RailComFix.py
-# Optional startup script. Disabled by default; enable in TASSetup.py Train detection tab.
-# Applies the RailCom initialisation fix: for each roster entry marked for the fix, a
-# brief function-off command is sent to that entry's DCC address, so the decoder is
-# addressed by the command station and then broadcasts on RailCom. The throttle is
+# Optional startup script. Enabled automatically when at least one roster entry is
+# ticked for the fix in TASSetup.py Train detection tab, and removed again when none
+# are. Applies the RailCom initialisation fix: for each roster entry marked for the
+# fix, a brief function-off command is sent to that entry's DCC address, so the decoder
+# is addressed by the command station and then broadcasts on RailCom. The throttle is
 # released straight afterwards and no speed setting is touched.
 #
 # Which entries get the fix, and which function is sent to each, are held in
 # profile:jython/config/railcomfix.tsv and edited in TASSetup.py. Entry selection and
-# RailCom capability are decided by RailComDetect.py.
+# RailCom capability are decided by RailComDetect.py, which also runs the fix.
 #
 # The script also runs when started manually through Scripting, Run script, so the fix
 # can be applied without restarting JMRI.
@@ -61,8 +62,8 @@ def _RailComFixCollect(_detect=RCD):
 
 
 class _RailComFixWorker(jmri.jmrit.automat.AbstractAutomaton):
-    # Sends the function-off command to each address in turn. Each throttle is released
-    # immediately after its command, so no throttle is held.
+    # Sends the function-off command to each address in turn. Kept here so this file
+    # reads alone; the same worker lives in RailComDetect for setup's immediate runs.
     def __init__(self, targets):
         jmri.jmrit.automat.AbstractAutomaton.__init__(self)
         self._targets = list(targets)
@@ -105,14 +106,7 @@ def _RailComFixApply(_detect=RCD, _log=_RailComFixLog):
     except Exception as ex:
         _log("RailCom fix: could not read the roster: " + str(ex))
         return 0
-    if len(targets) == 0:
-        _log("RailCom fix: no roster entries are marked for the fix")
-        return 0
-    worker = _RailComFixWorker(targets)
-    worker.setName("RailCom fix")
-    worker.start()
-    _log("RailCom fix: applying to " + str(len(targets)) + " roster entry/entries")
-    return len(targets)
+    return _detect.ApplyFixTargets(targets)
 
 
 def _RailComFixTask(Runnable):

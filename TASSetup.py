@@ -678,9 +678,6 @@ def IsFlickerMonitorEnabled():
 def IsDccPowerOnStartEnabled():
     return _IsScriptEnabled("DccPowerOnStart.py")
 
-def IsRailComFixEnabled():
-    return _IsScriptEnabled("RailComFix.py")
-
 
 def IsStreetLightControllerEnabled():
     return _IsScriptEnabled("StreetLightController.py")
@@ -1349,9 +1346,6 @@ class TASSetupFrame(jmri.util.JmriJFrame):
         # DCC power on at Start-Up (DccPowerOnStart.py), off by default
         self.InitialDccPowerOnStart = _IsScriptEnabled("DccPowerOnStart.py")
         self.CurrentDccPowerOnStart = self.InitialDccPowerOnStart
-        # RailCom fix at Start-Up (RailComFix.py), off by default
-        self.InitialRailComFix = _IsScriptEnabled("RailComFix.py")
-        self.CurrentRailComFix = self.InitialRailComFix
         
         # TAS menu on Start-Up (TimetableAutomation.py)
         self.InitialTASMenu = _IsScriptEnabled("TimetableAutomation.py")
@@ -4173,10 +4167,6 @@ class TASSetupFrame(jmri.util.JmriJFrame):
             def __init__(self, text):
                 JButton.__init__(self, text)
 
-        class _TipCheck(_TippedMixin, JCheckBox):
-            def __init__(self, text):
-                JCheckBox.__init__(self, text)
-
         class _TipSpin(_TippedMixin, JSpinner):
             def __init__(self, model):
                 JSpinner.__init__(self, model)
@@ -4375,8 +4365,10 @@ class TASSetupFrame(jmri.util.JmriJFrame):
                     return String("")
 
             def getColumnClass(self, index):
+                # Must be the Boolean wrapper class: JTable only draws a tick box for
+                # Boolean.class, not for the boolean primitive.
                 if int(index) == 0:
-                    return java.lang.Boolean.TYPE
+                    return Boolean
                 return String
 
             def isCellEditable(self, rowIndex, columnIndex):
@@ -4401,10 +4393,37 @@ class TASSetupFrame(jmri.util.JmriJFrame):
                     if int(columnIndex) != 0:
                         return
                     rec = self._store["rows"][int(rowIndex)]
+                    before = len([r for r in records["all"] if r.fix])
                     rec.fix = bool(value)
                     RecordConfig(rec)["fix"] = bool(value)
-                    Persist(("The fix now applies to " if rec.fix else
-                             "The fix no longer applies to ") + str(rec.rosterId) + ".")
+                    after = len([r for r in records["all"] if r.fix])
+                    if not Persist(("The fix now applies to " if rec.fix else
+                                    "The fix no longer applies to ") + str(rec.rosterId) + "."):
+                        return
+                    # The start-up script follows the tick boxes: the first tick runs
+                    # the fix at once and enables start-up; the last untick disables it.
+                    if before == 0 and after > 0:
+                        try:
+                            RCD.ApplyFixTargets([(rec.address, rec.longAddress,
+                                                  rec.function, rec.rosterId)])
+                        except Exception:
+                            pass
+                        if _EnsureScriptEnabled("RailComFix.py", True):
+                            self.LblTrainDetectionAction.setText(
+                                "The fix now applies to " + str(rec.rosterId) +
+                                " and runs at start-up.")
+                        else:
+                            LogWarn("Could not change Start-Up for RailComFix.py",
+                                    alsoDialog=True)
+                    elif before > 0 and after == 0:
+                        if _EnsureScriptEnabled("RailComFix.py", False):
+                            self.LblTrainDetectionAction.setText(
+                                "The fix no longer applies to " + str(rec.rosterId) +
+                                " and no longer runs at start-up.")
+                        else:
+                            LogWarn("Could not change Start-Up for RailComFix.py",
+                                    alsoDialog=True)
+                    RefreshFixStatus()
                 except Exception:
                     pass
 
@@ -4448,30 +4467,36 @@ class TASSetupFrame(jmri.util.JmriJFrame):
             fnBox.setMaximumSize(Dimension(220, 32767))
             fnBox.setPreferredSize(Dimension(205, 170))
             self.TrainDetectionFixFunction.setMaximumSize(Dimension(190, 30))
-            self.TrainDetectionFixFunction.setToolTipText(_RcTip(
-                "Function sent to the selected entry by the fix."))
+            # The number box is drawn by the spinner's editor, so the tip has to be
+            # set there and on its text field as well, else hovering the digits
+            # shows nothing.
+            tipText = _RcTip("Function sent to the selected entry by the fix.")
+            try:
+                self.TrainDetectionFixFunction.setToolTipText(tipText)
+            except:
+                pass
+            try:
+                editor = self.TrainDetectionFixFunction.getEditor()
+                editor.setToolTipText(tipText)
+            except:
+                editor = None
+            try:
+                if editor is not None:
+                    editor.getTextField().setToolTipText(tipText)
+            except:
+                pass
         except:
             pass
         fixRow.add(fnBox)
         panel.add(fixRow, gbc)
 
-        # ---- Start-up option and fix status ----
+        # ---- Fix status: the start-up script follows the tick boxes ----
+        # Ticking the first entry runs the fix at once and enables RailComFix.py at
+        # start-up; unticking the last one disables it again. No restart prompt: the
+        # change takes effect at the next start of JMRI.
         gbc.gridy += 1
         gbc.weighty = 0.0
         gbc.fill = GridBagConstraints.HORIZONTAL
-        startupRow = Box.createHorizontalBox()
-        self.ChkRailComFix = _TipCheck("Send the RailCom fix at start-up (requires restart)")
-        self.ChkRailComFix.setOpaque(False)
-        self.ChkRailComFix.setSelected(self.InitialRailComFix)
-        try:
-            self.ChkRailComFix.setToolTipText(_RcTip(
-                "Applies the fix to ticked entries at each start. Needs a restart."))
-        except:
-            pass
-        startupRow.add(self.ChkRailComFix)
-        panel.add(startupRow, gbc)
-
-        gbc.gridy += 1
         self.LblRailComFixStatus = JLabel("")
         ApplyTheme(self.LblRailComFixStatus)
         panel.add(self.LblRailComFixStatus, gbc)
@@ -4532,17 +4557,29 @@ class TASSetupFrame(jmri.util.JmriJFrame):
                     pass
             SwingUtilities.invokeLater(RunnableAdapter(_Fill))
 
+        def RefreshFixStatus():
+            # States how many entries the fix applies to and whether it runs at start-up.
+            # The start-up script follows the tick boxes, so this only reports.
+            try:
+                marked = len([r for r in records["all"] if r.fix and r.FullyEnabled()])
+                count = len([r for r in records["all"] if r.FullyEnabled()])
+                text = ("The fix is applied to " + str(marked) + " of " + str(count) +
+                        " RailCom capable roster entry/entries at start-up.")
+                if _IsScriptEnabled("RailComFix.py"):
+                    text = text + " The fix runs at start-up."
+                else:
+                    text = text + " The fix does not run at start-up."
+                self.LblRailComFixStatus.setText(text)
+            except:
+                pass
+
         def RefreshFixTable():
             def _Fill():
                 try:
                     suppressFixEvents[0] = True
                     fixRows["rows"] = list(RCD.EnabledEntries(records["all"]))
                     fixTableModel.fireTableDataChanged()
-                    count = len(fixRows["rows"])
-                    marked = len([r for r in fixRows["rows"] if r.fix])
-                    self.LblRailComFixStatus.setText(
-                        "The fix is applied to " + str(marked) + " of " + str(count) +
-                        " RailCom capable roster entry/entries at start-up.")
+                    RefreshFixStatus()
                 except:
                     pass
                 finally:
@@ -4638,15 +4675,6 @@ class TASSetupFrame(jmri.util.JmriJFrame):
             RecordConfig(rec)["function"] = value
             Persist("Function for " + str(rec.rosterId) + " set to F" + str(value) + ".")
 
-        def OnRailComFixStartup(e=None):
-            want = self.ChkRailComFix.isSelected()
-            ok = _EnsureScriptEnabled("RailComFix.py", want)
-            actual = _IsScriptEnabled("RailComFix.py")
-            self.CurrentRailComFix = actual
-            self.ChkRailComFix.setSelected(actual)
-            if not ok:
-                LogWarn("Could not change Start-Up for RailComFix.py", alsoDialog=True)
-
         class _FixSelectionHook(ListSelectionListener):
             def valueChanged(innerSelf, e):
                 try:
@@ -4659,7 +4687,6 @@ class TASSetupFrame(jmri.util.JmriJFrame):
         try:
             self.BtnRailComEnable.addActionListener(OnEnable)
             self.BtnRailComToggle.addActionListener(OnToggle)
-            self.ChkRailComFix.addActionListener(OnRailComFixStartup)
             self.TrainDetectionFixFunction.addChangeListener(OnFunctionChanged)
             self.TrainDetectionFixTable.getSelectionModel().addListSelectionListener(
                 _FixSelectionHook())
@@ -4667,8 +4694,8 @@ class TASSetupFrame(jmri.util.JmriJFrame):
             pass
 
         if not ScriptExists("RailComFix.py"):
-            self.ChkRailComFix.setSelected(False)
-            self.ChkRailComFix.setEnabled(False)
+            self.TrainDetectionFixTable.setEnabled(False)
+            self.TrainDetectionFixFunction.setEnabled(False)
             self.LblRailComFixStatus.setText("Missing script: RailComFix.py")
 
         # ---- Populate from the roster on a worker thread ----
@@ -4708,11 +4735,7 @@ class TASSetupFrame(jmri.util.JmriJFrame):
                 try:
                     fixRows["rows"] = list(RCD.EnabledEntries(entries))
                     fixTableModel.fireTableDataChanged()
-                    marked = len([r for r in fixRows["rows"] if r.fix])
-                    self.LblRailComFixStatus.setText(
-                        "The fix is applied to " + str(marked) + " of " +
-                        str(len(fixRows["rows"])) +
-                        " RailCom capable roster entry/entries at start-up.")
+                    RefreshFixStatus()
                 finally:
                     suppressFixEvents[0] = False
             SwingUtilities.invokeLater(RunnableAdapter(_Apply))
@@ -6104,7 +6127,6 @@ class TASSetupFrame(jmri.util.JmriJFrame):
                    self.InitialDirectionSensing != self.CurrentDirectionSensing or
                    self.InitialFlickerMonitor != self.CurrentFlickerMonitor or
                    self.InitialDccPowerOnStart != self.CurrentDccPowerOnStart or
-                   self.InitialRailComFix != self.CurrentRailComFix or
                    bool(getattr(self, 'FastClockStartupNeedsRestart', (self.InitialFastClockStartup != self.CurrentFastClockStartup))))
         if changed:
             try:

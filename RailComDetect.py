@@ -674,6 +674,70 @@ def EnabledEntries(entries):
     return [rec for rec in entries if rec.FullyEnabled()]
 
 
+class _RcFixWorker(jmri.jmrit.automat.AbstractAutomaton):
+    # Sends one function-off command per address, releasing each throttle straight
+    # afterwards, so no throttle is held and no speed setting is touched.
+    def __init__(self, targets):
+        jmri.jmrit.automat.AbstractAutomaton.__init__(self)
+        self._targets = list(targets)
+
+    def init(self):
+        pass
+
+    def handle(self):
+        for (address, longAddress, function, rosterId) in list(self._targets):
+            throttle = None
+            try:
+                throttle = self.getThrottle(int(address), bool(longAddress))
+            except Exception as ex:
+                RCLog("RailCom fix: no throttle for " + _RcSafe(rosterId) +
+                      " (address " + _RcSafe(address) + "): " + _RcSafe(ex))
+                continue
+            if throttle is None:
+                RCLog("RailCom fix: no throttle acquired for " + _RcSafe(rosterId) +
+                      " (address " + _RcSafe(address) + ")")
+                continue
+            try:
+                throttle.setFunction(int(function), False)
+                RCLog("RailCom fix: sent F" + _RcSafe(function) + " off to " +
+                      _RcSafe(rosterId) + " (address " + _RcSafe(address) + ")")
+            except Exception as ex:
+                RCLog("RailCom fix: command failed for " + _RcSafe(rosterId) + ": " +
+                      _RcSafe(ex))
+            try:
+                throttle.release(None)
+            except Exception as ex:
+                RCLog("RailCom fix: could not release the throttle for " +
+                      _RcSafe(rosterId) + ": " + _RcSafe(ex))
+        return False
+
+
+def ApplyFixTargets(targets):
+    # Applies the RailCom initialisation fix to the given targets, each a tuple of
+    # (address, longAddress, function, rosterId), on a worker thread. Returns the
+    # number of targets. Used by the start-up script and by setup for an immediate run.
+    clean = []
+    try:
+        for (address, longAddress, function, rosterId) in list(targets):
+            clean.append((int(str(address).strip()), bool(longAddress),
+                          int(function), _RcSafe(rosterId)))
+    except Exception as ex:
+        RCLog("RailCom fix: bad fix target: " + _RcSafe(ex))
+        return 0
+    if len(clean) == 0:
+        RCLog("RailCom fix: no roster entries are marked for the fix")
+        return 0
+    try:
+        worker = _RcFixWorker(clean)
+        worker.setName("RailCom fix")
+        worker.start()
+    except Exception as ex:
+        RCLog("RailCom fix could not start: " + _RcSafe(ex))
+        return 0
+    RCLog("RailCom fix: applying to " + str(len(clean)) + " roster entry/entries")
+    return len(clean)
+
+
 # --------------------------------------------------------- programming on main (POM)
 
 def PomManager():
