@@ -4146,7 +4146,12 @@ class TASSetupFrame(jmri.util.JmriJFrame):
         # unwrapped line and uses the default position, so each widget below is a tiny
         # subclass carrying its own wrapped text and offset.
         def _RcTip(text):
-            return ("<html><div style='width:320px;'>" + str(text) + "</div></html>")
+            # Short tips stay plain single-line text so the box fits the words. Longer
+            # tips wrap at a fixed width instead of running off in one line.
+            words = str(text)
+            if len(words) < 90:
+                return words
+            return ("<html><div style='width:320px;'>" + words + "</div></html>")
 
         class _TippedMixin(object):
             def getToolTipLocation(self, e):
