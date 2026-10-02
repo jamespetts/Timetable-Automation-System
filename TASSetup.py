@@ -1317,11 +1317,11 @@ class TASSetupFrame(jmri.util.JmriJFrame):
         # Base frame setup
         jmri.util.JmriJFrame.__init__(self, "Timetable Automation System setup")
         self.setDefaultCloseOperation(JDialog.DISPOSE_ON_CLOSE)
-        self.setSize(780, 760)
+        self.setSize(820, 760)
            
         # Prevent the frame from ever packing smaller than the baseline.
         try:
-            self.setMinimumSize(Dimension(780, 760))
+            self.setMinimumSize(Dimension(820, 760))
         except:
             pass
 
@@ -4447,14 +4447,14 @@ class TASSetupFrame(jmri.util.JmriJFrame):
             self.TrainDetectionFixTable.setRowHeight(22)
             self.TrainDetectionFixTable.setAutoResizeMode(JTable.AUTO_RESIZE_ALL_COLUMNS)
             columns = self.TrainDetectionFixTable.getColumnModel()
-            columns.getColumn(0).setPreferredWidth(60)
-            columns.getColumn(0).setMaxWidth(80)
-            columns.getColumn(1).setPreferredWidth(150)
-            columns.getColumn(2).setPreferredWidth(70)
-            columns.getColumn(3).setPreferredWidth(80)
-            columns.getColumn(4).setPreferredWidth(170)
-            columns.getColumn(5).setPreferredWidth(60)
-            columns.getColumn(5).setMaxWidth(80)
+            columns.getColumn(0).setPreferredWidth(55)
+            columns.getColumn(0).setMaxWidth(75)
+            columns.getColumn(1).setPreferredWidth(140)
+            columns.getColumn(2).setPreferredWidth(65)
+            columns.getColumn(3).setPreferredWidth(75)
+            columns.getColumn(4).setPreferredWidth(160)
+            columns.getColumn(5).setPreferredWidth(75)
+            columns.getColumn(5).setMaxWidth(95)
         except:
             pass
         fixScroll = JScrollPane(self.TrainDetectionFixTable)
@@ -4470,19 +4470,24 @@ class TASSetupFrame(jmri.util.JmriJFrame):
         fixRow = Box.createHorizontalBox()
         fixRow.add(fixScroll)
         fixRow.add(Box.createHorizontalStrut(10))
-        fnLabel = JLabel("Function for selected roster entry")
+        fnLabel = JLabel("<html><div style='width:130px;'>Function for selected "
+                          "roster entry</div></html>")
         fnBox = Box.createVerticalBox()
         fnBox.add(fnLabel)
         fnBox.add(self.TrainDetectionFixFunction)
         fnBox.add(Box.createVerticalGlue())
         try:
             # Left align the label over the input, and keep the box narrow so it cannot
-            # push past the right edge.
+            # push past the right edge. The number field only ever holds two digits.
             fnLabel.setAlignmentX(java.awt.Component.LEFT_ALIGNMENT)
             self.TrainDetectionFixFunction.setAlignmentX(java.awt.Component.LEFT_ALIGNMENT)
-            fnBox.setMaximumSize(Dimension(220, 32767))
-            fnBox.setPreferredSize(Dimension(205, 170))
-            self.TrainDetectionFixFunction.setMaximumSize(Dimension(190, 30))
+            fnBox.setMaximumSize(Dimension(160, 32767))
+            fnBox.setPreferredSize(Dimension(150, 170))
+            self.TrainDetectionFixFunction.setMaximumSize(Dimension(120, 30))
+            try:
+                self.TrainDetectionFixFunction.getEditor().getTextField().setColumns(2)
+            except:
+                pass
             # The number box is drawn by the spinner's editor, so the tip has to be
             # set there and on its text field as well, else hovering the digits
             # shows nothing.
