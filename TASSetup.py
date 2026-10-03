@@ -678,6 +678,9 @@ def IsFlickerMonitorEnabled():
 def IsDccPowerOnStartEnabled():
     return _IsScriptEnabled("DccPowerOnStart.py")
 
+def IsDccPowerOffOnCloseEnabled():
+    return _IsScriptEnabled("DccPowerOffOnClose.py")
+
 
 def IsStreetLightControllerEnabled():
     return _IsScriptEnabled("StreetLightController.py")
@@ -1346,6 +1349,9 @@ class TASSetupFrame(jmri.util.JmriJFrame):
         # DCC power on at Start-Up (DccPowerOnStart.py), off by default
         self.InitialDccPowerOnStart = _IsScriptEnabled("DccPowerOnStart.py")
         self.CurrentDccPowerOnStart = self.InitialDccPowerOnStart
+        # DCC power off at close-down (DccPowerOffOnClose.py), off by default
+        self.InitialDccPowerOffOnClose = _IsScriptEnabled("DccPowerOffOnClose.py")
+        self.CurrentDccPowerOffOnClose = self.InitialDccPowerOffOnClose
         
         # TAS menu on Start-Up (TimetableAutomation.py)
         self.InitialTASMenu = _IsScriptEnabled("TimetableAutomation.py")
@@ -1584,6 +1590,12 @@ class TASSetupFrame(jmri.util.JmriJFrame):
                 tabs.repaint()
             except:
                 pass
+            # The real tab's preferred size can be larger than the placeholder's;
+            # repack so nothing is clipped.
+            try:
+                self.pack()
+            except:
+                pass
         except:
             pass
 
@@ -1761,16 +1773,33 @@ class TASSetupFrame(jmri.util.JmriJFrame):
 
         panel.add(header, gbc)
 
-        # (A) Enable time-based actions (requires restart) - controls CheckWhenTimeChanges.py at Start-Up
+        # Two-column arrangement of enablement checkboxes: the time-based
+        # actions toggle is in the right-hand column.
         gbc.gridwidth = 3
         gbc.gridx = 0; gbc.gridy = 1
+        self.CheckBoxColumns = Box.createHorizontalBox()
+        self.CheckBoxLeftCol = Box.createVerticalBox()
+        self.CheckBoxRightCol = Box.createVerticalBox()
+        self.CheckBoxColumns.add(self.CheckBoxLeftCol)
+        self.CheckBoxColumns.add(Box.createHorizontalGlue())
+        self.CheckBoxColumns.add(self.CheckBoxRightCol)
+        try:
+            gbc.insets = Insets(4, 0, 4, 0)
+        except:
+            pass
+        panel.add(self.CheckBoxColumns, gbc)
+        try:
+            gbc.insets = Insets(0, 0, 0, 0)
+        except:
+            pass
+
+        # (A) Enable time-based actions (requires restart) - controls CheckWhenTimeChanges.py at Start-Up
         timeRow = Box.createHorizontalBox()
         self.ChkTimeActions = JCheckBox("Enable time-based actions (requires restart)")
         self.ChkTimeActions.setOpaque(False)
         self.ChkTimeActions.setSelected(self.InitialTimeActions)
+
         # (A0) Show TAS menu on Start-Up (requires restart) - controls TimetableAutomation.py at Start-Up
-        gbc.gridwidth = 3
-        gbc.gridx = 0; gbc.gridy = 1
         tasMenuRow = Box.createHorizontalBox()
         self.ChkTASMenu = JCheckBox("Show the Timetable Automation System menu on startup")
         self.ChkTASMenu.setOpaque(False)
@@ -1787,13 +1816,13 @@ class TASSetupFrame(jmri.util.JmriJFrame):
 
         self.ChkTASMenu.addActionListener(OnTASMenu)
         tasMenuRow.add(self.ChkTASMenu)
-        panel.add(tasMenuRow, gbc)
+        self.CheckBoxLeftCol.add(tasMenuRow)
 
         # Error label for missing TAS menu script
-        gbc.gridy += 1
         self.LblTASMenuError = JLabel("")
         ApplyTheme(self.LblTASMenuError)
-        panel.add(self.LblTASMenuError, gbc)
+        self.CheckBoxLeftCol.add(self.LblTASMenuError)
+        self.CheckBoxLeftCol.add(Box.createVerticalStrut(8))
 
         missingTAS = []
         if not ScriptExists("TimetableAutomation.py"):
@@ -1821,13 +1850,13 @@ class TASSetupFrame(jmri.util.JmriJFrame):
 
         self.ChkTimeActions.addActionListener(OnTimeActions)
         timeRow.add(self.ChkTimeActions)
-        panel.add(timeRow, gbc)
-        
+        self.CheckBoxRightCol.add(timeRow)
+
         # Error label for missing scripts
-        gbc.gridy += 1
         self.LblTimeActionsError = JLabel("")
         ApplyTheme(self.LblTimeActionsError)
-        panel.add(self.LblTimeActionsError, gbc)
+        self.CheckBoxRightCol.add(self.LblTimeActionsError)
+        self.CheckBoxRightCol.add(Box.createVerticalGlue())
 
         # Check existence of both scripts
         missing = []
@@ -1841,7 +1870,6 @@ class TASSetupFrame(jmri.util.JmriJFrame):
             self.LblTimeActionsError.setText(msg)
 
         # Flicker monitor (BlockFlickerMonitor.py) at Start-Up, off by default
-        gbc.gridy += 1
         flickerRow = Box.createHorizontalBox()
         self.ChkFlickerMonitor = JCheckBox("Enable occupancy sensor flicker monitor (requires restart)")
         self.ChkFlickerMonitor.setOpaque(False)
@@ -1856,12 +1884,12 @@ class TASSetupFrame(jmri.util.JmriJFrame):
                 LogWarn("Could not change Start-Up for BlockFlickerMonitor.py", alsoDialog=True)
         self.ChkFlickerMonitor.addActionListener(OnFlickerMonitor)
         flickerRow.add(self.ChkFlickerMonitor)
-        panel.add(flickerRow, gbc)
+        self.CheckBoxLeftCol.add(flickerRow)
 
-        gbc.gridy += 1
         self.LblFlickerMonitorError = JLabel("")
         ApplyTheme(self.LblFlickerMonitorError)
-        panel.add(self.LblFlickerMonitorError, gbc)
+        self.CheckBoxLeftCol.add(self.LblFlickerMonitorError)
+        self.CheckBoxLeftCol.add(Box.createVerticalStrut(8))
 
         if not ScriptExists("BlockFlickerMonitor.py"):
             self.ChkFlickerMonitor.setSelected(False)
@@ -1869,7 +1897,6 @@ class TASSetupFrame(jmri.util.JmriJFrame):
             self.LblFlickerMonitorError.setText("Missing script: BlockFlickerMonitor.py")
 
         # DCC power on at Start-Up (DccPowerOnStart.py), off by default
-        gbc.gridy += 1
         dccPowerRow = Box.createHorizontalBox()
         self.ChkDccPowerOnStart = JCheckBox("Turn DCC power on at start-up (requires restart)")
         self.ChkDccPowerOnStart.setOpaque(False)
@@ -1884,22 +1911,48 @@ class TASSetupFrame(jmri.util.JmriJFrame):
                 LogWarn("Could not change Start-Up for DccPowerOnStart.py", alsoDialog=True)
         self.ChkDccPowerOnStart.addActionListener(OnDccPowerOnStart)
         dccPowerRow.add(self.ChkDccPowerOnStart)
-        panel.add(dccPowerRow, gbc)
+        dccPowerRow.add(Box.createHorizontalStrut(12))
 
-        gbc.gridy += 1
+        # DCC power off at close-down (DccPowerOffOnClose.py), off by default
+        self.ChkDccPowerOffOnClose = JCheckBox("Turn DCC power off at close-down (requires restart)")
+        self.ChkDccPowerOffOnClose.setOpaque(False)
+        self.ChkDccPowerOffOnClose.setSelected(self.InitialDccPowerOffOnClose)
+        def OnDccPowerOffOnClose(e=None):
+            want = self.ChkDccPowerOffOnClose.isSelected()
+            ok = _EnsureScriptEnabled("DccPowerOffOnClose.py", want)
+            actual = _IsScriptEnabled("DccPowerOffOnClose.py")
+            self.CurrentDccPowerOffOnClose = actual
+            self.ChkDccPowerOffOnClose.setSelected(actual)
+            if not ok:
+                LogWarn("Could not change Start-Up for DccPowerOffOnClose.py", alsoDialog=True)
+        self.ChkDccPowerOffOnClose.addActionListener(OnDccPowerOffOnClose)
+        dccPowerRow.add(self.ChkDccPowerOffOnClose)
+        self.CheckBoxLeftCol.add(dccPowerRow)
+
         self.LblDccPowerOnStartError = JLabel("")
         ApplyTheme(self.LblDccPowerOnStartError)
-        panel.add(self.LblDccPowerOnStartError, gbc)
+        self.CheckBoxLeftCol.add(self.LblDccPowerOnStartError)
+        self.LblDccPowerOffOnCloseError = JLabel("")
+        ApplyTheme(self.LblDccPowerOffOnCloseError)
+        self.CheckBoxLeftCol.add(self.LblDccPowerOffOnCloseError)
 
         if not ScriptExists("DccPowerOnStart.py"):
             self.ChkDccPowerOnStart.setSelected(False)
             self.ChkDccPowerOnStart.setEnabled(False)
             self.LblDccPowerOnStartError.setText("Missing script: DccPowerOnStart.py")
+        if not ScriptExists("DccPowerOffOnClose.py"):
+            self.ChkDccPowerOffOnClose.setSelected(False)
+            self.ChkDccPowerOffOnClose.setEnabled(False)
+            self.LblDccPowerOffOnCloseError.setText("Missing script: DccPowerOffOnClose.py")
 
         # (B) "Run trains automatically" row (checkbox + status label) - NOW uses IMTASAutoWorking memory only
         gbc.gridwidth = 3
         gbc.gridx = 0
         gbc.gridy += 1
+        try:
+            gbc.insets = Insets(16, 0, 0, 0)
+        except:
+            pass
         runRow = Box.createHorizontalBox()
         self.ChkRunAuto = JCheckBox("Run trains automatically from timetable")
         self.ChkRunAuto.setOpaque(False)
@@ -6117,6 +6170,7 @@ class TASSetupFrame(jmri.util.JmriJFrame):
                    self.InitialDirectionSensing != self.CurrentDirectionSensing or
                    self.InitialFlickerMonitor != self.CurrentFlickerMonitor or
                    self.InitialDccPowerOnStart != self.CurrentDccPowerOnStart or
+                   self.InitialDccPowerOffOnClose != self.CurrentDccPowerOffOnClose or
                    bool(getattr(self, 'FastClockStartupNeedsRestart', (self.InitialFastClockStartup != self.CurrentFastClockStartup))))
         if changed:
             try:

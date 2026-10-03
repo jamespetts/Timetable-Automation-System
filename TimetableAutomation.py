@@ -410,6 +410,7 @@ _TASStartUpScriptNames = [
     'TASFastClockStartup.py',
     'BlockFlickerMonitor.py',
     'DccPowerOnStart.py',
+    'DccPowerOffOnClose.py',
     'RailComFix.py',
 ]
 

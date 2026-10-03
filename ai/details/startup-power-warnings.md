@@ -1,4 +1,4 @@
-Read when: Task modifies or debugs DccPowerOnStart.py, TASWarningWindow.py, BlockFlickerMonitor.py, a TAS warning window, DCC track power at start-up, disabling JMRI's built-in PowerOn.py Start-Up entry, or a TAS start-up script that shares names with another start-up script.
+Read when: Task modifies or debugs DccPowerOnStart.py, DccPowerOffOnClose.py, TASWarningWindow.py, BlockFlickerMonitor.py, a TAS warning window, DCC track power at start-up or close-down, disabling JMRI's built-in PowerOn.py Start-Up entry, or a TAS start-up script that shares names with another start-up script.
 
 # Start-up power and shared warning window
 
@@ -50,6 +50,10 @@ DccPowerOnStart.py uses title "DCC power warning", nameHex "ffa64d", symbolFill 
 
 Optional startup script, off by default. Watches Blocks for a double flicker: OCCUPIED-UNOCCUPIED-OCCUPIED or UNOCCUPIED-OCCUPIED-UNOCCUPIED, first to third state within FLICKER_GAP_MS = 3000. Module keeps _FlickerWindow, _FlickerLock, _FlickerStarted, _FlickerListeners, _FlickerStateChanges. Functions: _FlickerLog, _FlickerBlockLabel, _FlickerSensorLabel, _FlickerShowNotice, _FlickerAppendMessage, _FlickerReport, _FlickerAllBlocks, _FlickerStart, _FlickerStop, _FlickerShow. Class _FlickerBlockListener. _FlickerStart runs at import; _FlickerStop is registered with jmri.InstanceManager.getDefault(jmri.ShutDownManager) through TASWarningWindow.Runner. There are no external callers of these functions.
 
+## DccPowerOffOnClose.py
+
+Optional startup script, off by default, enabled in TASSetup.py General tab with "Turn DCC power off at close-down (requires restart)". Listed in TimetableAutomation._TASStartUpScriptNames. At import it registers jmri.ShutDownManager a DccPowerOffShutdownTask that waits up to DCCPOWEROFF_MANAGER_WAIT_SECONDS = 10 seconds for a power manager and then calls setPower(jmri.PowerManager.OFF). All top-level names use the DCCPOWEROFF_ or _DccPowerOff prefix.
+
 ## TASSetup.py wiring
 
-IsDccPowerOnStartEnabled uses _IsScriptEnabled("DccPowerOnStart.py"). TASSetupFrame stores InitialDccPowerOnStart and CurrentDccPowerOnStart, the checkbox is ChkDccPowerOnStart with error label LblDccPowerOnStartError, and the close handler compares InitialDccPowerOnStart with CurrentDccPowerOnStart for the restart prompt. Help topic is tashelp/Dcc power on start.txt, discovered automatically by TASHelp.py.
+IsDccPowerOnStartEnabled uses _IsScriptEnabled("DccPowerOnStart.py"). TASSetupFrame stores InitialDccPowerOnStart and CurrentDccPowerOnStart, the checkbox is ChkDccPowerOnStart with error label LblDccPowerOnStartError, and the close handler compares InitialDccPowerOnStart with CurrentDccPowerOnStart for the restart prompt. Help topic is tashelp/Dcc power on start.txt, discovered automatically by TASHelp.py. IsDccPowerOffOnCloseEnabled mirrors it for DccPowerOffOnClose.py; ChkDccPowerOffOnClose mirrors ChkDccPowerOnStart and sits in the same Box.createHorizontalBox row immediately to its right. Enable time-based actions checkbox self.ChkTimeActions is laid out in the right-hand column of the General tab checkbox area (Box.createHorizontalBox with left/right vertical boxes), with the other enablement checkboxes in the left column.

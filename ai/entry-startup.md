@@ -17,7 +17,7 @@ Functions in TimetableAutomation.py:
 
 CoverPanel.ToggleWindows(key, opener) uses TASWindowRegistry.Toggle so that the buttons which open another window close it on a second press. The module is imported as TASWINREG. Details in ai/details/timetableautomation.md.
 
-_TASStartUpScriptNames list in TimetableAutomation.py contains: TimetableAutomation.py, CheckWhenTimeChanges.py, DayTracker.py, TimeWarpChecker.py, DayNight.py, WeatherGenerator.py, LastReportedDirection.py, TASFastClockStartup.py, BlockFlickerMonitor.py, DccPowerOnStart.py.
+_TASStartUpScriptNames list in TimetableAutomation.py contains: TimetableAutomation.py, CheckWhenTimeChanges.py, DayTracker.py, TimeWarpChecker.py, DayNight.py, WeatherGenerator.py, LastReportedDirection.py, TASFastClockStartup.py, BlockFlickerMonitor.py, DccPowerOnStart.py, DccPowerOffOnClose.py.
 
 RunExternalScript(path, name) uses execfile(fullPath, SafeGlobals). If identifier Show exists in globals after execfile, RunExternalScript calls the function with zero arguments or with one string argument. RunExternalScript sets TAS_MAINMENU_THEME_REFRESH_CALLBACK to RefreshMainMenuTheme before execfile when the script is TASSetup.py.
 
