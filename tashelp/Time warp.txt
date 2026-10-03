@@ -10,7 +10,7 @@ You can only press the "Time warp" button if no Auto Active Trains (i.e., automa
 
 You can use the time warp feature if the clock is running or if it is paused. Use the time warp in conjunction with a paused clock to run a sequence on a manually operated layout where the next train is selected by the operator pressing "time warp" and instructions for operators are given based on the timetable entry.
 
-The time warp is disabled for 30 seconds after JMRI starts. This stops hardware inputs that report themselves as active while they power up from warping the clock during start-up. A button pressed in that first 30 seconds is ignored; press it again after the 30 seconds.
+The time warp is disabled for 10 seconds after JMRI starts. This stops hardware inputs that report themselves as active while they power up from triggering the time warp during start-up.
 
 *Configuring a hardware button*
 

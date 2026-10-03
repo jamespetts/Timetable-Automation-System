@@ -20,7 +20,7 @@ import TASBeanLookup as TBL
 # Keep the time warp disabled for this long after this script starts. Input
 # hardware that powers up with the layout can report an input as active while
 # it settles, and that must not warp the clock during JMRI start-up.
-TIMEWARPCHECKER_STARTUP_GRACE_MS = 30000
+TIMEWARPCHECKER_STARTUP_GRACE_MS = 10000
 
 # Define the task
 class CheckActiveTrains(java.util.TimerTask):
