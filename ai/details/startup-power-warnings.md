@@ -48,7 +48,7 @@ DccPowerOnStart.py uses title "DCC power warning", nameHex "ffa64d", symbolFill 
 
 ## BlockFlickerMonitor.py
 
-Optional startup script, off by default. Watches Blocks for a double flicker: OCCUPIED-UNOCCUPIED-OCCUPIED or UNOCCUPIED-OCCUPIED-UNOCCUPIED, first to third state within FLICKER_GAP_MS = 1500. Module keeps _FlickerWindow, _FlickerLock, _FlickerStarted, _FlickerListeners, _FlickerStateChanges. Functions: _FlickerLog, _FlickerBlockLabel, _FlickerSensorLabel, _FlickerShowNotice, _FlickerAppendMessage, _FlickerReport, _FlickerAllBlocks, _FlickerStart, _FlickerStop, _FlickerShow. Class _FlickerBlockListener. _FlickerStart runs at import; _FlickerStop is registered with jmri.InstanceManager.getDefault(jmri.ShutDownManager) through TASWarningWindow.Runner. There are no external callers of these functions.
+Optional startup script, off by default. Watches Blocks for a double flicker: OCCUPIED-UNOCCUPIED-OCCUPIED or UNOCCUPIED-OCCUPIED-UNOCCUPIED, first to third state within FLICKER_GAP_MS = 3000. Module keeps _FlickerWindow, _FlickerLock, _FlickerStarted, _FlickerListeners, _FlickerStateChanges. Functions: _FlickerLog, _FlickerBlockLabel, _FlickerSensorLabel, _FlickerShowNotice, _FlickerAppendMessage, _FlickerReport, _FlickerAllBlocks, _FlickerStart, _FlickerStop, _FlickerShow. Class _FlickerBlockListener. _FlickerStart runs at import; _FlickerStop is registered with jmri.InstanceManager.getDefault(jmri.ShutDownManager) through TASWarningWindow.Runner. There are no external callers of these functions.
 
 ## TASSetup.py wiring
 

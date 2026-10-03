@@ -39,7 +39,7 @@ import TASWarningWindow
 
 # Maximum time from the first to the third state of a double flicker,
 # in milliseconds.
-FLICKER_GAP_MS = 1500
+FLICKER_GAP_MS = 3000
 
 # Window geometry. Width is fixed so that wrapped text keeps a stable width.
 FLICKER_FRAME_WIDTH = 440
