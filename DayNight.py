@@ -33,8 +33,13 @@ BLACKOUT_SECONDS_DEFAULT = 2               # default blackout duration in second
 TIMEWARP_THRESHOLD_MINUTES_DEFAULT = 5     # default warp threshold in minutes
 MEM_BLACKOUT_SECONDS = "TIMEWARPBLACKOUTSECONDS"
 MEM_TIMEWARP_THRESHOLD = "TIMEWARPTHRESHOLDMINUTES"
+MEM_BLACKOUT_ACTIVE = "TIMEWARPBLACKOUTACTIVE"
 MEM_MIN_NIGHT_GLOW = "MINNIGHTGLOW"
 MIN_NIGHT_GLOW_DEFAULT = 0.02
+
+# Minimum time the blackout flag stays published. StreetLightController.py polls
+# every 250 ms, so a shorter window could pass unobserved.
+BLACKOUT_FLAG_MIN_SECONDS = 0.5
 
 
 # -------------------- Day/Night CSV configuration (tab-delimited) --------------------
@@ -161,6 +166,14 @@ class DayNight(jmri.jmrit.automat.AbstractAutomaton):
         # Time-warp configuration memories (optional)
         self.blackoutSecsMem = TBL.FindMemoryBySuffix(MEM_BLACKOUT_SECONDS)
         self.warpThresholdMinsMem = TBL.FindMemoryBySuffix(MEM_TIMEWARP_THRESHOLD)
+
+        # Published flag marking a time-warp blackout in progress.
+        # StreetLightController.py reads this to black out configured light groups.
+        self.blackoutActiveMemory = TBL.ProvideMemoryBySuffix(MEM_BLACKOUT_ACTIVE, "0")
+        try:
+            self.blackoutActiveMemory.setValue("0")
+        except Exception:
+            pass
 
         # ---- Core services ----
         self.timebase = jmri.InstanceManager.getDefault(jmri.Timebase)
@@ -293,12 +306,27 @@ class DayNight(jmri.jmrit.automat.AbstractAutomaton):
             print("Time warp detected: delta ={} min > {} min threshold. Blackout for {:.2f}s"
                   .format(delta, self.warpThresholdMins, self.blackoutSeconds))
             try:
-                self.lowThrottle.setSpeedSetting(0.0)
-                self.highThrottle.setSpeedSetting(0.0)
-            except Exception as e:
-                print("WARNING: Could not set blackout values: {}".format(e))
-            # Pause this automaton thread only; other JMRI threads remain active
-            self.waitMsec(int(self.blackoutSeconds * 1000))
+                self.blackoutActiveMemory.setValue("1")
+            except Exception:
+                pass
+            try:
+                try:
+                    self.lowThrottle.setSpeedSetting(0.0)
+                    self.highThrottle.setSpeedSetting(0.0)
+                except Exception as e:
+                    print("WARNING: Could not set blackout values: {}".format(e))
+                # Pause this automaton thread only; other JMRI threads remain active
+                self.waitMsec(int(self.blackoutSeconds * 1000))
+            finally:
+                # Always clear the published flag so dependent systems do not stay blacked out.
+                try:
+                    self.blackoutActiveMemory.setValue("0")
+                except Exception:
+                    pass
+            # Keep the flag published for at least BLACKOUT_FLAG_MIN_SECONDS so
+            # slower consumers, such as the 250 ms street-light poll, observe it.
+            if self.blackoutSeconds < BLACKOUT_FLAG_MIN_SECONDS:
+                self.waitMsec(int((BLACKOUT_FLAG_MIN_SECONDS - self.blackoutSeconds) * 1000))
 
         print 'Time changed: {}, minutes = {}'.format(currentTime, minutes)
 
