@@ -18,6 +18,8 @@ Version 1.5
 
 * Fixed a data erasure bug in the orientation registers: a failed read of normalDirectionRegister.json or OrientationRegister.json wiped the in-memory data, and the shutdown save then wrote the empty state over the stored file. Failed reads now keep existing memory, an unreadable stored file is never overwritten at shutdown, and all three direction registers write atomically through temporary files.
 
+* Fixed three start-up bugs: RailComFix used a function as a Runnable, the Workings setup tab referenced an undefined `baseDir` during the extra-script scan, and the orientation register save could escape an AccessDeniedException from the atomic move.
+
 * The occupancy sensor flicker monitor and the DCC power on start-up script now share one warning window implementation (TASWarningWindow.py).
 
 * The option to resume with the same fast clock time as the last shut down now also saves and restores the day of the week.

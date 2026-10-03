@@ -7,3 +7,4 @@ workings/Dep/*
 workings/Trigger/*
 FlashThrottlesRailCom.py
 TASFastClockState.txt
+config/railcomfix.tsv
