@@ -17,12 +17,31 @@ import java
 import jmri
 import TASBeanLookup as TBL
 
+# Keep the time warp disabled for this long after this script starts. Input
+# hardware that powers up with the layout can report an input as active while
+# it settles, and that must not warp the clock during JMRI start-up.
+TIMEWARPCHECKER_STARTUP_GRACE_MS = 30000
+
 # Define the task
 class CheckActiveTrains(java.util.TimerTask):
+    def __init__(self, startMs, graceMs):
+        java.util.TimerTask.__init__(self)
+        self.startMs = long(startMs)
+        self.graceMs = long(graceMs)
+
     def run(self):
         try:
-            df = jmri.InstanceManager.getDefault(jmri.jmrit.dispatcher.DispatcherFrame)
             allowMem = TBL.ProvideMemoryBySuffix("ALLOWTIMEWARP", "false")
+
+            # Disable the time warp while JMRI starts up, so an input that
+            # reports active as it powers up cannot warp the clock. This is
+            # done before the Dispatcher lookup so it works even when the
+            # Dispatcher is not ready yet.
+            if (java.lang.System.currentTimeMillis() - self.startMs) < self.graceMs:
+                allowMem.setValue("False")
+                return
+
+            df = jmri.InstanceManager.getDefault(jmri.jmrit.dispatcher.DispatcherFrame)
 
             allow = False
             if df is not None:
@@ -40,7 +59,7 @@ class CheckActiveTrains(java.util.TimerTask):
 
                         waiting = (at.getStatus() == jmri.jmrit.dispatcher.ActiveTrain.WAITING)
 
-                        # CHANGED: Relaxed – do not require notStarted or zero allocations
+                        # CHANGED: Relaxed - do not require notStarted or zero allocations
                         # notStarted = (not at.getStarted())
                         # allocList = at.getAllocatedSectionList()
                         # noAlloc = (allocList is None) or (allocList.size() == 0)
@@ -63,4 +82,5 @@ class CheckActiveTrains(java.util.TimerTask):
 
 # Create and start the timer
 timer = java.util.Timer()
-timer.schedule(CheckActiveTrains(), 0, 1000)  # 0 = initial delay, 1000 = repeat every 1,000ms
+timer.schedule(CheckActiveTrains(java.lang.System.currentTimeMillis(),
+                                 TIMEWARPCHECKER_STARTUP_GRACE_MS), 0, 1000)  # 0 = initial delay, 1000 = repeat every 1,000ms

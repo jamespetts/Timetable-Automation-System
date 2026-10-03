@@ -31,8 +31,9 @@ JMRI APIs:
 Behavior: FindNextWorkingFromTimetable finds earliest next Trigger, Arr, Dep. SnapshotActiveTrains and AnyTrainRunningNow check running state. When a running train exists, warp aborts. Else Timebase is set to earliest time. When warp crosses midnight, DAYOFWEEK is set to next day.
 
 TimeWarpChecker.py:
-- Class CheckActiveTrains extends java.util.TimerTask with method run.
-- Timer code: timer = java.util.Timer(); timer.schedule(CheckActiveTrains(), 0, 1000).
+- Class CheckActiveTrains extends java.util.TimerTask with method run and __init__(startMs, graceMs).
+- Timer code: timer = java.util.Timer(); timer.schedule(CheckActiveTrains(java.lang.System.currentTimeMillis(), TIMEWARPCHECKER_STARTUP_GRACE_MS), 0, 1000).
+- TIMEWARPCHECKER_STARTUP_GRACE_MS = 30000. While the elapsed time since __init__ is less than the grace, run sets ALLOWTIMEWARP to False and returns, so input hardware that reports active as it powers up cannot warp the clock during JMRI start-up.
 - Memory ALLOWTIMEWARP through TASBeanLookup.ProvideMemoryBySuffix(ALLOWTIMEWARP, false) with setValue True or False.
 - Reads DispatcherFrame ActiveTrain list with at.getStatus, getDepartureTimeHr, getDepartureTimeMin, getDelayedStart. Checks status WAITING and TIMEDDELAY.
 - Uses jmri.InstanceManager.getDefault(jmri.jmrit.dispatcher.DispatcherFrame), jmri.jmrit.dispatcher.ActiveTrain.WAITING and TIMEDDELAY, java.util.Timer and TimerTask.
