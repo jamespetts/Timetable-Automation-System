@@ -14,7 +14,8 @@
 # BlockFlickerMonitor.py
 # Optional startup script. Disabled by default; enable in TASSetup.py General tab.
 # Monitors Block occupancy state and shows one non-modal warning window when a
-# Block drops to UNOCCUPIED and returns to OCCUPIED within a short gap.
+# Block shows a double flicker: occupied-unoccupied-occupied, or
+# unoccupied-occupied-unoccupied, within a short time span.
 # The window is shown even when Dispatcher reports no error. All flicker
 # messages accumulate in the same window, one per line; no second window is
 # opened while the first window is open. A repeated flicker for the same Block
@@ -36,8 +37,9 @@ from java.awt import Color
 from java.lang import System
 import TASWarningWindow
 
-# Short UNOCCUPIED gap treated as flicker, in milliseconds.
-FLICKER_GAP_MS = 3000
+# Maximum time from the first to the third state of a double flicker,
+# in milliseconds.
+FLICKER_GAP_MS = 1500
 
 # Window geometry. Width is fixed so that wrapped text keeps a stable width.
 FLICKER_FRAME_WIDTH = 440
@@ -86,7 +88,7 @@ _FlickerWindow = TASWarningWindow.TasWarningWindow({
 _FlickerLock = threading.RLock()
 _FlickerStarted = False
 _FlickerListeners = []
-_FlickerLastInactiveMs = {}
+_FlickerStateChanges = {}
 
 
 def _FlickerLog(msg):
@@ -183,23 +185,31 @@ class _FlickerBlockListener(java.beans.PropertyChangeListener):
                 key = str(self.block.getSystemName())
             except Exception:
                 key = str(self.block)
-            if newState == jmri.Block.UNOCCUPIED:
-                try:
-                    with _FlickerLock:
-                        _FlickerLastInactiveMs[key] = long(now)
-                except Exception:
-                    pass
-            elif newState == jmri.Block.OCCUPIED:
-                gap = None
-                try:
-                    with _FlickerLock:
-                        prev = _FlickerLastInactiveMs.pop(key, None)
-                    if prev is not None:
-                        gap = long(now) - long(prev)
-                except Exception:
-                    gap = None
-                if gap is not None and gap >= 0 and gap <= FLICKER_GAP_MS:
-                    _FlickerReport(self.block)
+            report = False
+            try:
+                with _FlickerLock:
+                    hist = _FlickerStateChanges.setdefault(key, [])
+                    if newState == jmri.Block.UNOCCUPIED or newState == jmri.Block.OCCUPIED:
+                        if len(hist) == 0 or hist[-1][0] != newState:
+                            hist.append((newState, long(now)))
+                        else:
+                            hist[-1] = (newState, long(now))
+                        if len(hist) > 3:
+                            del hist[:-3]
+                        if len(hist) == 3:
+                            a0 = hist[0][0]
+                            a1 = hist[1][0]
+                            a2 = hist[2][0]
+                            if a0 == a2 and a0 != a1 and (long(hist[2][1]) - long(hist[0][1])) <= FLICKER_GAP_MS:
+                                report = True
+                                del _FlickerStateChanges[key]
+                    else:
+                        if key in _FlickerStateChanges:
+                            del _FlickerStateChanges[key]
+            except Exception:
+                report = False
+            if report:
+                _FlickerReport(self.block)
         except Exception:
             pass
 
@@ -260,7 +270,7 @@ def _FlickerStop():
         with _FlickerLock:
             pairs = list(_FlickerListeners)
             del _FlickerListeners[:]
-            _FlickerLastInactiveMs.clear()
+            _FlickerStateChanges.clear()
             _FlickerStarted = False
     except Exception:
         pairs = []
