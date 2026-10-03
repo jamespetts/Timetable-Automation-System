@@ -25,3 +25,7 @@ Test that the LEDs work adequately and without flickering by running them with a
 Go to Setup>Day/night cycle. Enter the DCC addresses of the decoders powering the low and high colour LEDs respectively. Check the "Enable day/night" cycle (and, optionally but recommended, "Use weather generator") and restart JMRI. 
 
 The day/night cycle tab of the Setup window will give you various options to choose from. Choose your climate present and your daylight hours preset (or, optionally, make your own). Choose whether you want a blackout for a short period to denote a time warp. Choose a minimum night glow to simulate moonlight and/or light pollution. Choose how you would like your weather forecast presented and how reliable that you would like it to be using the settings near the bottom of the window. 
+
+*Time-warp blackout and other lights*
+
+A time-warp blackout switches off the two day/night lighting throttles for the configured number of seconds. Any JMRI Lights listed in the street-light configuration (Setup>Day/night cycle, street lights; these may be street lights, platform lights, building lights or any other JMRI Light) are switched off for the same period and return to their normal dusk/dawn state afterwards. Lights that are not listed in the street-light configuration are not affected by the blackout. 

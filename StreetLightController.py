@@ -500,6 +500,8 @@ class StreetLightController(jmri.jmrit.automat.AbstractAutomaton):
         self.SunriseMemory = TBL.FindMemoryBySuffix("SUNRISESECONDS")
         self.SunsetMemory = TBL.FindMemoryBySuffix("SUNSETSECONDS")
         self.SolarDayMemory = TBL.FindMemoryBySuffix("SOLARDAY")
+        self.BlackoutMemory = TBL.FindMemoryBySuffix("TIMEWARPBLACKOUTACTIVE")
+        self.BlackoutApplied = False
         self.ResolvedGroups = []
         for group in self.Groups:
             lights = []
@@ -529,6 +531,17 @@ class StreetLightController(jmri.jmrit.automat.AbstractAutomaton):
             self.SunsetMemory = TBL.FindMemoryBySuffix("SUNSETSECONDS")
         if self.SolarDayMemory is None:
             self.SolarDayMemory = TBL.FindMemoryBySuffix("SOLARDAY")
+        if self.BlackoutMemory is None:
+            self.BlackoutMemory = TBL.FindMemoryBySuffix("TIMEWARPBLACKOUTACTIVE")
+
+    def _ReadBlackoutActive(self):
+        # DayNight.py publishes TIMEWARPBLACKOUTACTIVE while a time-warp blackout runs.
+        if self.BlackoutMemory is None or self.BlackoutMemory.getValue() is None:
+            return False
+        try:
+            return str(self.BlackoutMemory.getValue()).strip().lower() in ("1", "true", "yes", "on")
+        except Exception:
+            return False
 
     def _CurrentSecondOfDay(self):
         calendar = java.util.Calendar.getInstance()
@@ -545,8 +558,29 @@ class StreetLightController(jmri.jmrit.automat.AbstractAutomaton):
         except Exception:
             return None
 
+    def _ForceAllOff(self):
+        for group, lights in self.ResolvedGroups:
+            for light in lights:
+                try:
+                    if light.getState() != jmri.Light.OFF:
+                        light.setState(jmri.Light.OFF)
+                except Exception as ex:
+                    print("[StreetLightController] Could not command " + str(light.getSystemName()) + ": " + str(ex))
+
     def _ApplyCurrentState(self):
         self._RefreshMemories()
+
+        # DayNight.py owns the time-warp blackout. Honour it here so street and
+        # other configured light groups go dark for the same period as the
+        # day/night throttles, then return to their normal solar state.
+        if self._ReadBlackoutActive():
+            if not self.BlackoutApplied:
+                print("[StreetLightController] Time-warp blackout in progress: switching configured lights off.")
+                self.BlackoutApplied = True
+            self._ForceAllOff()
+            return True
+        self.BlackoutApplied = False
+
         sunrise = self._ReadSolarSecond(self.SunriseMemory)
         sunset = self._ReadSolarSecond(self.SunsetMemory)
         currentDay = None
