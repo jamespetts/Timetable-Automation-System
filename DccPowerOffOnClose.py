@@ -67,11 +67,12 @@ class _DccPowerOffTask(Runnable):
 
 class DccPowerOffShutdownTask(jmri.implementation.AbstractShutDownTask):
     def run(self):
+        # AbstractShutDownTask.run() is a Java void method, so this method must
+        # not return a value; returning one raises TypeError at shutdown.
         try:
             _DccPowerOffTask().run()
         except Exception as ex:
             _DccPowerOffLog("DCC power off at close-down failed: " + str(ex))
-        return True
 
 
 def _DccPowerOffRegister():

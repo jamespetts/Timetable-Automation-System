@@ -14,6 +14,8 @@ The warning window has an orange warning triangle at the top and the message bel
 
 Turning this option on also disables any enabled JMRI Start-Up entry that runs the script PowerOn.py that JMRI supplies with the program. Without this, JMRI would turn the power on unconditionally at start-up, which would interrupt power that is already on and would leave an unknown power state unknown.
 
+TAS keeps this script at the top of the Start-Up list, before the panel file and the other start-up scripts, so track power is on before they act. The Setup window moves it back to the top whenever it saves the Start-Up list.
+
 The change to the Start-Up list applies to the current profile only, and takes effect at the next start of JMRI. If you turn this option off again and you want JMRI's own script to turn the power on, re-enable that entry in Edit, Preferences, Start Up.
 
 The script writes its findings to the system console, each line starting with [TAS].

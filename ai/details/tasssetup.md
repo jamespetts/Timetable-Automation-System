@@ -11,7 +11,7 @@ Functions and classes:
 - _RgbStrToColorOrDefault, _ColorToRgbStr, GetMemoryBool, SetMemoryBool, ScriptExists, ApplyTheme, MakePaperPanel, MakeHeading, MakeWrappedLabel, GetDefaultFontFamily, GetDefaultBackgroundRGB
 - GetFastClockTimebase, FastClockDateToText, FastClockTextToDate, GetNativeFastClockStartupInfo, ApplyNativeFastClockStartupInfo
 - GetTimetableDirFile, StripCsvExt, ProfileJythonFilePath, _LoadFastClockStateDict, _SaveFastClockStateDict, PersistFastClockSavedStartupChoice, GetPersistedFastClockSavedStartupChoice
-- _HasAnyWorkingScriptsUnder, _GetWorkingsBaseDirInfo, _NormRN = str(s).strip().upper(), _StartupMgr, _ActiveProfile, _CanonLower, _MatchScriptPath, _FindPerformScriptModelFor, _IsScriptEnabled, _EnsureScriptEnabled
+- _HasAnyWorkingScriptsUnder, _GetWorkingsBaseDirInfo, _NormRN = str(s).strip().upper(), _StartupMgr, _ActiveProfile, _CanonLower, _MatchScriptPath, _FindPerformScriptModelFor, _MoveDccPowerOnStartFirst, _IsScriptEnabled, _EnsureScriptEnabled
 - IsDayNightEnabled, IsStreetLightControllerEnabled, IsWeatherEnabled, IsTimeActionsEnabled
 - _MakeDefaultRN(rowNumber) = TAS plus int(rowNumber)
 - _ParseTimeToMinutes, _TimetableFilePath, _ValidateTimetable, _CheckWorkingScripts
@@ -27,7 +27,7 @@ Memory constants: CURRENTTIMETABLE, ALLOWDELAYS, ALLOWCANCELLATIONS, PUBLICDISPL
 
 Files: FileUtil.getExternalFilename(profile:timetable), FileUtil.getExternalFilename(profile:jython/ + name), FileUtil.getExternalFilename(TASFastClockStateFile), FileUtil.getExternalFilename(profile:jython/workings), FileUtil.getExternalFilename(profile:jython), FileUtil.getExternalFilename(profile:timetable/ + name + .csv), FileUtil.getExternalFilename(profile:jython/config/climate.csv), FileUtil.getExternalFilename(profile:jython/config/daynight.csv), jmri.util.FileUtil.getScriptsPath for legacy workings fallback.
 
-JMRI APIs: jmri.InstanceManager.getDefault(jmri.Timebase) with getStartSetTime, getStartTime, setStartSetTime, getTime; jmri.InstanceManager.getDefault(jmri.util.startup.StartupActionsManager) with getActions, addAction, savePreferences; jmri.util.startup.PerformScriptModel with getFileName, setFileName, isEnabled, setEnabled; jmri.profile.ProfileManager.getDefault with getActiveProfile; jmri.InstanceManager.getDefault(jmri.MemoryManager); jmri.util.JmriJFrame; jmri.jmrit.roster.Roster; BlockManager; jmri.util.FileUtil.
+JMRI APIs: jmri.InstanceManager.getDefault(jmri.Timebase) with getStartSetTime, getStartTime, setStartSetTime, getTime; jmri.InstanceManager.getDefault(jmri.util.startup.StartupActionsManager) with getActions, addAction, moveAction, savePreferences; jmri.util.startup.PerformScriptModel with getFileName, setFileName, isEnabled, setEnabled; jmri.profile.ProfileManager.getDefault with getActiveProfile; jmri.InstanceManager.getDefault(jmri.MemoryManager); jmri.util.JmriJFrame; jmri.jmrit.roster.Roster; BlockManager; jmri.util.FileUtil. _EnsureScriptEnabled calls _MoveDccPowerOnStartFirst before savePreferences, so DccPowerOnStart.py is moved to index 0 with moveAction whenever the Start-Up list is saved.
 
 Calls: TASBeanLookup SafeGetOrCreateMemoryValue SafeGetMemoryValue SafeSetMemoryValue; TASIcon.SetFrameClockIcon(self, 32); execfile for TASWiz.py; execfile for display preview and HardwareDirectionConfig.py; imp.load_source for TASFontCheck_i and TASWorkingsUi_i; lazy import DisruptionRegister as DR with DR.register.clear and DR.save; import TimingRegister as TR with listTimingPoints deleteTimingPoint save; import enqueuedWorkings as EW with countWorkings ClearWorkings.
 

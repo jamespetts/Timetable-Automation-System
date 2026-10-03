@@ -19,7 +19,7 @@ Constants:
 Functions:
 - _ParseBoolText, NormalizeDayOfWeek
 - GetLiveOnlyMode, GetJvmFlag, SetJvmFlag, GetRegisterOnlyMode, GetShutDownManager, LoadState, SaveState, PersistUseSavedStartupChoice, SyncSavedStartupChoiceToMemory, Log, SafeGetMemoryValue, SafeSetMemoryValue, GetStateFilePath, EnsureStateDir, GetTimebase, UseSavedStartupEnabled, FormatDateToClockText, ParseClockTextToDate, LoadSavedClockText, SaveSavedClockText, LoadSavedDayOfWeek, SaveSavedDayOfWeek, RegisterShutdownTaskOnce, EnsureShutdownTaskRegistered, ApplySavedStartupTimeOnce
-- Class PersistFastClockTask extends jmri.implementation.AbstractShutDownTask with method run
+- Class PersistFastClockTask extends jmri.implementation.AbstractShutDownTask with method run. run must not return a value: AbstractShutDownTask.run is a Java void method, so returning True raises TypeError "None required for void return" at shutdown.
 
 Memories: TASFASTCLOCKUSESAVEDSTARTUP, TASSAVEDFASTCLOCKTIME, DAYOFWEEK with IM prefix fallback in local wrappers. Local SafeGetMemoryValue and SafeSetMemoryValue prefer TASBeanLookup.SafeGetOrCreateMemoryValue and TASBeanLookup.SafeSetMemoryValue when TASBeanLookup import succeeds.
 

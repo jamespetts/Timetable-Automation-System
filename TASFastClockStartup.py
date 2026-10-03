@@ -400,19 +400,21 @@ def SaveSavedDayOfWeek(dayText):
 
 class PersistFastClockTask(jmri.implementation.AbstractShutDownTask):
     def run(self):
+        # AbstractShutDownTask.run() is a Java void method, so this method must
+        # not return a value; returning one raises TypeError at shutdown.
         try:
             if not UseSavedStartupEnabled():
-                return True
+                return
             PersistUseSavedStartupChoice(True)
             tb = GetTimebase()
             if tb is None:
                 Log('No timebase available during shutdown; nothing saved')
-                return True
+                return
             now = tb.getTime()
             clockText = FormatDateToClockText(now)
             if clockText == '':
                 Log('Could not format fast clock time during shutdown')
-                return True
+                return
             SafeSetMemoryValue(IMFastClockSavedTime, clockText)
             if SaveSavedClockText(clockText):
                 Log('Saved fast clock time ' + clockText)
@@ -426,10 +428,8 @@ class PersistFastClockTask(jmri.implementation.AbstractShutDownTask):
             else:
                 if SaveSavedDayOfWeek(normalizedDay):
                     Log('Saved day of week ' + normalizedDay)
-            return True
         except Exception as ex:
             Log('Shutdown save failed: ' + str(ex))
-            return True
 
 
 def RegisterShutdownTaskOnce():

@@ -631,6 +631,31 @@ def _FindPerformScriptModelFor(scriptFileName):
             continue
     return None
 
+def _MoveDccPowerOnStartFirst(mgr):
+    """Move the DccPowerOnStart.py Start-Up action to the top of the list.
+
+    DCC power-on must run before the panel file and the other Start-Up scripts,
+    so track power is on before they act. This is enforced every time the
+    Start-Up list is saved from this window.
+    """
+    try:
+        model = _FindPerformScriptModelFor("DccPowerOnStart.py")
+        if model is None:
+            return
+        actions = mgr.getActions()
+        index = -1
+        for i in range(len(actions)):
+            if actions[i] is model:
+                index = i
+                break
+        if index > 0:
+            mgr.moveAction(index, 0)
+    except Exception as ex:
+        try:
+            LogWarn("Could not move DccPowerOnStart.py to the top of the Start-Up list: " + str(ex))
+        except Exception:
+            pass
+
 def _IsScriptEnabled(scriptFileName):
     m = _FindPerformScriptModelFor(scriptFileName)
     return (m is not None) and bool(m.isEnabled())
@@ -659,6 +684,10 @@ def _EnsureScriptEnabled(scriptFileName, enabled):
             return False
     else:
         pass  # model missing and enabling False -> nothing to do
+
+    # Keep DCC power-on first so the track is powered before the panel file
+    # and the other Start-Up scripts run.
+    _MoveDccPowerOnStartFirst(mgr)
 
     try:
         prof = _ActiveProfile()
