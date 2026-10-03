@@ -36,6 +36,12 @@ DEBUG = True  # Set to False to disable debug output
 # Global dictionary: key = roster ID (display case), value = direction string
 lastReportedDirection = {}
 
+# True once the stored file has been read successfully, or when no stored file
+# exists yet. save() refuses to overwrite a stored file that was never read
+# successfully, so a session that failed to load cannot destroy data at shutdown.
+_had_file = False
+_load_ok = False
+
 # Persistence path (relative to profile path)
 _SAVE_PATH = None
 try:
@@ -70,36 +76,76 @@ def _NormId(s):
     except Exception:
         return ""
 
-# Save dictionary to JSON
+# Save dictionary to JSON through a temporary file, so a crash mid-write cannot
+# truncate the stored file. Refuses to overwrite a stored file that was never read
+# successfully.
 def save():
+    global _load_ok
+    if _had_file and not _load_ok:
+        try:
+            print("Warning: not saving LastReportedDirection.json: "
+                  "the stored file was never read successfully")
+        except Exception:
+            pass
+        return
+    tmp_path = _SAVE_PATH + ".tmp"
     try:
-        with open(_SAVE_PATH, "w") as f:
+        with open(tmp_path, "w") as f:
             json.dump(lastReportedDirection, f)
+            try:
+                f.flush()
+                os.fsync(f.fileno())
+            except Exception:
+                pass
+        try:
+            from java.nio.file import Files, Paths, StandardCopyOption
+            Files.move(
+                Paths.get(tmp_path), Paths.get(_SAVE_PATH),
+                StandardCopyOption.REPLACE_EXISTING,
+                StandardCopyOption.ATOMIC_MOVE
+            )
+        except Exception:
+            try:
+                if os.path.exists(_SAVE_PATH):
+                    os.remove(_SAVE_PATH)
+            except Exception:
+                pass
+            os.rename(tmp_path, _SAVE_PATH)
         debug("Saved LastReportedDirection.json")
     except Exception as e:
+        try:
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
+        except Exception:
+            pass
         try:
             print("Warning: failed to save LastReportedDirection.json: {0}".format(e))
         except Exception:
             pass
 
-# Load dictionary from JSON
+# Load dictionary from JSON. A failed read keeps existing memory rather than wiping it.
 def load():
-    global lastReportedDirection
+    global lastReportedDirection, _had_file, _load_ok
     if not os.path.exists(_SAVE_PATH):
+        _had_file = False
+        _load_ok = True
         lastReportedDirection = {}
         return
+    _had_file = True
     try:
         with open(_SAVE_PATH, "r") as f:
             loaded = json.load(f)
-        # Normalize to dict of str -> str
-        lastReportedDirection = {str(k): str(v) for (k, v) in loaded.items()}
+        # Normalize to dict of str -> str; swap only on success
+        fresh = {str(k): str(v) for (k, v) in loaded.items()}
+        lastReportedDirection = fresh
+        _load_ok = True
         debug("Loaded LastReportedDirection.json")
     except Exception as e:
         try:
             print("Warning: failed to load LastReportedDirection.json: {0}".format(e))
+            print("Warning: keeping last-reported data already in memory")
         except Exception:
             pass
-        lastReportedDirection = {}
 
 # Listener class
 class LastDirectionListener(LocoNetListener):

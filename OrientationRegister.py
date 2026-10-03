@@ -19,6 +19,8 @@ from java.lang import Runtime, Thread, Runnable
 from jmri import ShutDownManager
 
 orientation = []
+_load_ok = False
+_had_file = False
 _SAVE_PATH = None
 try:
     # Use JMRI scheme resolution (still profile-root; non-breaking)
@@ -49,26 +51,66 @@ def IsContained(rosterID):
     return rosterID in orientation
     
 def save():
-    # orientation is a list of strings; write it directly as JSON
+    # Writes the list of strings as JSON through a temporary file, so a crash
+    # mid-write cannot truncate the stored file. Refuses to overwrite a stored file
+    # that was never read successfully, so a session that failed to load cannot
+    # destroy data at shutdown.
+    global _load_ok
+    if _had_file and not _load_ok:
+        print("Warning: not saving OrientationRegister.json: "
+              "the stored file was never read successfully")
+        return
+    tmp_path = _SAVE_PATH + ".tmp"
     try:
-        with open(_SAVE_PATH, "w") as f:
+        with open(tmp_path, "w") as f:
             json.dump(list(orientation), f)
+            try:
+                f.flush()
+                os.fsync(f.fileno())
+            except Exception:
+                pass
+        try:
+            from java.nio.file import Files, Paths, StandardCopyOption
+            Files.move(
+                Paths.get(tmp_path), Paths.get(_SAVE_PATH),
+                StandardCopyOption.REPLACE_EXISTING,
+                StandardCopyOption.ATOMIC_MOVE
+            )
+        except Exception:
+            try:
+                if os.path.exists(_SAVE_PATH):
+                    os.remove(_SAVE_PATH)
+            except Exception:
+                pass
+            os.rename(tmp_path, _SAVE_PATH)
     except Exception as e:
+        try:
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
+        except Exception:
+            pass
         print("Warning: failed to save OrientationRegister.json: {}".format(e))
 
 def load():
-    # Load list of strings directly; start empty if file missing or unreadable
+    # Load list of strings directly. A failed read keeps existing memory rather than
+    # wiping it, so a transient failure can never destroy data at shutdown.
+    global _load_ok, _had_file
     if not os.path.exists(_SAVE_PATH):
+        _had_file = False
+        _load_ok = True
         orientation[:] = []
         return
+    _had_file = True
     try:
         with open(_SAVE_PATH, "r") as f:
             loaded = json.load(f)
-        # Ensure the loaded data is a list of strings
-        orientation[:] = [str(x) for x in loaded]
+        # Ensure the loaded data is a list of strings; swap only on success
+        fresh = [str(x) for x in loaded]
+        orientation[:] = fresh
+        _load_ok = True
     except Exception as e:
         print("Warning: failed to load OrientationRegister.json: {}".format(e))
-        orientation[:] = []
+        print("Warning: keeping orientation data already in memory")
 
 # Try JMRI shutdown manager, fall back to JVM hook
 def _register_shutdown():

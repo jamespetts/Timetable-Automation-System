@@ -27,6 +27,13 @@ from jmri import ShutDownManager
 # Values: direction string (stored verbatim as provided, after stripping)
 _dirMap = {}
 
+# True once the stored file has been read successfully, or when no stored file
+# exists yet (a fresh start with nothing to lose). Save() refuses to overwrite an
+# existing file that was never read successfully, so a transient read failure can
+# never destroy stored data at shutdown.
+_had_file = False
+_load_ok = False
+
 # Persist to the active profile folder (no absolute paths)
 _SAVE_PATH = None
 try:
@@ -147,7 +154,14 @@ def ListIds():
 def Save():
     """
     Persist the map to JSON in the profile folder; best-effort atomic replace.
+    Refuses to overwrite a stored file that was never read successfully, so a
+    session that failed to load cannot destroy data at shutdown.
     """
+    global _load_ok
+    if _had_file and not _load_ok:
+        print("Warning: not saving normalDirectionRegister.json: "
+              "the stored file was never read successfully")
+        return
     tmp_path = _SAVE_PATH + ".tmp"
     try:
         # Write temp file first
@@ -187,23 +201,35 @@ def Save():
 
 def Load():
     """
-    Load the map from JSON, if present. Starts empty if not readable.
+    Load the map from JSON, if present. Starts empty if not readable. A failed
+    read never clears entries already held in memory.
     """
+    global _had_file, _load_ok
     if not os.path.exists(_SAVE_PATH):
+        _had_file = False
+        _load_ok = True
         return
+    _had_file = True
     import time
     attempts = 3
     for _ in range(attempts):
         try:
             with open(_SAVE_PATH, "r") as f:
                 loaded = json.load(f)
-                # Ensure dict-of-strings only; ignore malformed entries
+                # Ensure dict-of-strings only; ignore malformed entries.
+                # Build separately and swap only on success, so a bad read
+                # cannot wipe good in-memory data.
                 if isinstance(loaded, dict):
-                    _dirMap.clear()
+                    fresh = {}
                     for k, v in loaded.items():
                         nk = _NormId(k)
                         if nk != "":
-                            _dirMap[nk] = _CleanDirection(v)
+                            fresh[nk] = _CleanDirection(v)
+                    _dirMap.clear()
+                    _dirMap.update(fresh)
+                    _load_ok = True
+                else:
+                    print("Warning: normalDirectionRegister.json holds no map; keeping memory")
                 return
         except ValueError:
             # Possibly a concurrently written/empty file; brief backoff and retry
@@ -212,9 +238,9 @@ def Load():
         except Exception as e:
             print("Warning: failed to load normalDirectionRegister.json: {0}".format(e))
             return
-    # Final fallback
-    print("Warning: normalDirectionRegister.json not readable (giving up); starting empty")
-    _dirMap.clear()
+    # Final fallback: keep memory, refuse to treat this as loaded
+    print("Warning: normalDirectionRegister.json not readable (giving up); keeping memory")
+    _load_ok = False
 
 
 # --- Shutdown registration (like your enqueuedWorkings) -----------------------
