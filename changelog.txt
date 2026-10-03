@@ -22,6 +22,8 @@ Version 1.5
 
 * The occupancy sensor flicker monitor and the DCC power on start-up script now share one warning window implementation (TASWarningWindow.py).
 
+* The occupancy sensor flicker monitor now requires a double flicker (occupied-unoccupied-occupied or unoccupied-occupied-unoccupied within 1.5 seconds) before it reports, instead of a single occupied-unoccupied-occupied gap.
+
 * The option to resume with the same fast clock time as the last shut down now also saves and restores the day of the week.
 * Fix departure logging missing its WAITING to RUNNING move when Dispatcher allocates before the listener is attached (status fallback now always armed plus an immediate status check; first movement still wins when both paths fire; throttle address falls back to the working roster entry)
 * Fix cancelled workings remaining on the small modern PID indefinitely; they now clear once booked departure time has passed

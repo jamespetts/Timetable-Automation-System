@@ -2,7 +2,7 @@ Block flicker monitor
 
 This is an optional startup script. It is off by default. Enable it in Setup, General tab, with "Enable occupancy sensor flicker monitor (requires restart)". Restart JMRI after changing the setting.
 
-When enabled, the script watches all Blocks for a short drop from occupied to unoccupied and back to occupied. A short drop often means dirty track or loose wiring.
+When enabled, the script watches all Blocks for a double flicker: occupied, then unoccupied, then occupied again, or unoccupied, then occupied, then unoccupied again, all within 1.5 seconds. A double flicker often means dirty track or loose wiring. A single brief drop is not reported.
 
 When a drop is seen, the script writes a line to the system console and shows a warning window. The window has a red warning triangle at the top and messages below on a black background. Text is light grey, with the name of the occupancy sensor in red.
 
