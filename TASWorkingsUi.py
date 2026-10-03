@@ -319,13 +319,9 @@ def BuildWorkingsPanel(hostFrame,
                 newDir = None
         legacyDir = None
         try:
-            rep = _GetWorkingsDirsReport()
-            baseDir = rep.get('chosenDir')
-            if baseDir is None or str(baseDir).strip() == '':
-                return items
-            baseDir = str(baseDir)
-            if scriptsPath:
-                legacyDir = os.path.join(str(scriptsPath), 'workings')
+            legacyScriptsPath = jmri.util.FileUtil.getScriptsPath()
+            if legacyScriptsPath:
+                legacyDir = os.path.join(str(legacyScriptsPath), 'workings')
         except:
             legacyDir = None
         newHasAny = _HasAnyPyUnder(newDir)
@@ -640,9 +636,16 @@ def BuildWorkingsPanel(hostFrame,
         # Also scan for extra scripts not in timetable
         try:
             scriptsPath = jmri.util.FileUtil.getScriptsPath()
+            report = _GetWorkingsDirsReport()
+            baseDir = report.get('chosenDir')
+            if (baseDir is None or str(baseDir).strip() == '') and scriptsPath:
+                baseDir = os.path.join(str(scriptsPath), 'workings')
+            if baseDir is None or str(baseDir).strip() == '':
+                return
+            extraDirPath = str(baseDir)
             timetableRNs = set([_NormRN(it.RN) for it in items])
             for direction in ['Trigger', 'Arr', 'Dep']:
-                dirPath = os.path.join(str(baseDir), direction)
+                dirPath = os.path.join(extraDirPath, direction)
                 if not os.path.isdir(dirPath):
                     continue
                 for fname in os.listdir(dirPath):

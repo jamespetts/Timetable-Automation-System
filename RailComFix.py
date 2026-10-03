@@ -109,7 +109,7 @@ def _RailComFixApply(_detect=RCD, _log=_RailComFixLog):
     return _detect.ApplyFixTargets(targets)
 
 
-def _RailComFixTask(Runnable):
+class _RailComFixTask(Runnable):
     def run(self):
         try:
             _RailComFixApply()

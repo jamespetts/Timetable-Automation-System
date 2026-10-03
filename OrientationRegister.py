@@ -13,7 +13,7 @@
 #
 # Note that each entry is a tuple of reportingNumber and direction
 
-import jmri, os, json
+import jmri, os, json, threading
 from jmri.util import FileUtil
 from java.lang import Runtime, Thread, Runnable
 from jmri import ShutDownManager
@@ -29,6 +29,7 @@ except Exception:
     _SAVE_PATH = None
 if not _SAVE_PATH:
     _SAVE_PATH = os.path.join(FileUtil.getProfilePath(), "OrientationRegister.json")
+_SAVE_LOCK = threading.RLock()
 def AddTrain(rosterID):
     if rosterID not in orientation:
         orientation.append(rosterID)
@@ -62,27 +63,42 @@ def save():
         return
     tmp_path = _SAVE_PATH + ".tmp"
     try:
-        with open(tmp_path, "w") as f:
-            json.dump(list(orientation), f)
+        with _SAVE_LOCK:
+            with open(tmp_path, "w") as f:
+                json.dump(list(orientation), f)
+                try:
+                    f.flush()
+                    os.fsync(f.fileno())
+                except Exception:
+                    pass
             try:
-                f.flush()
-                os.fsync(f.fileno())
+                from java.nio.file import Files, Paths, StandardCopyOption
+                try:
+                    Files.move(
+                        Paths.get(tmp_path), Paths.get(_SAVE_PATH),
+                        StandardCopyOption.REPLACE_EXISTING,
+                        StandardCopyOption.ATOMIC_MOVE
+                    )
+                except Exception:
+                    try:
+                        Files.move(
+                            Paths.get(tmp_path), Paths.get(_SAVE_PATH),
+                            StandardCopyOption.REPLACE_EXISTING
+                        )
+                    except Exception:
+                        try:
+                            if os.path.exists(_SAVE_PATH):
+                                os.remove(_SAVE_PATH)
+                        except Exception:
+                            pass
+                        os.rename(tmp_path, _SAVE_PATH)
             except Exception:
-                pass
-        try:
-            from java.nio.file import Files, Paths, StandardCopyOption
-            Files.move(
-                Paths.get(tmp_path), Paths.get(_SAVE_PATH),
-                StandardCopyOption.REPLACE_EXISTING,
-                StandardCopyOption.ATOMIC_MOVE
-            )
-        except Exception:
-            try:
-                if os.path.exists(_SAVE_PATH):
-                    os.remove(_SAVE_PATH)
-            except Exception:
-                pass
-            os.rename(tmp_path, _SAVE_PATH)
+                try:
+                    if os.path.exists(_SAVE_PATH):
+                        os.remove(_SAVE_PATH)
+                except Exception:
+                    pass
+                os.rename(tmp_path, _SAVE_PATH)
     except Exception as e:
         try:
             if os.path.exists(tmp_path):
