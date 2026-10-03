@@ -8,3 +8,4 @@ workings/Trigger/*
 FlashThrottlesRailCom.py
 TASFastClockState.txt
 config/railcomfix.tsv
+config/streetlights.tsv
