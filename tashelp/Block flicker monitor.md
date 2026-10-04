@@ -1,4 +1,6 @@
-Block flicker monitor
+# Block flicker monitor
+
+## Overview
 
 This is an optional startup script. It is off by default. Enable it in Setup, General tab, with "Enable occupancy sensor flicker monitor (requires restart)". Restart JMRI after changing the setting.
 
@@ -8,7 +10,9 @@ When a drop is seen, the script writes a line to the system console and shows a 
 
 Each message reads:
 
+```
 Flickering occupancy sensor detected at: <name of occupancy sensor>: check for dirty track or loose wiring
+```
 
 All messages go in the same window, one message per line. No second window is opened while the window is open. Text wraps to the width of the window, and the window grows as messages are added. Each message is separated by vertical space.
 

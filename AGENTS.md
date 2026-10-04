@@ -45,7 +45,7 @@ Jython 2.7 scripts for JMRI (Java Model Railroad Interface). Provides timetable 
 | `DisruptionGenerator.py` | Disruption system |
 | `TimeWarp.py` / `TimeWarpChecker.py` | Time warp |
 | `PID*.py` | Public information displays (many variants) |
-| `TASHelp.py` | Help system (loads `tashelp/*.txt`) |
+| `TASHelp.py` | Help system (loads `tashelp/*.md`) |
 
 ## Configuration
 - Runtime settings are primarily stored in **JMRI Memories** and accessed prefix-independently via 'TASBeanLookup'
@@ -91,7 +91,7 @@ Jython 2.7 scripts for JMRI (Java Model Railroad Interface). Provides timetable 
 | Task | How |
 |------|-----|
 | Add a new PID display | Create `PID<Name>.py` following existing tagged display patterns; TASSetup.py discovers display scripts from their metadata comments |
-| Add a help topic | Add `<topic>.txt` to `tashelp/`; will auto-appear in Help menu |
+| Add a help topic | Add `<topic>.md` to `tashelp/`; will auto-appear in Help menu |
 | Modify timetable format | Update the relevant readers/writers and verify compatibility with all example timetable schemas
 | Change colours/fonts | Edit memories via Setup UI or directly in JMRI Memory Table |
 
@@ -121,7 +121,7 @@ TAS devel/
 ├── TASScriptsPathGuard.py      # Startup path logic
 ├── TASWindowRegistry.py        # Main menu window toggles
 ├── TASHelp.py                  # Help system
-├── tashelp/*.txt               # Help topics
+├── tashelp/*.md               # Help topics
 ├── config/daynight.csv         # Day/night config
 ├── config/climate.csv          # Climate config
 ├── Example timetables/*.csv    # Sample timetables

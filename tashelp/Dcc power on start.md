@@ -1,12 +1,14 @@
-DCC power on at start-up
+# DCC power on at start-up
+
+## Overview
 
 This is an optional startup script. It is off by default. Enable it in Setup, General tab, with "Turn DCC power on at start-up (requires restart)". Restart JMRI after changing the setting.
 
 When enabled, the script checks the DCC track power each time JMRI starts.
 
-* If the power is already on, nothing is done. The power is not interrupted.
-* If the power is off or idle, the script turns it on.
-* If the power state is not known, the script never changes it. It waits for the state to become known and then acts as above. If the state is still not known after 15 seconds, the script shows a warning window and leaves the power alone.
+- If the power is already on, nothing is done. The power is not interrupted.
+- If the power is off or idle, the script turns it on.
+- If the power state is not known, the script never changes it. It waits for the state to become known and then acts as above. If the state is still not known after 15 seconds, the script shows a warning window and leaves the power alone.
 
 The script waits up to 30 seconds for a hardware connection to publish a power manager, so it is safe to have it run at start-up.
 

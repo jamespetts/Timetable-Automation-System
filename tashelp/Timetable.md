@@ -1,60 +1,58 @@
-***Timetable Automation System***
+# The timetable
 
-**The timetable**
-
-*Overview*
+## Overview
 
 The timetable is at the heart of the Timetable Automation System. You need to create the timetable in a spreadsheet, put it in the appropriate directory, then tell the Timetable Automation System where it is. You can easily switch between timetables, e.g., if you run your layout in different eras and want a different timetable for each era.
 
-*Viewing the timetable*
+## Viewing the timetable
 
 When the timetable has been created, you can view it by selecting "Show timetable" from the main Timetable Automation System menu. You can configure how the timetable looks using controls in the "Timetable" tab of the Setup dialogue.
 
-*Setting the timetable*
+## Setting the timetable
 
 You can change which timetable is currently in use by choosing a different timetable in the "General setup" tab of the Setup dialogue. The name of the current timetable is displayed near the top of the main Timetable Automation System menu.
 
-*Format*
+## Format
 
 The timetable should be created as a spreadsheet and saved as a tab-separated .csv file. (Tab-separated rather than comma separated allows for commas in the data). The timetable should be in the form of a row of column headings at the top, followed by rows of data that correspond with the column headings. 
 
 There are some compulsory columns and some optional columns. The compulsory columns are:
 
-* Arr *or* Trigger;
-* Dep;
-* Monday;
-* Tuesday;
-* Wednesday;
-* Thursday;
-* Friday;
-* Saturday; and
-* Sunday.
+- Arr *or* Trigger;
+- Dep;
+- Monday;
+- Tuesday;
+- Wednesday;
+- Thursday;
+- Friday;
+- Saturday; and
+- Sunday.
 
 Optional columns that it is strongly recommended to use are:
 
-* Reporting number;
-* Forms; 
-* Direction; and
-* Disrupton group.
+- Reporting number;
+- Forms;
+- Direction; and
+- Disrupton group.
 
 Other optional columns include
 
-* Platform;
-* Timing load;
-* Disruption group;
-* Notes;
-* Origin;
-* Destination; 
-* Calling pattern;
-* Via;
-* Special;
-* Company;
-* Remarks; and
-* Timing point columns (see below).
+- Platform;
+- Timing load;
+- Disruption group;
+- Notes;
+- Origin;
+- Destination;
+- Calling pattern;
+- Via;
+- Special;
+- Company;
+- Remarks; and
+- Timing point columns (see below).
 
 The meaning of each of the columns is set out below.
 
-*Arr/Dep/Trigger*
+## Arr/Dep/Trigger
 
 Data format: time, either 12h or 24h, e.g. 1:37 PM or 13:37. Hours and minutes only (seconds not supported).
 
@@ -65,18 +63,18 @@ If you have a small layout where less than a minute is likely to pass between th
 If your train is due to pass your main timing point (e.g. a station) without stopping, then use "Trigger" and "Dep" times only, and omit the "Arr" time. 
 
 Each of these three main timing columns will call a Working Script at the times specified, with the below exceptions:
-* where both Trigger and Arr are specified, only the Trigger time, not the Arr time, will call a working script;
-* where both Trigger and Dep but not also Arr are specified, only Trigger will call a Working Script.
+- where both Trigger and Arr are specified, only the Trigger time, not the Arr time, will call a working script;
+- where both Trigger and Dep but not also Arr are specified, only Trigger will call a Working Script.
 
 Working Scripts are the instructions about what train to run where at a particular time. For more information on Working Scripts, see the help section with that title.
 
-*Days of the week*
+## Days of the week
 
 Data format: "TRUE" or "FALSE"
 
 The Timetable Automation System is set up to run a 7 day timetable. The data in these columns tell the Timetable Automation System whether the working runs on the day of the week in question. For example, if you wanted a working in a particular row to run only on Saturdays, you would enter "FALSE" beneath every day apart from Saturday, and "True" beneath Saturday.
 
-*Reporting number*
+## Reporting number
 
 Data format: string (e.g. "1A01")
 
@@ -90,25 +88,25 @@ The trains with hidden reporting numbers (including those supplied by default if
 
 For some railways, e.g. the London Underground, that did not use reporting numbers at all, use hidden reporting numbers for all workings. The London Underground used train numbers instead: simulate this by setting your roster IDs to a suitable train number.
 
-*Forms*
+## Forms
 
 This column tells the Timetable Automation System whether the stock from the current working is to be used to form a later working. For example, if train 1A01 arrives at 09:30 and then leaves empty to the depot at 09:50 as 5A01, you would put 5A01 in the "Forms" column of the row for working 1A01. 
 
 What this does is to tell the Timetable Automation System to use only whatever train it was that formed working 1A01 when starting the 5A01, and, if that not train is not in one of the starting places, wait until it is before triggering 5A01. 
 
-*Direction*
+## Direction
 
 Data format: string (e.g. "Up" "Down")
 
 This is used to make it easier to group the timetable displays. Use a railway direction ("Up" or "Down" for UK mainline practice; "Eastbound" , "Westbound", "Southbound", "Northbound", "Clockwise" or "Anti-clockwise" for London Underground practice) for each working so that they can be grouped in a convenient and realistic way when viewing the timetable from the timetable view in the Timetable Automation System
 
-*Disruption Group*
+## Disruption Group
 
 If you want to enable delays and cancellations, then you will need this column. You will need to have created a separate disruption configuration file (see the help topic on disruption for more detail). That configuration file will create different Disruption Groups. Each different Disruption Group has different disruption characeristics, e.g. chance of delay, chance of cancellation, maximum delay length, etc.. Use the name of one of the Disruption Groups that you have created in your disruption configuration file to apply those disruption characeristics to the working in question. 
 
 Any working whose "Disruption group" column is left blank will always run on time no matter whether the global settings for delays and cancellations are enabled.
 
-*Platform*
+## Platform
 
 Data format: string (e.g. "1" or "A")
 
@@ -116,7 +114,7 @@ This column is needed if you want to use any passenger information displays that
 
 Not yet implemented but planned is a system that will allow platform alterations to be accommodated in the passenger information display system.
 
-*Timing load*
+## Timing load
 
 Column format: "Timing load" OR an alternative string specified in the "Timing load label" box in the "Timetable" tab of the setup window
 Data format: string (e.g. "D350" or "150" or "EMU")
@@ -127,13 +125,13 @@ In reality, these were used to specify the type of train to be used on a particu
 
 "Timing load" is principally associated with British Rail, Railtrack and Network Rail. For other railway companies, such as the Southern Railway or London Underground, the timetable would often have different data in this position, such as "Electric headcode", "No. cars" or "Make up". To replicate this, these alternative labels can be used instead by changing the setting in the "Timing load label" box in the "Timetable" tab of the setup window. If you specify something other than "Timing point" here (e.g. "Make up"), that alternative text will be recognised instead of "Timing point" as a header for the column in the timetable file.
 
-*Notes*
+## Notes
 
 Data format: string (e.g. "The Manchester Pullman")
 
 This column is only used in the timetable display. It is used to create notes for particular workings that appear on pages of the timetable, just as a real timetable would sometimes have.
 
-*Origin/Destination*
+## Origin/Destination
 
 Data format: string (e.g. "London Paddington", "Oxford")
 
@@ -141,31 +139,31 @@ This column is used in the timetable, signallers' and various public information
 
 If the "Origin" or the "Destination" name is the same as the layout profile name, then certain displays will react to this and show, e.g., "Terminates here" instead of the name. 
 
-*Calling pattern*
+## Calling pattern
 
 Data format: string (e.g. "Ealing Broadway, Southall, Hayes & Harlington, Slough, Burnham, Taplow, Maidenhead, Twyford and Reading" or "via Bank")
 
 This column is used in some passenger information displays to show where the train calls. Different types of passenger information displays expect different kinds of information; in the UK, modern Network Rail displays typically show every station at which the train calls, whereas London Underground displays tend to show either nothing or "via...". 
 
-*Via*
+## Via
 
 Data format: string (e.g. "Bank", "Charing Cross")
 
 This column is used for various public information displays either in place of or in addition to the calling pattern. Typically, the "via" is used on London Underground displays instead of the calling pattern, although some modern displays will also show the "via" in addition to the calling pattern.
 
-*Special*
+## Special
 
 Data format: string (e.g. "The Pines Express", "Buffet service", "Restaurant car", "Charter service")
 
 This column is used on some public information displays to display additional information about a train such as catering provision or a special named train. Some public information displays (such as the Solari displays) will show special text containing certain keywords (e.g. "buffet" or "restaurant") in a different colour. This can be customised per display.
 
-*Company*
+## Company
 
 Data format: string (e.g. "First Great Western", "Intercity", "Southern Railway")
 
 This column is intended for use in future passenger information displays that display the railway company (or "operator") of a particular working.
 
-*Remarks*
+## Remarks
 
 Data format: string including special data (e.g. "Collect coal empties", "Non-stop", "Wait for express to pass", {Calling pattern}, {Forms})
 
@@ -187,7 +185,7 @@ To make it easier to add common sorts of information, there are a number of spec
 
 The above are case insensitive.
 
-*Timing points*
+## Timing points
 
 Column format: "TPArr <<NAME>>" "TPDep <<NAME>>" OR "TP<<x>>Arr <<NAME>>", "TP<<x>>Dep <<NAME>>" where "<<NAME>>"  is the particular name of a timing point, such a a station or junction and <<x>> is the timing point group to which this timing point belongs (e.g. "TPArr Cardiff Central", "TP1Dep Cross Keys", "TP1Arr Ebbw Vale", "TP2Dep Lydney")
 Data format: time, either 12h or 24h (e.g. 13:37 or 1:37 PM)

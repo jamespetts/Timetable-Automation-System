@@ -1,4 +1,6 @@
-DCC power off at close-down
+# DCC power off at close-down
+
+## Overview
 
 This is an optional startup script. It is off by default. Enable it in Setup, General tab, with "Turn DCC power off at close-down (requires restart)". Restart JMRI after changing the setting.
 

@@ -1,5 +1,7 @@
 Version 1.5
 
+* Help topics migrated from tashelp/*.txt to tashelp/*.md. The Help window now renders Markdown as HTML, with headings, bullet and numbered lists, bold, italic, inline code, code blocks, tables, blockquotes and links. Plain .txt files still load as fallback. The Help window uses the theme typeface and colours from Memories TAS_FONT_FAMILY, TASPAPERCOLOUR and TASINKCOLOUR instead of the default serif HTML font.
+
 * The time-warp blackout now also switches off the street lights, and any other JMRI Lights listed in the street-light configuration, for the same period that the day/night lighting is blacked out. Lights return to their normal dusk/dawn state when the blackout ends.
 
 * Fix the mobile app weather forecast showing an empty window for several seconds after opening. The window is now rendered before it is shown, so it opens fully populated instead of filling in only when the first refresh or memory change arrives.

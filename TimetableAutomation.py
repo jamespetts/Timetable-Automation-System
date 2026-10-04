@@ -849,7 +849,7 @@ def RunExternalScript(FileName, FriendlyName, Arg=None):
                     if Arg is None:
                         fn()              # default behaviour inside TASHelp is "General"
                     else:
-                        fn(str(Arg))      # pass a topic name WITHOUT .txt (e.g., "Signals")
+                        fn(str(Arg))      # pass a topic name WITHOUT extension (e.g., "Signals")
         except Exception as callEx:
             # Console (with traceback)
             try:

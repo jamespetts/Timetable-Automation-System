@@ -1,4 +1,4 @@
-Read when: Task concerns TASSetup.py, TASWiz.py, HardwareDirectionConfig.py, TASHelp.py, tashelp/*.txt, TASFontCheck.py, TASIcon.py, TASUtil.py, configuration UI, wizard steps, help viewer, font check, window icon.
+Read when: Task concerns TASSetup.py, TASWiz.py, HardwareDirectionConfig.py, TASHelp.py, tashelp/*.md, TASFontCheck.py, TASIcon.py, TASUtil.py, configuration UI, wizard steps, help viewer, font check, window icon.
 
 # Setup Wizard Help
 
@@ -8,7 +8,7 @@ TASWiz.py defines class TASWizardDialog extends JDialog. Header states wizard-st
 
 HardwareDirectionConfig.py defines class HardwareDirectionConfigUI implements Runnable with method run and method Show(). Functions include NormId, TitleCase, NormAddr, GetLightingAddressSet, BuildRosterAddressIndex, ExpandLastMapToAllIds, RosterIdClusterFor, BuildRegistersSnapshot, BuildListingData, DetermineOppositeDirection. NormId is str(s).strip().lower(). HardwareDirectionConfig.py uses NormalDirectionRegister.GetCopy, GetNormalDirection, SetNormalDirection, RemoveNormalDirection, Save and LastReportedDirection.lastReportedDirection and OrientationRegister.IsContained, RemoveTrain, AddTrain, save.
 
-TASHelp.py defines Show(initialTopic="General"). Help directory is jmri.util.FileUtil.getProfilePath() plus /jython/tashelp. Files in tashelp/ are Day and night cycle.txt, Disruption.txt, Enqueued workings.txt, General.txt, Public Information Displays.txt, Signallers' displays.txt, Time warp.txt, Timetable.txt, Train orientation.txt, Workings.txt, Workings.txt duplicated in list is one file. TASHelp.py opens tashelpDir plus / plus topicName plus .txt.
+TASHelp.py defines Show(initialTopic="General"). Help directory is jmri.util.FileUtil.getProfilePath() plus /jython/tashelp. Files in tashelp/ are General.md, Timetable.md, Workings.md, Enqueued workings.md, Disruption.md, Day and night cycle.md, Public Information Displays.md, Signallers' displays.md, Time warp.md, Train orientation.md, Train detection.md, Block flicker monitor.md, Dcc power on start.md, Dcc power off on close.md. TASHelp.py opens tashelpDir plus / plus topicName plus .md with .txt fallback. Content is rendered from Markdown to HTML in JEditorPane.
 
 TASFontCheck.py defines class FontRequirement, class FontCheckResult, class StatusCellRenderer, class FontsFrame. Functions include BuildRequirementsFromProfileScripts, EvaluateRequirements, RunFontCheckDialog, GetFontCheckResults, CountMissingFonts, RunFontCheck, GetMissingFontsCount. It scans profile:jython/*.py for font names, compares to java.awt.GraphicsEnvironment.getLocalGraphicsEnvironment().getAvailableFontFamilyNames(), and displays a colour-coded report. It does not install fonts. Memory read is TAS_FONT_FAMILY.
 

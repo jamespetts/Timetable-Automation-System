@@ -1,18 +1,16 @@
-***Timetable Automation System***
+# Workings
 
-**Workings**
-
-*Overview*
+## Overview
 
 A working is the name given to a single timetabled train movement in the Timetable Automation System. The working is defined by the timetable, but it is configured in its own working script. You can either write these scripts yourself or use the Timetable Automation System to help you to create them simply.
 
-*Before creating workings*
+## Before creating workings
 
 Before you create any workings, you must already have a layout that works successfully with AutoActive Trains and the Dispatcher. Consult the main JMRI documentation on how to set this up.
 
 You also need to have one or more TrainInfo files created as you need to use these when creating a working. Create a TrainInfo file in JMRI by opening Dispatcher and selecting "New Train", filling in the information, and selecting "Save Train Info...". Consult the main JMRI documentation for details as to  how to set up a Train Info file.
 
-*Setup*
+## Setup
 
 Once you have selected what timetable to use, go to Setup>Workings. You will see in the left-hand column a list of workings extracted from your timetable. Each of those needs to be configured.
 

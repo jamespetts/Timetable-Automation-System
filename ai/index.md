@@ -30,7 +30,7 @@ Target: JMRI 5.16. Language: Jython 2.7. Entry script: TimetableAutomation.py.
 8. ai/timewarp-clock.md
    Read when: Task concerns TimeWarp.py, TimeWarpChecker.py, TASFastClockStartup.py, ALLOWTIMEWARP Memory, fast-clock time, DispatcherFrame ActiveTrain status.
 9. ai/setup-wizard-help.md
-   Read when: Task concerns TASSetup.py, TASWiz.py, HardwareDirectionConfig.py, TASHelp.py, tashelp/*.txt, TASFontCheck.py, TASIcon.py, TASUtil.py, configuration UI, wizard steps, help viewer, font check, window icon.
+   Read when: Task concerns TASSetup.py, TASWiz.py, HardwareDirectionConfig.py, TASHelp.py, tashelp/*.md, TASFontCheck.py, TASIcon.py, TASUtil.py, configuration UI, wizard steps, help viewer, font check, window icon.
 10. ai/registers-direction.md
     Read when: Task concerns NormalDirectionRegister.py, LastReportedDirection.py, OrientationRegister.py, PlatformAllocationRegister.py, TrainLocatorRegister.py, formationRegister.py, RosterSearch.py, roster ID normalisation, reporting number defaults TAS plus row number.
 

@@ -1,8 +1,6 @@
-***Timetable Automation System***
+# Signallers' displays
 
-**Signallers' displays**
-
-*Overview*
+## Overview
 
 The Timetable Automation System can simulate displays (other than the working timetable itself: see under "Timetable" for that) used by signallers to obtain information about the timetable or where trains are (such as the British Rail/Network Rail "TRUST" system). These are not intended to simulate the signalling interface itself (e.g. an IECC or Westcad system): that requires working directly with the JMRI Layout Editor panel and Dispatcher.
 
@@ -10,6 +8,6 @@ One of the displays, "Station working", is intended to able to be used with manu
 
 To view the currently configured signallers' or operators' displays, choose "Signallers' displays" from the Timetable Automation System main menu. Choosing it again closes the displays.
 
-*Configuration*
+## Configuration
 
 To set up which public information displays are shown when "Signallers' displays" is selected, go to Setup>Display configuration. The signallers' displays in the lower left column are those that are available to choose from. Those in the right column are those that will be used when selecting "Signallers' displays". Add or remove entries from the acright column using the "Add" and "Remove" buttons. 

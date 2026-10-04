@@ -1,8 +1,6 @@
-***Timetable Automation System***
+# Time warp
 
-**Time warp**
-
-*Overview*
+## Overview
 
 Pressing "Time warp" in the Timetable Automation System main menu will skip the clock forward to the next time that a train is due to run. If the train has been delayed, press it again to skip forward to the next time that a train is due to or will actually run (whichever is sooner). 
 
@@ -12,6 +10,6 @@ You can use the time warp feature if the clock is running or if it is paused. Us
 
 The time warp is disabled for 10 seconds after JMRI starts. This stops hardware inputs that report themselves as active while they power up from triggering the time warp during start-up.
 
-*Configuring a hardware button*
+## Configuring a hardware button
 
 To configure a hardware button to trigger a time warp, use Logix or LogixNG to connect a JMRI sensor (triggered by the button) to run the script TimeWarp.py. For a light that shows when the time warp is enabled (recommended if there will ever be automatically running trains), use Logix or LogixNG to turn the light on and off depending on the state of the memory variable IMALLOWTIMEWARP (the value of which will either be True or False). 
