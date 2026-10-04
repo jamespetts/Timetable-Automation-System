@@ -37,6 +37,7 @@ Version 1.5
 * The option to resume with the same fast clock time as the last shut down now also saves and restores the day of the week.
 * Fix departure logging missing its WAITING to RUNNING move when Dispatcher allocates before the listener is attached (status fallback now always armed plus an immediate status check; first movement still wins when both paths fire; throttle address falls back to the working roster entry)
 * Fix cancelled workings remaining on the small modern PID indefinitely; they now clear once booked departure time has passed
+* Harden the orientation and last-reported-direction register saves: the file move is retried with a short delay when the stored file is briefly held open (as happens during the RailCom burst after a layout power cycle), and Java file errors are now caught so they can no longer escape onto the AWT event dispatch thread as uncaught exceptions. The atomic move is still attempted first on every attempt
 
 Version 1.3
 

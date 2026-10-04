@@ -24,7 +24,7 @@
 #
 # ASCII only; CamelCase; case-insensitive roster IDs for NDR API; portable paths.
 
-import jmri, os, json
+import jmri, os, json, sys, time
 from jmri.util import FileUtil
 from jmri.jmrix.loconet import LocoNetListener, LocoNetMessage, LocoNetInterface
 from jmri import ShutDownManager
@@ -55,7 +55,7 @@ def debug(msg):
     if DEBUG:
         try:
             print("[LastReportedDirection] " + str(msg))
-        except Exception:
+        except:
             pass
 
 # Optional imports: orientation and normal direction registers
@@ -76,17 +76,84 @@ def _NormId(s):
     except Exception:
         return ""
 
+# Move retry policy. A layout power cycle makes every RailCom reporter
+# announce at once, so several saves run in quick succession while file
+# scanners or sync tools can briefly hold the stored file open on Windows.
+# The atomic move is always attempted first on every attempt.
+_MOVE_ATTEMPTS = 3
+_MOVE_RETRY_DELAY = 0.2
+def _error_text(default):
+    # Describes the error being handled. Never raises, so it is safe to
+    # call from any handler, including handlers for Java errors. A bare
+    # except is used throughout this file because Java errors are not
+    # Python Exception types, so except Exception does not catch them.
+    try:
+        detail = sys.exc_info()[1]
+        if detail is None:
+            return default
+        return "{0}: {1}".format(default, detail)
+    except:
+        return default
+def _warn(text):
+    # Writes text on the console. Never raises.
+    try:
+        print(text)
+    except:
+        pass
+def _warn_save_failed():
+    _warn(_error_text("Warning: failed to save LastReportedDirection.json"))
+def _cleanup_tmp(tmp_path):
+    try:
+        if os.path.exists(tmp_path):
+            os.remove(tmp_path)
+    except:
+        pass
+def _move_tmp_into_place(tmp_path, dest_path):
+    # Moves tmp_path onto dest_path. Returns None on success, else an error
+    # description. The atomic move is attempted first on every attempt, with
+    # a short delay between attempts when the file is briefly held open.
+    from java.nio.file import Files, Paths, StandardCopyOption
+    last_error = "move failed"
+    attempt = 0
+    while attempt < _MOVE_ATTEMPTS:
+        attempt += 1
+        try:
+            Files.move(
+                Paths.get(tmp_path), Paths.get(dest_path),
+                StandardCopyOption.REPLACE_EXISTING,
+                StandardCopyOption.ATOMIC_MOVE
+            )
+            return None
+        except:
+            last_error = _error_text("move failed")
+        try:
+            if os.path.exists(dest_path):
+                os.remove(dest_path)
+            os.rename(tmp_path, dest_path)
+            return None
+        except:
+            last_error = _error_text("move failed")
+        if attempt < _MOVE_ATTEMPTS:
+            try:
+                time.sleep(_MOVE_RETRY_DELAY)
+            except:
+                pass
+    return "move failed after {0} attempts: {1}".format(_MOVE_ATTEMPTS, last_error)
 # Save dictionary to JSON through a temporary file, so a crash mid-write cannot
 # truncate the stored file. Refuses to overwrite a stored file that was never read
-# successfully.
+# successfully. Never raises: callers include a LocoNet listener running on the
+# AWT event dispatch thread, where a raised error is reported as an uncaught
+# exception.
 def save():
+    try:
+        _save_inner()
+    except:
+        _warn_save_failed()
+def _save_inner():
     global _load_ok
     if _had_file and not _load_ok:
-        try:
-            print("Warning: not saving LastReportedDirection.json: "
-                  "the stored file was never read successfully")
-        except Exception:
-            pass
+        _warn("Warning: not saving LastReportedDirection.json: "
+              "the stored file was never read successfully")
         return
     tmp_path = _SAVE_PATH + ".tmp"
     try:
@@ -95,33 +162,17 @@ def save():
             try:
                 f.flush()
                 os.fsync(f.fileno())
-            except Exception:
+            except:
                 pass
-        try:
-            from java.nio.file import Files, Paths, StandardCopyOption
-            Files.move(
-                Paths.get(tmp_path), Paths.get(_SAVE_PATH),
-                StandardCopyOption.REPLACE_EXISTING,
-                StandardCopyOption.ATOMIC_MOVE
-            )
-        except Exception:
-            try:
-                if os.path.exists(_SAVE_PATH):
-                    os.remove(_SAVE_PATH)
-            except Exception:
-                pass
-            os.rename(tmp_path, _SAVE_PATH)
+        move_error = _move_tmp_into_place(tmp_path, _SAVE_PATH)
+        if move_error is not None:
+            _cleanup_tmp(tmp_path)
+            _warn("Warning: failed to save LastReportedDirection.json: {0}".format(move_error))
+            return
         debug("Saved LastReportedDirection.json")
-    except Exception as e:
-        try:
-            if os.path.exists(tmp_path):
-                os.remove(tmp_path)
-        except Exception:
-            pass
-        try:
-            print("Warning: failed to save LastReportedDirection.json: {0}".format(e))
-        except Exception:
-            pass
+    except:
+        _cleanup_tmp(tmp_path)
+        _warn_save_failed()
 
 # Load dictionary from JSON. A failed read keeps existing memory rather than wiping it.
 def load():
@@ -285,16 +336,13 @@ class LastDirectionListener(LocoNetListener):
                     # Persist orientation changes once per message
                     try:
                         OR.save()
-                    except Exception:
+                    except:
                         pass
-                except Exception as ex:
-                    debug("Orientation update failed: {0}".format(ex))
+                except:
+                    debug("Orientation update failed: {0}".format(sys.exc_info()[1]))
 
-        except Exception as e:
-            try:
-                print("Error in LastDirectionListener.message: {0}".format(e))
-            except Exception:
-                pass
+        except:
+            _warn(_error_text("Error in LastDirectionListener.message"))
 
 # Register shutdown hook
 def _register_shutdown():
