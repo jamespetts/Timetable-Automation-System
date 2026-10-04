@@ -2,10 +2,13 @@ Read when: Task modifies or debugs TASPathResolver.py or file location logic.
 
 # TASPathResolver.py
 
-File: TASPathResolver.py. Lines: 246.
+File: TAS/TASPathResolver.py. Lines: 244.
+
+Constant: TAS_SUBDIR = 'TAS'. Function GetTASDir() returns profile:jython/TAS.
 
 Exported functions:
 - GetProfileJythonDir()
+- GetTASDir()
 - GetScriptsDir()
 - GetTimetableDir()
 - GetTimetableCsvPath(timetableName)
@@ -26,12 +29,14 @@ JMRI calls:
 
 Path keys used:
 - profile:jython
+- profile:jython/TAS
 - profile:timetable
 - profile:timetable/<name>.csv
-- profile:jython/<filename>
+- profile:jython/TAS/<filename>
+- profile:jython/<filename> (legacy flat fallback)
 - scripts:<filename>
-- profile:jython/workings/<direction>
+- profile:jython/TAS/workings/<direction>
 
-Behavior: GetTimetableCsvPath returns profile:timetable/<name>.csv external filename. ResolveScriptReadPath checks profile:jython/<filename> then scripts:<filename>. ResolveWorkingScriptReadPath checks workings/<direction>/<reportingNumber>.py in profile then scripts locations. GetWorkingsWriteDir returns profile:jython/workings/<direction>. FindInputStreamFor checks profile:jython/<filename> then scripts:<filename> through FileUtil.findInputStream.
+Behavior: GetTimetableCsvPath returns profile:timetable/<name>.csv external filename. ResolveScriptReadPath checks profile:jython/TAS/<filename> then profile:jython/<filename> then scripts:<filename>. ResolveWorkingScriptReadPath checks workings/<direction>/<reportingNumber>.py in TAS then profile then scripts locations. GetWorkingsWriteDir returns profile:jython/TAS/workings/<direction>. FindInputStreamFor checks profile:jython/TAS/<filename> then profile:jython/<filename> then scripts:<filename> through FileUtil.findInputStream.
 
 Open question: none. Facts verified against file content read in this session.

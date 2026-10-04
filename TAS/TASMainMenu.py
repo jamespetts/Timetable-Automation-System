@@ -1,0 +1,1002 @@
+# This file is part of the Timetable Automation System by James E. Petts
+#
+# The Timetable Automation System is free software: you can redistribute it and/or modify it under the terms of the
+# GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# The Timetable Automation System is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY;
+# without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General
+# Public License for more details.
+
+# You should have received a copy of the GNU General Public License along with the Timetable Automation System.
+# If not, see <https://www.gnu.org/licenses/>.
+#
+#
+# This is a STARTUP SCRIPT
+#
+# TimetableAutomation.py
+# Working Timetable-style startup UI for the Timetable Automation System (TAS)
+# JMRI 5.12 / Jython 2.7. ASCII only. Thread-safe. No absolute paths.
+
+# NOTE: Increment the version in devel *just after* publishing a new version on master.
+# TASMainMenu.py: main menu UI for the Timetable Automation System.
+# Loaded by TimetableAutomation.py. Kept separate so that the entry script
+# stays below the Jython JSR-223 parse mark limit.
+
+from javax.swing import JFrame
+from javax.swing import JPanel
+from javax.swing import JButton
+from javax.swing import JLabel
+from javax.swing import JDialog
+from javax.swing import JScrollPane
+from javax.swing import JTextArea
+from javax.swing import SwingUtilities
+from javax.swing import BorderFactory
+from javax.swing import JTabbedPane
+from javax.swing import JOptionPane
+from javax.swing import UIManager
+from javax.swing import Timer
+from java.awt import BorderLayout
+from java.awt import GridBagLayout, GridBagConstraints, Insets
+from java.awt import Color, Font, RenderingHints, BasicStroke, Dimension
+from java.awt import GraphicsEnvironment
+from java.io import BufferedReader, InputStreamReader
+import jmri
+import os
+import sys
+from java.io import File # needed for canonical path comparison
+# TAS_SYS_PATH_SNIPPET: make the TAS folder importable even when scripts: still points elsewhere.
+try:
+    import os as _tas_os_path
+    import sys as _tas_sys_path
+    _tas_script_dir = None
+    try:
+        import jmri as _tas_jmri_path
+        _tas_script_dir = _tas_jmri_path.util.FileUtil.getExternalFilename('profile:jython/TAS')
+    except Exception:
+        _tas_script_dir = None
+    if _tas_script_dir and _tas_script_dir not in _tas_sys_path.path:
+        _tas_sys_path.path.insert(0, _tas_script_dir)
+except Exception:
+    pass
+
+import TASBeanLookup as TBL
+try:
+    import TASPathResolver as TPR
+except Exception:
+    TPR = None
+try:
+    import TASWindowRegistry as TASWINREG
+except Exception:
+    TASWINREG = None
+
+def GetActiveProfileName():
+    try:
+        pm = jmri.profile.ProfileManager.getDefault()
+        if pm is not None:
+            name = pm.getActiveProfileName()
+            if name is not None and len(name.strip()) > 0:
+                return name.strip()
+    except Exception as ex:
+        print("Profile name lookup failed: " + str(ex))
+    return "Current Profile"
+
+
+def GetTimetableName():
+    try:
+        # CURRENTTIMETABLE stores the timetable *name* as the Memory value.
+        # Use prefix-agnostic suffix lookup via TASBeanLookup.
+        val = TBL.SafeGetMemoryValue(TIMETABLE_MEMORY_NAME, "")
+        if val is not None:
+            s = str(val).strip()
+            if len(s) > 0:
+                return s
+    except Exception as ex:
+        print("Timetable name lookup failed: " + str(ex))
+    return "Not configured"
+
+def RunExternalScript(FileName, FriendlyName, Arg=None):
+    # Execute another script located in the JMRI scripts directory (portable path).
+    # Log errors to console (with traceback) and also show a dialog.
+    try:
+        # Resolve script location (prefer profile:jython/TAS, then profile:jython, then scripts:)
+        fullPath = None
+        try:
+            if TPR is not None:
+                fullPath = TPR.ResolveScriptReadPath(FileName)
+        except Exception:
+            fullPath = None
+        if fullPath is None:
+            fullPath = jmri.util.FileUtil.getExternalFilename("scripts:" + FileName)  # portable to external
+        import java.io as jio
+        f = jio.File(fullPath)
+        if (not f.exists()) or (not f.isFile()):
+            msg = FriendlyName + " is not yet implemented.\n(" + FileName + " was not found in the scripts folder.)"
+            print("[TAS] " + msg)
+            JOptionPane.showMessageDialog(None, msg, "TAS", JOptionPane.INFORMATION_MESSAGE)
+            return
+
+        # Fresh globals to avoid stale state between runs (prevents leaking names into the caller)
+        SafeGlobals = {"__name__": "__main__", "jmri": jmri}
+        try:
+            if str(FileName) == 'TASSetup.py':
+                SafeGlobals['TAS_MAINMENU_THEME_REFRESH_CALLBACK'] = RefreshMainMenuTheme
+        except:
+            pass
+        execfile(fullPath, SafeGlobals)
+
+        # If the loaded script defines an entrypoint Show(...), invoke it.
+        try:
+            if "Show" in SafeGlobals:
+                fn = SafeGlobals["Show"]
+                if hasattr(fn, "__call__"):
+                    if Arg is None:
+                        fn()              # default behaviour inside TASHelp is "General"
+                    else:
+                        fn(str(Arg))      # pass a topic name WITHOUT extension (e.g., "Signals")
+        except Exception as callEx:
+            # Console (with traceback)
+            try:
+                import traceback
+                print("[TAS] " + FriendlyName + " entrypoint failed: " + str(callEx))
+                print(traceback.format_exc())
+            except:
+                print("[TAS] " + FriendlyName + " entrypoint failed (traceback unavailable): " + str(callEx))
+            # Dialog
+            try:
+                JOptionPane.showMessageDialog(
+                    None,
+                    FriendlyName + " entrypoint failed: " + str(callEx),
+                    "TAS",
+                    JOptionPane.INFORMATION_MESSAGE
+                )
+            except:
+                pass
+
+    except Exception as ex:
+        # Console (with traceback)
+        try:
+            import traceback
+            print("[TAS] " + FriendlyName + " failed: " + str(ex))
+            print(traceback.format_exc())
+        except:
+            print("[TAS] " + FriendlyName + " failed (traceback unavailable): " + str(ex))
+        # Dialog
+        try:
+            JOptionPane.showMessageDialog(
+                None,
+                FriendlyName + " failed: " + str(ex),
+                "TAS",
+                JOptionPane.INFORMATION_MESSAGE
+            )
+        except:
+            pass
+
+# ------------------ Font helpers ------------------
+
+def PreferredFontFamily():
+    fams = set(GraphicsEnvironment.getLocalGraphicsEnvironment().getAvailableFontFamilyNames())
+    for fam in ["Gill Sans MT", "Gill Sans", "Arial", "Helvetica", "SansSerif"]:
+        if fam in fams:
+            return fam
+    return "SansSerif"
+
+def FitFontForSingleLine(g, family, style, maxPt, minPt, text, maxWidth):
+    size = maxPt
+    while size >= minPt:
+        f = Font(family, style, size)
+        if g.getFontMetrics(f).stringWidth(text) <= maxWidth:
+            return f
+        size -= 1
+    return Font(family, style, minPt)
+
+def BuildTitleLines(g, family, style, maxPt, minPt, text, maxWidth):
+    """
+    Lossless two-line builder:
+    - For size maxPt..minPt:
+      * Fill line1 greedily (word by word) without exceeding width.
+      * Put ALL remaining words on line2.
+      * If both lines fit, return (font, [line1, line2]) where line2 may be "" if nothing remains.
+    - If nothing fits in two lines even at minPt, fall back to single-line font sized to fit.
+    """
+    words = text.split()
+    for size in range(maxPt, minPt - 1, -1):
+        f = Font(family, style, size)
+        fm = g.getFontMetrics(f)
+        line1 = ""
+        idx = 0
+        while idx < len(words):
+            trial = words[idx] if line1 == "" else (line1 + " " + words[idx])
+            if fm.stringWidth(trial) <= maxWidth:
+                line1 = trial
+                idx += 1
+            else:
+                break
+        line2 = " ".join(words[idx:]) if idx < len(words) else ""
+        if line2 == "":
+            return (f, [line1])
+        if fm.stringWidth(line2) <= maxWidth:
+            return (f, [line1, line2])
+    f1 = FitFontForSingleLine(g, family, style, maxPt, minPt, text, maxWidth)
+    return (f1, [text])
+
+# ------------------ Licence loader - external scripts: Licence.txt (portable path) ------------------
+
+def LoadLicenceText():
+    try:
+        stream = None
+        try:
+            if TPR is not None:
+                stream = TPR.FindInputStreamFor("Licence.txt")
+        except Exception:
+            stream = None
+        if stream is None:
+            stream = jmri.util.FileUtil.findInputStream("scripts:Licence.txt")
+        if stream is None:
+            return None
+        try:
+            reader = BufferedReader(InputStreamReader(stream, "US-ASCII"))
+            lines = []
+            while True:
+                line = reader.readLine()
+                if line is None:
+                    break
+                lines.append(line)
+            return "\n".join(lines)
+        finally:
+            stream.close()
+    except Exception as ex:
+        print("Licence load failed: " + str(ex))
+        return None
+
+# Compatibility helper for legacy external scripts that expect ReadMemStr(...)
+def ReadMemStr(Name, Default=""):
+    return TBL.SafeGetOrCreateMemoryValue(Name, Default)
+
+# ------------------ Change log loader - external scripts: changelog.txt (portable path) ------------------
+
+def LoadChangeLogText():
+    try:
+        stream = None
+        try:
+            if TPR is not None:
+                stream = TPR.FindInputStreamFor("changelog.txt")
+        except Exception:
+            stream = None
+        if stream is None:
+            stream = jmri.util.FileUtil.findInputStream("scripts:changelog.txt")
+        if stream is None:
+            return None
+        try:
+            reader = BufferedReader(InputStreamReader(stream, "US-ASCII"))
+            lines = []
+            while True:
+                line = reader.readLine()
+                if line is None:
+                    break
+                lines.append(line)
+            return "\n".join(lines)
+        finally:
+            stream.close()
+    except Exception as ex:
+        print("Change log load failed: " + str(ex))
+        return None
+
+
+# ------------------ Cover panel ------------------
+
+class CoverPanel(JPanel):
+    # Tunable layout constants
+    TITLE_MAX_PT = 66
+    TITLE_MIN_PT = 33
+    TITLE_SAFETY_GAP = 2
+    SUBTITLE_GAP = 14
+    POST_SUBTITLE_GAP = 32
+    PROFILE_MAX_PT = 44
+    PROFILE_MIN_PT = 26
+    PROFILE_TIMETABLE_GAP = 2
+    TIMETABLE_PT = 24
+    # Single-column button geometry
+    BTN_W = 240
+    BTN_H = 36
+    BTN_BASELINE_Y = 18 + 14 + 356  # margin + innerPad + baseline
+    # Window registry keys for the buttons that open other windows
+    KEY_TIMETABLE = "showtimetable"
+    KEY_PUBLIC = "publicdisplays"
+    KEY_SIGNALLERS = "signallerdisplays"
+    KEY_WEATHER = "weatherforecast"
+    KEY_SETUP = "setup"
+    KEY_HELP = "help"
+
+    def __init__(self):
+        JPanel.__init__(self)
+        self.setOpaque(True)
+        # Use TASCOVERCOLOUR from memory (default "240,238,220")
+        memRgb = TBL.SafeGetOrCreateMemoryValue("TASCOVERCOLOUR", "240,238,220")
+        try:
+            parts = [p.strip() for p in str(memRgb).split(",")]
+            if len(parts) == 3:
+                r = max(0, min(255, int(float(parts[0]))))
+                g = max(0, min(255, int(float(parts[1]))))
+                b = max(0, min(255, int(float(parts[2]))))
+                self.setBackground(Color(r, g, b))
+            else:
+                self.setBackground(Color(240, 238, 220))
+        except:
+            self.setBackground(Color(240, 238, 220))
+
+        # Inner panel background colour from TASINNERCOLOUR (default "220,235,220")
+        memRgbInner = TBL.SafeGetOrCreateMemoryValue("TASINNERCOLOUR", "220,235,220")
+        try:
+            parts = [p.strip() for p in str(memRgbInner).split(",")]
+            if len(parts) == 3:
+                r = max(0, min(255, int(float(parts[0]))))
+                g = max(0, min(255, int(float(parts[1]))))
+                b = max(0, min(255, int(float(parts[2]))))
+                self.InnerBgColor = Color(r, g, b)
+            else:
+                self.InnerBgColor = Color(220,235,220)
+        except:
+            self.InnerBgColor = Color(220,235,220)
+
+        self.setLayout(None)
+
+        # Ink (text/lines/boxes/button outlines) colour from TASINKCOLOUR (default "0,0,0")
+        memRgbInk = TBL.SafeGetOrCreateMemoryValue("TASINKCOLOUR", "0,0,0")
+        try:
+            parts = [p.strip() for p in str(memRgbInk).split(",")]
+            if len(parts) == 3:
+                r = max(0, min(255, int(float(parts[0]))))
+                g = max(0, min(255, int(float(parts[1]))))
+                b = max(0, min(255, int(float(parts[2]))))
+                self.InkColor = Color(r, g, b)
+            else:
+                self.InkColor = Color(0, 0, 0)
+        except:
+            self.InkColor = Color(0, 0, 0)
+
+        # Cover ink colour (main menu text/lines/button outlines) from TASCOVERINKCOLOUR.
+        # This allows the cover (main menu) ink to differ from the general interface ink.
+        # If not set or invalid, fall back to TASINKCOLOUR.
+        self.CoverInkColor = self.InkColor
+        memRgbCoverInk = TBL.SafeGetOrCreateMemoryValue("TASCOVERINKCOLOUR", "")
+        try:
+            if memRgbCoverInk is not None and len(str(memRgbCoverInk).strip()) > 0:
+                parts = [p.strip() for p in str(memRgbCoverInk).split(",")]
+                if len(parts) == 3:
+                    r = max(0, min(255, int(float(parts[0]))))
+                    g = max(0, min(255, int(float(parts[1]))))
+                    b = max(0, min(255, int(float(parts[2]))))
+                    self.CoverInkColor = Color(r, g, b)
+        except:
+            self.CoverInkColor = self.InkColor
+        # Helper: if ink changes at runtime, apply to all buttons
+        def _ApplyInkToButtons():
+            try:
+                for b in (self.BtnShowTimetable, self.BtnTimeWarp, self.BtnPublic, self.BtnSignallers,
+                          self.BtnWeather, self.BtnSetup, self.BtnHelp, self.BtnAbout):
+                    b.setForeground(getattr(self, 'CoverInkColor', self.InkColor))
+                    b.setBorder(BorderFactory.createLineBorder(getattr(self, 'CoverInkColor', self.InkColor), 1))
+            except:
+                pass
+
+        # Expose helper for possible runtime use
+        self.ApplyInkToButtons = _ApplyInkToButtons
+
+        memFont = TBL.SafeGetOrCreateMemoryValue("TAS_FONT_FAMILY", PreferredFontFamily())
+        self.FontFamily = memFont if memFont else PreferredFontFamily()
+        self.ProfileName = GetActiveProfileName()
+        self.TimetableName = GetTimetableName()
+
+        # Buttons (single column; Show/Time warp at top)
+        self.BtnShowTimetable = self.MakeBtn("Show timetable")
+        self.BtnTimeWarp = self.MakeBtn("Time warp")
+        self.BtnPublic = self.MakeBtn("Public information displays")
+        self.BtnSignallers = self.MakeBtn("Signallers' displays")
+        self.BtnWeather = self.MakeBtn("Weather forecast")
+        self.BtnSetup = self.MakeBtn("Setup")
+        self.BtnHelp = self.MakeBtn("Help")
+        self.BtnAbout = self.MakeBtn("About")
+        for b in (self.BtnShowTimetable, self.BtnTimeWarp, self.BtnPublic, self.BtnSignallers,
+                  self.BtnWeather, self.BtnSetup, self.BtnHelp, self.BtnAbout):
+            self.add(b)
+
+        # Apply ink colour to buttons now that they exist
+        try:
+            self.ApplyInkToButtons()
+        except:
+            pass
+
+        # Actions
+        # The buttons that open other windows are toggles: a second press closes
+        # the windows that the first press opened.
+        self.BtnShowTimetable.addActionListener(
+            lambda e: self.ToggleWindows(self.KEY_TIMETABLE,
+                                         lambda: RunExternalScript("WTTDisplay.py", "Show timetable")))
+        self.BtnTimeWarp.addActionListener(lambda e: self.OnTimeWarp(e))
+        self.BtnPublic.addActionListener(
+            lambda e: self.ToggleWindows(self.KEY_PUBLIC, lambda: self.RunConfiguredPublic()))
+        self.BtnSignallers.addActionListener(
+            lambda e: self.ToggleWindows(self.KEY_SIGNALLERS, lambda: self.RunConfiguredSignallers()))
+        self.BtnWeather.addActionListener(
+            lambda e: self.ToggleWindows(self.KEY_WEATHER, lambda: self.OnWeatherForecast()))
+        self.BtnSetup.addActionListener(
+            lambda e: self.ToggleWindows(self.KEY_SETUP, lambda: RunExternalScript("TASSetup.py", "Setup")))
+        self.BtnHelp.addActionListener(
+            lambda e: self.ToggleWindows(self.KEY_HELP, lambda: RunExternalScript("TASHelp.py", "Help")))
+        self.BtnAbout.addActionListener(lambda e: self.ShowAbout())
+
+        # Initial enabled/disabled state based on IMALLOWTIMEWARP
+        self.UpdateTimeWarpEnabled()
+        # Update enabled/disabled every second on the EDT
+        self.TimeWarpTimer = Timer(1000, lambda e: self.UpdateTimeWarpEnabled())
+        self.TimeWarpTimer.setRepeats(True)
+        self.TimeWarpTimer.start()
+
+    def MakeBtn(self, text):
+        btn = JButton(text)
+        btn.setFont(Font(self.FontFamily, Font.BOLD, 14))
+        btn.setFocusPainted(False)
+        btn.setContentAreaFilled(False)
+        btn.setOpaque(False)
+        # Use ink colour for the button text AND outline
+        btn.setForeground(getattr(self, 'CoverInkColor', self.InkColor))
+        btn.setBorder(BorderFactory.createLineBorder(getattr(self, 'CoverInkColor', self.InkColor), 1))
+        return btn
+
+    def ToggleWindows(self, key, opener):
+        # Run opener unless the windows it opened are still up, in which case close
+        # them. Each button is therefore a toggle. Without the registry, when that
+        # module is not present, opener always runs, as before.
+        if TASWINREG is None:
+            opener()
+            return
+        try:
+            TASWINREG.Toggle(key, opener)
+        except Exception as ex:
+            print("[TAS] Could not toggle windows for " + str(key) + ": " + str(ex))
+            try:
+                import traceback
+                print(traceback.format_exc())
+            except:
+                pass
+
+    def ShowStub(self, name):
+        JOptionPane.showMessageDialog(self, name + " is not implemented yet.", "TAS", JOptionPane.INFORMATION_MESSAGE)
+
+    def ShowAbout(self):
+        dlg = AboutDialog(self, self.FontFamily)
+        dlg.setLocationRelativeTo(self)
+        dlg.setVisible(True)
+
+    def IsTimeWarpAllowed(self):
+        s = str(TBL.SafeGetOrCreateMemoryValue("ALLOWTIMEWARP", "")).strip().lower()
+        return s in ("true", "yes", "1", "on", "enabled")
+
+    def UpdateTimeWarpEnabled(self):
+        try:
+            self.BtnTimeWarp.setEnabled(self.IsTimeWarpAllowed())
+        except Exception:
+            pass
+
+    def OnTimeWarp(self, e):
+        if self.IsTimeWarpAllowed():
+            RunExternalScript("TimeWarp.py", "Time warp")
+
+    def OnWeatherForecast(self):
+        # Decide which UI to run based on Memories, and handle disabled generator.
+        wxEnabled = _IsStartUpScriptEnabled("WeatherGenerator.py")  # from Start-Up list  [1]
+        uiChoice  = str(TBL.SafeGetOrCreateMemoryValue("WX_UI", "Newspaper")).strip()
+        cloudStr  = str(TBL.SafeGetOrCreateMemoryValue("CLOUDCOVERPCT", "0")).strip()
+        try:
+            cloud = int(float(cloudStr))
+        except:
+            cloud = 0
+        cloud = max(0, min(100, cloud))
+
+        if not wxEnabled:
+            # Basic dialog per spec
+            JOptionPane.showMessageDialog(self,
+                "Weather generation disabled. Fixed cloud cover: %d%%" % cloud,
+                "Weather forecast", JOptionPane.INFORMATION_MESSAGE)
+            return
+
+        # Weather generation enabled -> run chosen UI
+        if uiChoice.lower() == "app":
+            RunExternalScript("WeatherForecastUIApp.py", "Weather forecast (App)")
+        else:
+            # Newspaper UI
+            RunExternalScript("WeatherForecastUINewspaper.py", "Weather forecast (Newspaper)")
+
+    # Run configured Display scripts (CSV of .py filenames in memories)
+    def RunConfiguredPublic(self):
+        try:
+            raw = TBL.SafeGetOrCreateMemoryValue("PUBLICDISPLAYLIST", "")
+            names = [s.strip() for s in raw.split(",") if len(s.strip()) > 0]
+            # Run each chosen script (do nothing if none selected)
+            for fname in names:
+                RunExternalScript(fname, self.FRIENDLY_NAME(fname, "Public display"))
+        except Exception as ex:
+            try:
+                import traceback
+                print("[TAS] Public displays failed: " + str(ex))
+                print(traceback.format_exc())
+            except:
+                pass
+
+    def RunConfiguredSignallers(self):
+        try:
+            raw = TBL.SafeGetOrCreateMemoryValue("SIGNALLERDISPLAYLIST", "")
+            names = [s.strip() for s in raw.split(",") if len(s.strip()) > 0]
+            for fname in names:
+                RunExternalScript(fname, self.FRIENDLY_NAME(fname, "Signallers' display"))
+        except Exception as ex:
+            try:
+                import traceback
+                print("[TAS] Signallers' displays failed: " + str(ex))
+                print(traceback.format_exc())
+            except:
+                pass
+
+    # Friendly name mapping for well-known scripts (fallback to filename)
+    def FRIENDLY_NAME(self, FileName, Fallback):
+        try:
+            m = {
+                "NSEClock.py": "NSE clock",
+                "PIDCRTSingle.py": "Per platform CRT PID",
+                "PIDCRTSummary.py": "Summary of departures CRT PID",
+                "PIDFingerboard.py": "Fingerboard",
+                "PIDSmall.py": "Small modern platform PID",
+                "TRUST-TRJA.py": "TRUST TRJA",
+            }
+            return m.get(FileName, Fallback)
+        except:
+            return Fallback
+
+
+    # Refresh theme values (colours/fonts) from memories and repaint.
+    def RefreshThemeFromMemories(self):
+        # Re-read all theme-related memories used by the main menu.
+        try:
+            memRgb = TBL.SafeGetOrCreateMemoryValue('TASCOVERCOLOUR', '240,238,220')
+            parts = [p.strip() for p in str(memRgb).split(',')]
+            if len(parts) == 3:
+                r = max(0, min(255, int(float(parts[0]))))
+                g = max(0, min(255, int(float(parts[1]))))
+                b = max(0, min(255, int(float(parts[2]))))
+                self.setBackground(Color(r, g, b))
+        except:
+            pass
+        try:
+            memRgbInner = TBL.SafeGetOrCreateMemoryValue('TASINNERCOLOUR', '220,235,220')
+            parts = [p.strip() for p in str(memRgbInner).split(',')]
+            if len(parts) == 3:
+                r = max(0, min(255, int(float(parts[0]))))
+                g = max(0, min(255, int(float(parts[1]))))
+                b = max(0, min(255, int(float(parts[2]))))
+                self.InnerBgColor = Color(r, g, b)
+        except:
+            pass
+        try:
+            memRgbInk = TBL.SafeGetOrCreateMemoryValue('TASINKCOLOUR', '0,0,0')
+            parts = [p.strip() for p in str(memRgbInk).split(',')]
+            if len(parts) == 3:
+                r = max(0, min(255, int(float(parts[0]))))
+                g = max(0, min(255, int(float(parts[1]))))
+                b = max(0, min(255, int(float(parts[2]))))
+                self.InkColor = Color(r, g, b)
+        except:
+            pass
+        # Cover ink colour may differ; fall back to TASINKCOLOUR if missing/invalid.
+        try:
+            self.CoverInkColor = getattr(self, 'InkColor', Color(0,0,0))
+            memRgbCoverInk = TBL.SafeGetOrCreateMemoryValue('TASCOVERINKCOLOUR', '')
+            if memRgbCoverInk is not None and len(str(memRgbCoverInk).strip()) > 0:
+                parts = [p.strip() for p in str(memRgbCoverInk).split(',')]
+                if len(parts) == 3:
+                    r = max(0, min(255, int(float(parts[0]))))
+                    g = max(0, min(255, int(float(parts[1]))))
+                    b = max(0, min(255, int(float(parts[2]))))
+                    self.CoverInkColor = Color(r, g, b)
+        except:
+            try:
+                self.CoverInkColor = getattr(self, 'InkColor', Color(0,0,0))
+            except:
+                pass
+        try:
+            memFont = TBL.SafeGetOrCreateMemoryValue('TAS_FONT_FAMILY', PreferredFontFamily())
+            self.FontFamily = memFont if memFont else PreferredFontFamily()
+        except:
+            pass
+        # Apply ink and font to buttons if they exist.
+        try:
+            fam = getattr(self, 'FontFamily', PreferredFontFamily())
+            ink = getattr(self, 'CoverInkColor', getattr(self, 'InkColor', Color(0,0,0)))
+            for b in (self.BtnShowTimetable, self.BtnTimeWarp, self.BtnPublic, self.BtnSignallers,
+                self.BtnWeather, self.BtnSetup, self.BtnHelp, self.BtnAbout):
+                try:
+                    b.setFont(Font(fam, Font.BOLD, 14))
+                except:
+                    pass
+                try:
+                    b.setForeground(ink)
+                    b.setBorder(BorderFactory.createLineBorder(ink, 1))
+                except:
+                    pass
+        except:
+            pass
+        # Refresh cached profile and timetable names (these are not re-read in paintComponent).
+        try:
+            self.ProfileName = GetActiveProfileName()
+        except:
+            pass
+        try:
+            self.TimetableName = GetTimetableName()
+        except:
+            pass
+        try:
+            self.repaint()
+        except:
+            pass
+
+
+    def paintComponent(self, g):
+        super(CoverPanel, self).paintComponent(g)
+        g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
+        w = self.getWidth()
+        h = self.getHeight()
+
+        # Outer and inner borders
+        margin = 18
+        innerPad = 14
+        g.setColor(self.InnerBgColor)
+        g.fillRect(margin, margin, w - 2 * margin, h - 2 * margin)
+        g.setColor(self.CoverInkColor)
+        g.setStroke(BasicStroke(1.5))
+        g.drawRect(margin, margin, w - 2 * margin, h - 2 * margin)
+        g.drawRect(margin + innerPad, margin + innerPad, w - 2 * (margin + innerPad), h - 2 * (margin + innerPad))
+        innerLeft = margin + innerPad + 20
+        innerRight = w - (margin + innerPad + 20)
+        innerWidth = innerRight - innerLeft
+
+        # Top line + SECTION box
+        y = margin + innerPad + 40
+        g.setFont(Font(self.FontFamily, Font.PLAIN, 14))
+        railwayText = TBL.SafeGetOrCreateMemoryValue("RAILWAYCO", "BRITISH RAILWAYS")
+        regionText = TBL.SafeGetOrCreateMemoryValue("REGION", "LONDON MIDLAND REGION")
+        g.drawString(railwayText + " " + regionText, innerLeft, y)
+
+        g.setFont(Font(self.FontFamily, Font.BOLD, 14))
+        secText = TBL.SafeGetOrCreateMemoryValue("SECTION", "SECTION B")
+
+        # If SECTION text is blank/whitespace, do NOT draw the box or the label
+        if secText is not None and len(str(secText).strip()) > 0:
+            fmSec = g.getFontMetrics()
+            textW = fmSec.stringWidth(secText)
+            textH = fmSec.getAscent() + fmSec.getDescent()
+            # Padding inside the box (left/right/top/bottom)
+            padX = 12
+            padY = 6
+            # Compute box width/height to fit the text with padding
+            secW = textW + 2 * padX
+            secH = textH + 2 * padY
+            # Position box flush to the inner right edge, aligned with the railway/region baseline
+            secX = innerRight - secW
+            secY = y - (fmSec.getAscent() + padY)  # align text baseline with 'y'
+            # Draw the box
+            g.drawRect(secX, secY, secW, secH)
+            # Center the text horizontally and vertically inside the box
+            textX = secX + (secW - textW) // 2
+            textY = secY + padY + fmSec.getAscent()
+            g.drawString(secText, textX, textY)
+        # else: box is intentionally omitted
+
+        # Headline (lossless two-line builder; never drops words)
+        y += 54
+        titleText = "TIMETABLE AUTOMATION SYSTEM"
+        (titleFont, titleLines) = BuildTitleLines(
+            g, self.FontFamily, Font.BOLD, self.TITLE_MAX_PT, self.TITLE_MIN_PT, titleText, innerWidth
+        )
+        g.setFont(titleFont)
+        fmTitle = g.getFontMetrics()
+        for i in range(len(titleLines)):
+            line = titleLines[i]
+            x = innerLeft + (innerWidth - fmTitle.stringWidth(line)) // 2
+            g.drawString(line, x, y + i * fmTitle.getHeight())
+        lastBaseline = y + (len(titleLines) - 1) * fmTitle.getHeight()
+        lastBottom = lastBaseline + fmTitle.getDescent()
+        y = lastBottom + self.TITLE_SAFETY_GAP
+
+        y += self.SUBTITLE_GAP
+        subText = "(For automatic and manual running of trains to a timetable)"
+        g.setFont(Font(self.FontFamily, Font.PLAIN, 14))
+        fmSub = g.getFontMetrics()
+        g.drawString(subText, innerLeft + (innerWidth - fmSub.stringWidth(subText)) // 2, y)
+        subtitleBottom = y + fmSub.getDescent()
+
+        # Short horizontal line between subtitle and profile (centered)
+        lineLen1 = 100
+        lineY1 = subtitleBottom + self.POST_SUBTITLE_GAP - 12
+        lineX1 = innerLeft + (innerWidth - lineLen1) // 2
+        g.drawLine(lineX1, lineY1, lineX1 + lineLen1, lineY1)
+
+        # Profile name (larger; wraps to 2 lines max)
+        profText = self.ProfileName.upper()
+        (profFont, profLines) = BuildTitleLines(
+            g, self.FontFamily, Font.BOLD, self.PROFILE_MAX_PT, self.PROFILE_MIN_PT, profText, innerWidth
+        )
+        g.setFont(profFont)
+        fmProf = g.getFontMetrics()
+        y = subtitleBottom + self.POST_SUBTITLE_GAP + fmProf.getAscent()
+        for i in range(len(profLines)):
+            line = profLines[i]
+            x = innerLeft + (innerWidth - fmProf.stringWidth(line)) // 2
+            g.drawString(line, x, y + i * fmProf.getHeight())
+        y += len(profLines) * fmProf.getHeight()
+        y += self.PROFILE_TIMETABLE_GAP
+
+        # Timetable name (fixed size)
+        ttName = self.TimetableName
+        g.setFont(Font(self.FontFamily, Font.PLAIN, self.TIMETABLE_PT))
+        fmTT = g.getFontMetrics()
+        g.drawString(ttName, innerLeft + (innerWidth - fmTT.stringWidth(ttName)) // 2, y)
+
+        # Short horizontal line between profile/timetable block and buttons (centered)
+        lineLen2 = 100
+        lineY2 = y + fmTT.getDescent() + 18
+        lineX2 = innerLeft + (innerWidth - lineLen2) // 2
+        g.drawLine(lineX2, lineY2, lineX2 + lineLen2, lineY2)
+
+        # --- Single-column buttons (Show/Time warp first) ---
+        gridTop = self.BTN_BASELINE_Y
+        btnW = self.BTN_W
+        btnH = self.BTN_H
+        x = innerLeft + (innerWidth - btnW) // 2
+        rowY = gridTop
+        rowGap = 60
+        self.BtnShowTimetable.setBounds(x, rowY, btnW, btnH)
+        self.BtnTimeWarp.setBounds(x, rowY + rowGap, btnW, btnH)
+        self.BtnPublic.setBounds(x, rowY + 2 * rowGap, btnW, btnH)
+        self.BtnSignallers.setBounds(x, rowY + 3 * rowGap, btnW, btnH)
+        self.BtnWeather.setBounds(x, rowY + 4 * rowGap, btnW, btnH)
+        self.BtnSetup.setBounds(x, rowY + 5 * rowGap, btnW, btnH)
+        self.BtnHelp.setBounds(x, rowY + 6 * rowGap, btnW, btnH)
+        self.BtnAbout.setBounds(x, rowY + 7 * rowGap, btnW, btnH)
+
+        # Footer
+        footerY = h - margin - innerPad - 20
+        g.setFont(Font(self.FontFamily, Font.PLAIN, 12))
+        g.drawString("This system is subject to the GNU GPL v3.0. See About for details.", innerLeft, footerY)
+        verText = "Version " + VERSION
+        g.drawString(verText, innerRight - g.getFontMetrics().stringWidth(verText), footerY)
+
+# ------------------ About dialog (external Licence.txt or concise GPL summary) ------------------
+
+
+class AboutDialog(JDialog):
+    def __init__(self, Parent, FontFamily):
+        JDialog.__init__(self, SwingUtilities.getWindowAncestor(Parent), "About the Timetable Automation System", True)
+        self.setLayout(BorderLayout(8, 8))
+        self.setMinimumSize(Dimension(720, 840))
+        self.FontFamily = FontFamily
+
+        Header = JPanel()
+        Header.setLayout(GridBagLayout())
+        gbc = GridBagConstraints()
+        gbc.gridx = 0
+        gbc.gridy = 0
+        gbc.anchor = GridBagConstraints.WEST
+        gbc.insets = Insets(8, 8, 4, 8)
+
+        Title = JLabel(SYSTEM_NAME + " - About")
+        Title.setFont(Font(FontFamily, Font.BOLD, 18))
+        Header.add(Title, gbc)
+
+        gbc.gridy = 1
+        Ver = JLabel("Version: " + VERSION)
+        Ver.setFont(Font(FontFamily, Font.PLAIN, 14))
+        Header.add(Ver, gbc)
+
+        gbc.gridy = 2
+        Notice = JLabel("Licensed under the GNU General Public License v3.0.")
+        Notice.setFont(Font(FontFamily, Font.PLAIN, 14))
+        Header.add(Notice, gbc)
+
+        self.add(Header, BorderLayout.NORTH)
+
+        Tabs = JTabbedPane()
+
+        AboutPanel = JPanel()
+        AboutPanel.setLayout(GridBagLayout())
+        gbc2 = GridBagConstraints()
+        gbc2.gridx = 0
+        gbc2.gridy = 0
+        gbc2.weightx = 1.0
+        gbc2.weighty = 1.0
+        gbc2.fill = GridBagConstraints.BOTH
+
+        Info = JTextArea()
+        Info.setEditable(False)
+        Info.setLineWrap(True)
+        Info.setWrapStyleWord(True)
+        Info.setFont(Font(FontFamily, Font.PLAIN, 13))
+        Info.setText(
+            "By James E. Petts 2025-6. Written with the assistance of AI.\n\n"
+            "This software is a suite of scripts written for JMRI to allow easy set up and maintenance of realistic U. K. "
+            "timetable based model railway operation, including accurate displays of timetables, signallers' interfaces (e.g. TRUST) "
+            "and public information displays.\n\n"
+            "It also incorporates a system for creating realistic delays and cancellations to scheduled services, as well "
+            "as a system for providing accurate, configurable day/night lighting for the layout (using a mix of warm and cool "
+            "white LED strips driven by DCC decoders), featuring weather simulation and simulated weather forecasting to explain "
+            "the lighting levels and colour balance at any given time.\n\n"
+            "This entire suite of scripts is free software: you can redistribute it and/or modify it under the terms of "
+            "the GNU General Public License as published by the Free Software Foundation, either version 3 "
+            "of the License, or (at your option) any later version."
+        )
+        AboutPanel.add(JScrollPane(Info), gbc2)
+        Tabs.addTab("About", AboutPanel)
+
+        # Acknowledgements tab
+        AckPanel = JPanel()
+        AckPanel.setLayout(BorderLayout())
+        AckText = JTextArea()
+        AckText.setEditable(False)
+        AckText.setLineWrap(True)
+        AckText.setWrapStyleWord(True)
+        AckText.setFont(Font(FontFamily, Font.PLAIN, 13))
+        AckScroll = JScrollPane(AckText)
+        AckPanel.add(AckScroll, BorderLayout.CENTER)
+
+        # Placeholder content (ASCII only). Feel free to overwrite this at runtime.
+        AckText.setText(
+            "Acknowledgements\n\n"
+            "- David Sand (JMRI scripting assistance)\n"
+            "- Torben (early testting and bug reporting)\n"
+            "- Jean-Louis (early testing and bug reporting)\n"
+            "- Jennifer E. Kirk (use of 'Billy's Replacement Speakers')\n"
+            "- Microsoft Copilot (doing most of the actual work)\n"
+        )
+        AckText.setCaretPosition(0)  # Ensure that the top of the text is shown
+
+        Tabs.addTab("Acknowledgements", AckPanel)
+
+        LicencePanel = JPanel()
+        LicencePanel.setLayout(BorderLayout())
+        self.Txt = JTextArea()
+        self.Txt.setEditable(False)
+        self.Txt.setLineWrap(True)
+        self.Txt.setWrapStyleWord(True)
+        self.Txt.setFont(Font(FontFamily, Font.PLAIN, 12))
+        LicencePanel.add(JScrollPane(self.Txt), BorderLayout.CENTER)
+        Tabs.addTab("Licence", LicencePanel)
+
+        # --- Change log tab (reads scripts:changelog.txt) ---
+        ChgPanel = JPanel()
+        ChgPanel.setLayout(BorderLayout())
+        self.ChgTxt = JTextArea()
+        self.ChgTxt.setEditable(False)
+        self.ChgTxt.setLineWrap(True)
+        self.ChgTxt.setWrapStyleWord(True)
+        self.ChgTxt.setFont(Font(FontFamily, Font.PLAIN, 12))
+        ChgPanel.add(JScrollPane(self.ChgTxt), BorderLayout.CENTER)
+        Tabs.addTab("Change log", ChgPanel)
+
+        self.add(Tabs, BorderLayout.CENTER)
+
+        lic = LoadLicenceText()
+
+        if lic is None or len(lic.strip()) == 0:
+            self.Txt.setText(
+                "GNU GPL v3.0 (summary)\n\n"
+                "- Strong copyleft: recipients get complete corresponding source and must preserve the licence.\n"
+                "- No warranty: provided \"as is\" without any implied warranties.\n"
+                "- Patent protection: prevents discriminatory patent arrangements.\n"
+                "- Protects users against restrictions that prevent running modified versions.\n\n"
+                "Full licence text:\n"
+                "https://www.gnu.org/licenses/gpl-3.0.en.html\n"
+            )
+
+        else:
+            self.Txt.setText(lic)
+        self.Txt.setCaretPosition(0)
+
+        # Load and set Change log text
+        chg = LoadChangeLogText()
+        if chg is None or len(chg.strip()) == 0:
+            self.ChgTxt.setText(
+                "Change log\n\n"
+                "No changelog.txt found in the scripts folder.\n"
+                "Create 'changelog.txt' next to 'Licence.txt' to populate this tab.\n"
+            )
+        else:
+            self.ChgTxt.setText(chg)
+        self.ChgTxt.setCaretPosition(0)
+
+        Buttons = JPanel()
+        BtnClose = JButton("Close")
+        Buttons.add(BtnClose)
+        self.add(Buttons, BorderLayout.SOUTH)
+
+        def OnClose(e):
+            self.dispose()
+        BtnClose.addActionListener(OnClose)
+
+# ------------------ Main frame ------------------
+
+
+# ---------------- Main menu theme refresh callback ----------------
+# TASSetup can call this (when launched from the main menu) to apply any theme changes immediately.
+_TASMainMenuFrame = None
+
+def RefreshMainMenuTheme():
+    # Refresh the main menu UI (if open) from current memory values.
+    def _Do():
+        f = None
+        try:
+            f = _TASMainMenuFrame
+        except:
+            f = None
+        if f is None:
+            return
+        try:
+            if not f.isDisplayable():
+                return
+        except:
+            pass
+        p = None
+        try:
+            p = getattr(f, 'Cover', None)
+        except:
+            p = None
+        if p is None:
+            return
+        try:
+            if hasattr(p, 'RefreshThemeFromMemories'):
+                p.RefreshThemeFromMemories()
+        except:
+            pass
+        try:
+            p.repaint()
+        except:
+            pass
+        try:
+            f.repaint()
+        except:
+            pass
+    try:
+        SwingUtilities.invokeLater(_Do)
+    except:
+        try:
+            _Do()
+        except:
+            pass
+class TASWTTStartup(JFrame):
+    def __init__(self):
+        JFrame.__init__(self, "Timetable Automation System")
+        self.setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE)
+        self.setLayout(BorderLayout())
+        self.Cover = CoverPanel()
+        self.add(self.Cover, BorderLayout.CENTER)
+        self.setSize(600, 980)  # portrait (height fixed)
+        self.setLocationByPlatform(True)
+
+        # Set window icon using TASIcon utility
+        try:
+            from TASIcon import SetFrameClockIcon
+            SetFrameClockIcon(self, 32)  # 32px icon size
+        except Exception as ex:
+            print("[TAS] Failed to set main menu icon: " + str(ex))
+
+
+
+def ShowMainMenu():
+    global _TASMainMenuFrame
+    try:
+        UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName())
+    except:
+        pass
+    def Create():
+        f = TASWTTStartup()
+        _TASMainMenuFrame = f
+        f.setVisible(True)
+    SwingUtilities.invokeLater(Create)

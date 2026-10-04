@@ -18,7 +18,7 @@ Style decision: for this window the user chose a late-2010s mobile app look over
 
 Memories in WeatherForecastUIApp.py: CURRENTTIME, DAYOFWEEK, CLOUDCOVERPCT, WX_SCHEMA, WX_FC_STEP_MIN, WX_FC_LENGTH, WX_FC_ISSUE_ABSMIN, WX_FC_POINTS, WX_UPDATED_ABSMIN, DAYNIGHT_PRESET, SPOOFADSENABLED, AD_ROTATE_SEC, AD_MODE, AD_COUNT, ADn_BRAND, ADn_L1, ADn_L2, ADn_CTA.
 
-Config file: profile:jython/config/daynight.csv through TASPathResolver.GetProfileJythonDir else jmri.util.FileUtil.getExternalFilename("profile:jython/config/daynight.csv"). FALLBACK_SUN dict is defined in file.
+Config file: profile:jython/TAS/config/daynight.csv through TASPathResolver.GetTASDir else jmri.util.FileUtil.getExternalFilename("profile:jython/TAS/config/daynight.csv"). FALLBACK_SUN dict is defined in file.
 
 WeatherForecastUIApp.py calls execfile on SecretScriptDoNotRun.py for one ad entry. SecretScriptDoNotRun.py must not be executed except when explicitly requested, but the ad click path in WeatherForecastUIApp.py is the documented caller.
 

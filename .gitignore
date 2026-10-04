@@ -1,11 +1,12 @@
 old code dump/
 *.class
 *.~lock*
-spice_inveiglers_scores.tsv
-workings/Arr/*
-workings/Dep/*
-workings/Trigger/*
+**/__pycache__/
+**/spice_inveiglers_scores.tsv
+workings/
+TAS/workings/
 FlashThrottlesRailCom.py
-TASFastClockState.txt
-config/railcomfix.tsv
-config/streetlights.tsv
+TAS/config/*.tsv
+TAS/config/*State.txt
+TAS/config/*.bak*
+_TAS-migration-backup/

@@ -2,7 +2,7 @@ Read when: Task modifies or debugs TimetableAutomation.py main menu, main menu b
 
 # TimetableAutomation.py
 
-File: TimetableAutomation.py. Lines: 1730. VERSION = "1.5".
+File: TAS/TimetableAutomation.py. Lines: 1823. VERSION = "1.5". The main menu UI is in TAS/TASMainMenu.py (see ai/details/tasmainmenu.md).
 
 Startup functions:
 - _TasGetThisScriptDir() returns directory of the current script.
@@ -13,24 +13,20 @@ Startup functions:
 - _ActiveProfile() returns jmri.profile.ProfileManager.getDefault().getActiveProfile().
 - _FindPerformScriptModelsByBaseName(models, baseName) returns matching PerformScriptModel entries.
 - _BuildStartUpPathMismatchReport() builds report of startup scripts pointing to wrong location.
-- _ApplyStartUpPathFix() sets file names to profile:jython location and calls mgr.savePreferences(prof) and mgr.setRestartRequired().
+- _ApplyStartUpPathFix() sets file names to profile:jython/TAS location and calls mgr.savePreferences(prof) and mgr.setRestartRequired().
 - _ShowStartUpPathMismatchDialog() shows JOptionPane dialog for fix.
 - _CheckStartUpPathsOnce() runs the mismatch check one time.
-- _DirContainsAnyOf(dirPath, names) and _DirHasAnyPyUnder(dirPath) support dual-install detection.
-- _CheckForDualInstallAndWarnOnce() warns when .py files exist under both profile:jython and scripts: locations.
+- _DirContainsAnyOf(dirPath, names) and _DirHasAnyPyUnder(dirPath) support outside-folder detection.
+- _CheckForDualInstallAndWarnOnce() warns when TAS files exist outside profile:jython/TAS (program folder, foreign scripts folder). Flat leftovers at the profile root are handled by migration instead.
+- _CheckTasLocationAndMigrateOnce() runs first: self-installs from elsewhere, moves legacy flat files into profile:jython/TAS with an explanatory dialog, updates Start-Up entries quietly. Helpers: _TasTargetDir, _TasProfileJythonDir, _TasListNames, _TasReadVersion, _TasVersionKey, _TasSameContent, _TasCopyFile, _TasCopyTreeContents, _TasDeleteEmptyDirsBottomUp, _TasMoveUserDataDir, _TasDeleteSuperseded, _TasRepointStartUpEntriesQuiet, _TasFixStartupPathsQuiet, _TasOptionDialog. User data dirs workings and config are merged with backup; differing old files are backed up under _TAS-migration-backup before replacement and are never deleted without a successful backup.
+- _CheckTasOwnStartupEntryOnce() warns when TimetableAutomation.py is not an enabled Start-Up entry, mutable through Memory TAS_STARTUP_REMINDER_MUTED.
+- Run() runs the four checks above and then calls TASMainMenu.ShowMainMenu(). It does not build UI itself.
 
 Main menu:
-- Class CoverPanel extends JPanel. Methods: MakeBtn, ToggleWindows, ShowStub, ShowAbout, IsTimeWarpAllowed, UpdateTimeWarpEnabled, OnTimeWarp, OnWeatherForecast, RunConfiguredPublic, RunConfiguredSignallers, RefreshThemeFromMemories, paintComponent. Field FRIENDLY_NAME stores display name.
-- Class AboutDialog extends JDialog. Shows Licence.txt and changelog.txt content.
-- Class TASWTTStartup extends JFrame. Constructor calls SetFrameClockIcon from TASIcon.py.
-- Functions PreferredFontFamily, FitFontForSingleLine, BuildTitleLines, LoadLicenceText, LoadChangeLogText, GetActiveProfileName, GetTimetableName, ReadMemStr, RefreshMainMenuTheme, Run.
+- The UI moved to TASMainMenu.py in version 1.5 because TimetableAutomation.py must stay below the 100000 byte JSR-223 parse mark limit. See ai/details/tasmainmenu.md.
 
-Main menu button toggles:
-- Optional module import at top level: `try: import TASWindowRegistry as TASWINREG except: TASWINREG = None`. The alias is prefixed because TimetableAutomation.py is a start-up script and shares one Jython namespace.
-- CoverPanel class constants KEY_TIMETABLE, KEY_PUBLIC, KEY_SIGNALLERS, KEY_WEATHER, KEY_SETUP, KEY_HELP are the registry keys.
-- CoverPanel.ToggleWindows(key, opener) calls TASWINREG.Toggle(key, opener), or calls opener directly when TASWINREG is None. It logs and does nothing else when Toggle raises.
-- Buttons BtnShowTimetable, BtnPublic, BtnSignallers, BtnWeather, BtnSetup and BtnHelp call ToggleWindows. BtnTimeWarp and BtnAbout are not toggles: TimeWarp.py opens no window and AboutDialog is modal, so a second press cannot be made while either is up.
-- No window is closed when the main menu frame is closed; the registry keeps its entries for the JMRI session.
+Size limit:
+- JMRI runs entry scripts through the JSR-223 script engine, which parses each file twice and can only reset the parser up to 100000 bytes. Any file run from the Scripting menu or the Start Up list must stay below that limit. Imported modules are not affected.
 
 JMRI APIs used:
 - jmri.util.FileUtil.getExternalFilename

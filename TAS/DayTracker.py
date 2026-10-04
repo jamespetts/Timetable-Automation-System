@@ -1,0 +1,75 @@
+# This file is part of the Timetable Automation System by James E. Petts
+#
+# The Timetable Automation System is free software: you can redistribute it and/or modify it under the terms of the 
+# GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or 
+# (at your option) any later version.
+#
+# The Timetable Automation System is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; 
+# without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General 
+# Public License for more details.
+
+# You should have received a copy of the GNU General Public License along with the Timetable Automation System.
+# If not, see <https://www.gnu.org/licenses/>. 
+#
+# This needs to be a STARTUP SCRIPT
+
+import java
+import jmri
+# TAS_SYS_PATH_SNIPPET: make the TAS folder importable even when scripts: still points elsewhere.
+try:
+    import os as _tas_os_path
+    import sys as _tas_sys_path
+    _tas_script_dir = None
+    try:
+        import jmri as _tas_jmri_path
+        _tas_script_dir = _tas_jmri_path.util.FileUtil.getExternalFilename('profile:jython/TAS')
+    except Exception:
+        _tas_script_dir = None
+    if _tas_script_dir and _tas_script_dir not in _tas_sys_path.path:
+        _tas_sys_path.path.insert(0, _tas_script_dir)
+except Exception:
+    pass
+import TASBeanLookup as TBL
+
+class DayTracker(jmri.jmrit.automat.AbstractAutomaton):
+    def init(self):      
+        self.clock = TBL.FindMemoryBySuffix("CURRENTTIME")
+        self.timebase = jmri.InstanceManager.getDefault(jmri.Timebase)
+        self.dayMemory = TBL.FindMemoryBySuffix("DAYOFWEEK")   
+        if self.clock is None:
+            raise Exception("Required memory CURRENTTIME not found")
+        if self.dayMemory is None:
+            raise Exception("Required memory DAYOFWEEK not found")
+        self.dayNames = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+        self.lastHour = -1
+
+    def getMinutes(self):
+        time = self.timebase.getTime()
+        timeStorageFormat = java.text.SimpleDateFormat('HH:mm')
+        hhmm = timeStorageFormat.format(time).split(':')
+        return int(hhmm[0]) * 60 + int(hhmm[1])
+
+    def handle(self):
+        self.waitChange([self.clock])
+        minutes = self.getMinutes()
+        currentHour = minutes // 60
+
+        # Detect rollover from late night to early morning
+        if self.lastHour >= 22 and currentHour < 5:
+            currentDayName = self.dayMemory.getValue()
+            try:
+                currentIndex = self.dayNames.index(currentDayName)
+            except ValueError:
+                currentIndex = 0  # Default to Monday if memory is invalid
+
+            nextIndex = (currentIndex + 1) % 7
+            nextDayName = self.dayNames[nextIndex]
+            self.dayMemory.setValue(nextDayName)
+            print('Day updated to: {}'.format(nextDayName))
+
+        self.lastHour = currentHour
+        return True
+
+dayTracker = DayTracker()
+dayTracker.setName('Day of week tracker')
+dayTracker.start()

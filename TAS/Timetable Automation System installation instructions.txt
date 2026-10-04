@@ -1,0 +1,40 @@
+*** INSTALLATION INSTRUCTIONS ***
+
+1. Copy the TAS folder from the download to your JMRI profile's jython folder
+   (e.g. {your JMRI profile directory}/jython/TAS).
+   In JMRI, open Help > Locations to find your profile directory, then open
+   the jython folder inside it.
+   Important: Do not copy these files into the JMRI program folder
+   (e.g. C:\Program Files (x86)\JMRI\jython).
+   The program folder is for JMRI's built-in example scripts and is normally
+   unwritable.
+
+2. In JMRI, go to "Scripting > Run Script..." and run TimetableAutomation.py
+   from the TAS folder where you installed the Timetable Automation System.
+   This will start the main menu. If this is a new install, TAS offers to
+   install itself; if you are updating from a version before 1.5, TAS offers
+   to move your older files into the TAS folder. Your timetables, working
+   scripts and settings are kept.
+
+3. When it first runs, the Timetable Automation System will check the JMRI
+   scripts directory (the 'scripts:' location).
+   If it is still set to the default program:jython location (or is not
+   writable), the Timetable Automation System will show a dialogue.
+   Click OK to change the scripts directory to the TAS folder you are
+   running from, then restart JMRI.
+   If you click Cancel, the Timetable Automation System may malfunction
+   (modules may not import and scripts may not save).
+
+4. If TAS is not in your JMRI Start Up list, it shows a reminder explaining
+   how to add it (Preferences > Start Up > Add > Run script, then select
+   TimetableAutomation.py from your TAS folder), so that it starts
+   automatically with JMRI.
+
+5. Create a timetable. For more information, click "Help" in the main menu
+   and select "Timetable". There is an example timetable included. Create
+   your timetable in the same folder as this example.
+
+6. In the main menu, click "Setup". Allow the wizard to run (or click
+   "Setup wizard..."). Follow all instructions.
+
+NOTE: The Timetable Automation System is installed per JMRI profile.

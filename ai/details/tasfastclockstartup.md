@@ -11,7 +11,7 @@ Constants:
 - IMFastClockSavedTime = TASSAVEDFASTCLOCKTIME
 - IMDayOfWeek = DAYOFWEEK
 - _DAY_NAMES = Monday through Sunday
-- STATE_FILE = profile:jython/config/TASFastClockState.txt
+- STATE_FILE = profile:jython/TAS/config/TASFastClockState.txt
 - _ShutdownTaskJvmKey = tas.fastclockstartup.shutdown.registered
 - _ApplyJvmKey = tas.fastclockstartup.apply.started
 - Globals TAS_FASTCLOCK_STARTUP_LIVE_ONLY, TAS_FASTCLOCK_STARTUP_REGISTER_ONLY
@@ -23,7 +23,7 @@ Functions:
 
 Memories: TASFASTCLOCKUSESAVEDSTARTUP, TASSAVEDFASTCLOCKTIME, DAYOFWEEK with IM prefix fallback in local wrappers. Local SafeGetMemoryValue and SafeSetMemoryValue prefer TASBeanLookup.SafeGetOrCreateMemoryValue and TASBeanLookup.SafeSetMemoryValue when TASBeanLookup import succeeds.
 
-File: profile:jython/config/TASFastClockState.txt with keys useSavedStartup=, clockText=, dayOfWeek= through jmri.util.FileUtil.getExternalFilename(STATE_FILE).
+File: profile:jython/TAS/config/TASFastClockState.txt with keys useSavedStartup=, clockText=, dayOfWeek= through jmri.util.FileUtil.getExternalFilename(STATE_FILE).
 
 JMRI APIs:
 - jmri.InstanceManager.getDefault(jmri.ShutDownManager) with register(PersistFastClockTask)

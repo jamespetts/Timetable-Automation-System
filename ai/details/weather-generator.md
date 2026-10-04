@@ -24,7 +24,7 @@ Constants: BASE_SEED, FORECAST_ISSUE_PERIOD_MIN, FORECAST_HOURS, FORECAST_STEP_M
 
 Memories through TASBeanLookup: WX_CLIMATE, WX_FORECAST_ACCURACY, WX_SCHEMA, WX_FC_STEP_MIN, WX_FC_LENGTH, WX_FC_ISSUE_ABSMIN, WX_FC_POINTS, WX_UPDATED_ABSMIN, WX_FC_ISSUES, WX_FC_LIST, WX_FC_ plus issueAbsMin dynamic key, CURRENTTIME, DAYOFWEEK, CLOUDCOVERPCT.
 
-Config file: profile:jython/config/climate.csv resolved through TASPathResolver.GetProfileJythonDir plus os.path.join config climate.csv else jmri.util.FileUtil.getExternalFilename("profile:jython/config/climate.csv"). Format is tab-delimited with csv.DictReader delimiter tab.
+Config file: profile:jython/TAS/config/climate.csv resolved through TASPathResolver.GetTASDir plus os.path.join config climate.csv else jmri.util.FileUtil.getExternalFilename("profile:jython/TAS/config/climate.csv"). Format is tab-delimited with csv.DictReader delimiter tab.
 
 JMRI APIs: jmri.jmrit.automat.AbstractAutomaton, jmri.InstanceManager.getDefault(jmri.Timebase), jmri.InstanceManager.getDefault(jmri.MemoryManager), jmri.util.FileUtil.getExternalFilename, java.text.SimpleDateFormat, waitChange.
 

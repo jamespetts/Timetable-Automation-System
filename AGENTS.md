@@ -33,9 +33,10 @@ Jython 2.7 scripts for JMRI (Java Model Railroad Interface). Provides timetable 
 ## Key Modules
 | Module | Purpose |
 |--------|---------|
-| `TimetableAutomation.py` | Main menu, startup path/dual-install checks |
+| `TimetableAutomation.py` | Entry point (self-installs, migrates flat installs, loads TASMainMenu) |
+| `TASMainMenu.py` | Main menu UI loaded by TimetableAutomation.py |
 | `TASBeanLookup.py` | Prefix-independent JMRI Memory lookup and access across connections |
-| `TASPathResolver.py` | Portable path resolution (profile:jython → scripts:) |
+| `TASPathResolver.py` | Portable path resolution (profile:jython/TAS → profile:jython → scripts:) |
 | `TASSetup.py` | Multi-tab configuration UI (General, Displays, Day/Night) |
 | `TASWiz.py` | Setup wizard |
 | `RunWTT.py` | Working timetable runner |
@@ -51,7 +52,7 @@ Jython 2.7 scripts for JMRI (Java Model Railroad Interface). Provides timetable 
 - Runtime settings are primarily stored in **JMRI Memories** and accessed prefix-independently via 'TASBeanLookup'
 - Key memories: `CURRENTTIMETABLE`, `ALLOWTIMEWARP`, `WX_UI`, `CLOUDCOVERPCT`, `PUBLICDISPLAYLIST`, `SIGNALLERDISPLAYLIST`, `TASCOVERCOLOUR`, `TASINNERCOLOUR`, `TASINKCOLOUR`, `TAS_FONT_FAMILY`
 - Timetable CSV in `profile:timetable/<name>.csv`
-- Configuration files are stored under `profile:jython/config/`, including `daynight.csv`, `climate.csv`, and `streetlights.tsv`. The csv files are actually tab separated. 'streetlights.tsv' is automatically created only when street lights are configured by the user.
+- Configuration files are stored under `profile:jython/TAS/config/`, including `daynight.csv`, `climate.csv`, and `streetlights.tsv`. The csv files are actually tab separated. 'streetlights.tsv' is automatically created only when street lights are configured by the user.
 
 ## Development Conventions
 - **Single authoritative source of truth** - for every value being represented, there should be a single authoritative source of truth. Do not create competing authoritative stores for the same value; use shared utilities and derive or snapshot state where needed. Before adding a Memory, file, or register entry, verify that no existing Memory, file, or register already represents the same value.
@@ -96,7 +97,9 @@ Jython 2.7 scripts for JMRI (Java Model Railroad Interface). Provides timetable 
 | Change colours/fonts | Edit memories via Setup UI or directly in JMRI Memory Table |
 
 ## Gotchas
-- **Dual-install detection:** TAS warns if scripts exist in both `profile:jython` and legacy `scripts:` — delete legacy copy
+- **Entry script size limit:** JMRI runs TimetableAutomation.py through the JSR-223 script engine, which parses the file twice and can only reset the parser up to 100000 bytes. Keep the entry script below that size; put new code in imported modules such as TASMainMenu.py
+- **Install location:** canonical home is `profile:jython/TAS/` (since 1.5); `TimetableAutomation.py` auto-migrates flat installs and self-installs from elsewhere with an explanatory dialogue
+- **Copies outside the profile TAS folder:** TAS warns about TAS files in the program folder or a foreign scripts folder — delete those copies (program folder needs admin rights)
 - **Startup script path mismatch:** TAS detects if Start-Up actions point to wrong copy; offers auto-fix
 - **Scripts directory must be writable** — first-run check enforces this
 - **Memory prefixes vary by connection** — always use `TASBeanLookup` (`SafeGetOrCreateMemoryValue`, etc.)
@@ -105,33 +108,36 @@ Jython 2.7 scripts for JMRI (Java Model Railroad Interface). Provides timetable 
 ## File Layout
 ```
 TAS devel/
-├── TimetableAutomation.py      # Entry point
-├── TASBeanLookup.py            # Bean lookup utility
-├── TASPathResolver.py          # Path resolution
-├── TASSetup.py                 # Configuration UI
-├── TASWiz.py                   # Setup wizard
-├── RunWTT.py                   # Timetable runner
-├── WTTDisplay.py               # Timetable display
-├── WeatherGenerator.py         # Weather engine
-├── WeatherForecastUI*.py       # Weather UIs
-├── DayTracker.py / DayNight.py # Day/night cycle
-├── DisruptionGenerator.py      # Disruptions
-├── TimeWarp*.py                # Time warp
-├── PID*.py                     # Public displays (20+ variants)
-├── TASScriptsPathGuard.py      # Startup path logic
-├── TASWindowRegistry.py        # Main menu window toggles
-├── TASHelp.py                  # Help system
-├── tashelp/*.md               # Help topics
-├── config/daynight.csv         # Day/night config
-├── config/climate.csv          # Climate config
-├── Example timetables/*.csv    # Sample timetables
-├── changelog.txt               # Version history
-├── Licence.txt                 # GPL v3
-├── ai/index.md                 # Knowledge base entry point
-├── ai/*.md                     # Head-topic files
-├── ai/details/*.md             # Detailed-topic files
-├── ai/temp/                    # AI scratch files; preserve only handoff.md
-└── Timetable Automation System installation instructions.txt
+├── README.md                     # Github front page (install instructions, links, features)
+├── TAS/                          # Everything TAS (installed as profile:jython/TAS)
+│   ├── TimetableAutomation.py    # Entry point (self-installs, migrates flat installs)
+│   ├── TASMainMenu.py            # Main menu UI (kept separate: entry must stay under 100000 bytes)
+│   ├── TASBeanLookup.py          # Bean lookup utility
+│   ├── TASPathResolver.py        # Path resolution (TAS_SUBDIR = 'TAS')
+│   ├── TASSetup.py               # Configuration UI
+│   ├── TASWiz.py                 # Setup wizard
+│   ├── RunWTT.py                 # Timetable runner
+│   ├── WTTDisplay.py             # Timetable display
+│   ├── WeatherGenerator.py       # Weather engine
+│   ├── WeatherForecastUI*.py     # Weather UIs
+│   ├── DayTracker.py / DayNight.py # Day/night cycle
+│   ├── DisruptionGenerator.py    # Disruptions
+│   ├── TimeWarp*.py              # Time warp
+│   ├── PID*.py                   # Public displays (20+ variants)
+│   ├── TASScriptsPathGuard.py    # Startup path logic
+│   ├── TASWindowRegistry.py      # Main menu window toggles
+│   ├── TASHelp.py                # Help system
+│   ├── tashelp/*.md             # Help topics
+│   ├── config/daynight.csv       # Day/night config
+│   ├── config/climate.csv        # Climate config
+│   ├── Example timetables/*.csv  # Sample timetables
+│   ├── changelog.txt             # Version history
+│   ├── Licence.txt               # GPL v3
+│   └── Timetable Automation System installation instructions.txt
+├── ai/index.md                   # Knowledge base entry point
+├── ai/*.md                       # Head-topic files
+├── ai/details/*.md               # Detailed-topic files
+└── ai/temp/                      # AI scratch files; preserve only handoff.md
 ```
 
 ## Deprecated
