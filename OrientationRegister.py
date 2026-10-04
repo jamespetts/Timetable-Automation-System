@@ -13,7 +13,7 @@
 #
 # Note that each entry is a tuple of reportingNumber and direction
 
-import jmri, os, json, threading
+import jmri, os, json, sys, threading, time
 from jmri.util import FileUtil
 from java.lang import Runtime, Thread, Runnable
 from jmri import ShutDownManager
@@ -30,6 +30,12 @@ except Exception:
 if not _SAVE_PATH:
     _SAVE_PATH = os.path.join(FileUtil.getProfilePath(), "OrientationRegister.json")
 _SAVE_LOCK = threading.RLock()
+# Move retry policy. A layout power cycle makes every RailCom reporter
+# announce at once, so several saves run in quick succession while file
+# scanners or sync tools can briefly hold the stored file open on Windows.
+# The atomic move is always attempted first on every attempt.
+_MOVE_ATTEMPTS = 3
+_MOVE_RETRY_DELAY = 0.2
 def AddTrain(rosterID):
     if rosterID not in orientation:
         orientation.append(rosterID)
@@ -51,11 +57,89 @@ def CountTrains():
 def IsContained(rosterID):
     return rosterID in orientation
     
+def _error_text(default):
+    # Describes the error being handled. Never raises, so it is safe to
+    # call from any handler, including handlers for Java errors. A bare
+    # except is used throughout this file because Java errors are not
+    # Python Exception types, so except Exception does not catch them.
+    try:
+        detail = sys.exc_info()[1]
+        if detail is None:
+            return default
+        return "{}: {}".format(default, detail)
+    except:
+        return default
+
+def _warn(text):
+    # Writes text on the console. Never raises.
+    try:
+        print(text)
+    except:
+        pass
+
+def _warn_save_failed():
+    _warn(_error_text("Warning: failed to save OrientationRegister.json"))
+
+def _cleanup_tmp(tmp_path):
+    try:
+        if os.path.exists(tmp_path):
+            os.remove(tmp_path)
+    except:
+        pass
+
+def _move_tmp_into_place(tmp_path, dest_path):
+    # Moves tmp_path onto dest_path. Returns None on success, else an error
+    # description. The atomic move is attempted first on every attempt, with
+    # a short delay between attempts when the file is briefly held open.
+    from java.nio.file import Files, Paths, StandardCopyOption
+    last_error = "move failed"
+    attempt = 0
+    while attempt < _MOVE_ATTEMPTS:
+        attempt += 1
+        try:
+            Files.move(
+                Paths.get(tmp_path), Paths.get(dest_path),
+                StandardCopyOption.REPLACE_EXISTING,
+                StandardCopyOption.ATOMIC_MOVE
+            )
+            return None
+        except:
+            last_error = _error_text("move failed")
+        try:
+            Files.move(
+                Paths.get(tmp_path), Paths.get(dest_path),
+                StandardCopyOption.REPLACE_EXISTING
+            )
+            return None
+        except:
+            last_error = _error_text("move failed")
+        try:
+            if os.path.exists(dest_path):
+                os.remove(dest_path)
+            os.rename(tmp_path, dest_path)
+            return None
+        except:
+            last_error = _error_text("move failed")
+        if attempt < _MOVE_ATTEMPTS:
+            try:
+                time.sleep(_MOVE_RETRY_DELAY)
+            except:
+                pass
+    return "move failed after {} attempts: {}".format(_MOVE_ATTEMPTS, last_error)
+
 def save():
     # Writes the list of strings as JSON through a temporary file, so a crash
     # mid-write cannot truncate the stored file. Refuses to overwrite a stored file
     # that was never read successfully, so a session that failed to load cannot
-    # destroy data at shutdown.
+    # destroy data at shutdown. Never raises: callers include a LocoNet listener
+    # running on the AWT event dispatch thread, where a raised error is reported
+    # as an uncaught exception.
+    try:
+        _save_inner()
+    except:
+        _warn_save_failed()
+
+def _save_inner():
     global _load_ok
     if _had_file and not _load_ok:
         print("Warning: not saving OrientationRegister.json: "
@@ -69,43 +153,15 @@ def save():
                 try:
                     f.flush()
                     os.fsync(f.fileno())
-                except Exception:
+                except:
                     pass
-            try:
-                from java.nio.file import Files, Paths, StandardCopyOption
-                try:
-                    Files.move(
-                        Paths.get(tmp_path), Paths.get(_SAVE_PATH),
-                        StandardCopyOption.REPLACE_EXISTING,
-                        StandardCopyOption.ATOMIC_MOVE
-                    )
-                except Exception:
-                    try:
-                        Files.move(
-                            Paths.get(tmp_path), Paths.get(_SAVE_PATH),
-                            StandardCopyOption.REPLACE_EXISTING
-                        )
-                    except Exception:
-                        try:
-                            if os.path.exists(_SAVE_PATH):
-                                os.remove(_SAVE_PATH)
-                        except Exception:
-                            pass
-                        os.rename(tmp_path, _SAVE_PATH)
-            except Exception:
-                try:
-                    if os.path.exists(_SAVE_PATH):
-                        os.remove(_SAVE_PATH)
-                except Exception:
-                    pass
-                os.rename(tmp_path, _SAVE_PATH)
-    except Exception as e:
-        try:
-            if os.path.exists(tmp_path):
-                os.remove(tmp_path)
-        except Exception:
-            pass
-        print("Warning: failed to save OrientationRegister.json: {}".format(e))
+            move_error = _move_tmp_into_place(tmp_path, _SAVE_PATH)
+            if move_error is not None:
+                _cleanup_tmp(tmp_path)
+                _warn("Warning: failed to save OrientationRegister.json: {}".format(move_error))
+    except:
+        _cleanup_tmp(tmp_path)
+        _warn_save_failed()
 
 def load():
     # Load list of strings directly. A failed read keeps existing memory rather than
