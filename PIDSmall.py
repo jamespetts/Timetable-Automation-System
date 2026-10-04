@@ -18,7 +18,9 @@
 # - Disruption inheritance, smooth alternation/scrolling preserved
 # - Platform alteration hook via Memory "PID_PLATFORM_OVERRIDES"
 #
-# * A working is removed when it is recorded as having DEPARTED at the configured timing point(s).
+# * A working is removed when it is recorded as having DEPARTED. The configured departure timing
+#   point(s) are checked first; if they have no record, every timing point is scanned, matching
+#   TRUST-TRJA.py, so a departure logged elsewhere still clears the row.
 #   Cancelled workings never record a departure; they are removed once booked Dep has passed.
 #   Default timing point = active profile name (base TP). Override via Memory "PID_DEPARTURE_TP"
 #   (single TP name or a comma/semicolon separated list). This makes the PID compatible with future
@@ -247,18 +249,56 @@ def _DepartureTPList():
             names = [base]
     return names
 
+def LatestReportedMinutesForRN(reportingNumber, dayName, nowMinutes):
+    """
+    Return the latest logged minute for (reportingNumber, dayName) at or
+    before nowMinutes across every timing point, or None if the train has
+    no logged report yet.
+
+    This mirrors TRUST-TRJA.py (TRJA_GetLastReportForTrain_Display), which
+    determines an actual departure by scanning all timing points rather than
+    only the configured departure timing point. TimingRegister tuples are
+    (reportingNumber, direction, time, day). (Read-only; relies on
+    TimingRegister API.)
+    """
+    try:
+        tps = TR.listTimingPoints() or []
+    except:
+        tps = []
+    best = None
+    for tp in tps:
+        try:
+            entries = TR.getTiming(tp) or []
+        except:
+            entries = []
+        for rec in entries:
+            try:
+                rn = rec[0]; tstr = rec[2]; d = rec[3]
+            except:
+                continue
+            if str(rn) != str(reportingNumber):
+                continue
+            if str(d) != str(dayName):
+                continue
+            mm = parseTimeToMinutes(tstr)
+            if mm is None:
+                continue
+            if mm <= int(nowMinutes):
+                if best is None or mm > best:
+                    best = mm
+    return best
+
 def HasDepartedAtConfiguredTP(reportingNumber, dayName, nowMinutes):
     """
-    Return True iff any configured departure timing point contains a timing tuple
-    for (reportingNumber, dayName) whose logged time <= nowMinutes.
+    Return True iff the timing register has a logged report for
+    (reportingNumber, dayName) at or before nowMinutes.
 
-    TimingRegister tuples are (reportingNumber, direction, time, day). 'time' is a string
-    (e.g., '5:53' or '06:41 AM'); we parse it to minutes. Only Dep events are logged,
-    so any tuple here is a departure record. (Read-only; relies on TimingRegister API.)
+    The configured departure timing point(s) are checked first. If none of
+    them has a record, every timing point is scanned, matching TRUST-TRJA.py,
+    so a departure is still detected when it is not logged at the configured
+    timing point. (Read-only; relies on TimingRegister API.)
     """
     tps = _DepartureTPList()
-    if not tps:
-        return False
     for tp in tps:
         try:
             entries = TR.getTiming(tp) or []
@@ -280,7 +320,7 @@ def HasDepartedAtConfiguredTP(reportingNumber, dayName, nowMinutes):
                 continue
             if mm <= int(nowMinutes):
                 return True
-    return False
+    return LatestReportedMinutesForRN(reportingNumber, dayName, nowMinutes) is not None
 
 
 def HasAnyTimingToday(reportingNumber, dayName):
