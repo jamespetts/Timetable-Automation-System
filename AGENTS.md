@@ -97,6 +97,7 @@ Jython 2.7 scripts for JMRI (Java Model Railroad Interface). Provides timetable 
 | Change colours/fonts | Edit memories via Setup UI or directly in JMRI Memory Table |
 
 ## Gotchas
+- **Single development copy:** develop TAS only in the `TAS devel` working copy on branch `ai/tas-devel`. A JMRI profile folder (for example a layout folder such as `Maesteg/jython`) may contain a separate checkout used only to run TAS; do not edit TAS code there. If a change is made in a profile copy by mistake, backport it to `TAS devel` at once and verify with `git status` and `git log` that the working copy is the expected one before further edits.
 - **Entry script size limit:** JMRI runs TimetableAutomation.py through the JSR-223 script engine, which parses the file twice and can only reset the parser up to 100000 bytes. Keep the entry script below that size; put new code in imported modules such as TASMainMenu.py
 - **Install location:** canonical home is `profile:jython/TAS/` (since 1.5); `TimetableAutomation.py` auto-migrates flat installs and self-installs from elsewhere with an explanatory dialogue
 - **Copies outside the profile TAS folder:** TAS warns about TAS files in the program folder or a foreign scripts folder — delete those copies (program folder needs admin rights)

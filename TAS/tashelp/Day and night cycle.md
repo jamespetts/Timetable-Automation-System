@@ -2,17 +2,17 @@
 
 ## Overview
 
-The Timetable Automation system contains a feature that will automatically adjust lighting on your layout accurately to mimic a day/night cycle using LED strips driven by DCC motor decoders. This includes a fully configurable climate and sunset/sunrise times to match the location and time of year, and dynamic weather, including a weather forecast interface to explain the current weather to the viewer (in short, when it is cloudy, it is darker and bluer than when it is sunny). This is fully integrated into the timetable so that the lighting always automatically matches what is running on the layout.
+The Timetable Automation System contains a feature that will automatically adjust lighting on your layout accurately to mimic a day/night cycle using LED strips driven by DCC motor decoders. This includes a fully configurable climate and sunset/sunrise times to match the location and time of year, and dynamic weather, including a weather forecast interface to explain the current weather to the viewer (in short, when it is cloudy, it is darker and bluer than when it is sunny). This is fully integrated into the timetable so that the lighting always automatically matches what is running on the layout.
 
 ## Hardware requirements
 
-Use at least two DCC motor decoders, *not* accessory decoders. This is important, as only motor decoders will give you 128 individually tunable steps of brightness. Connect the decoder straight to the DCC bus (use the red and black wires of your DCC decoder to do this). Connect LED strips to the motor outputs (orange and grey) of your decoders. Use two LED strips: one of a low colour temperature (2,700K) and one of a high colour temperature (6,500k). 
+Use at least two DCC motor decoders, *not* accessory decoders. This is important, as only motor decoders will give you 128 individually tunable steps of brightness. Alternatively, an Arduino configured to act as a motor decoder with a suitable LED driver output can be used. Connect the decoder/Arduino straight to the DCC bus (use the red and black wires of your DCC decoder to do this). Connect LED strips to the motor outputs (orange and grey) of your decoders, or the LED driver if using an Arduino. Use two LED strips: one of a low colour temperature (2,700K) and one of a high colour temperature (6,500k). 
 
 ## IMPORTANT
-- Make sure that the total current draw of your LED strips is not greater than the maximum continuous power output of your decoder. If you need more power (e.g. for a larger layout), use multiple shorter strips connected to a decoder each, all with teh same address. Failing to heed this instruction risks destroying the decoder.
-- Use 12v strips. If your track voltage is >14v, use a resistor on the output of your motor decoder to bring the voltage output down to around 12V. Make sure that the resistor is rated for at least the wattage (14v x the decoder's maximum output current) that might be drawn, or else the resistor may get extremely hot.
-- Disable ALL back-EMF settings in the decoder or your lights will flicker.
-- If you still experience flickering after disabling back-EMF, use an RC inductor between the DCC decoder and the LEDs. Use an AI chatbot to work out the correct values of resistor and capacitor that you need for your setup.
+- Make sure that the total current draw of your LED strips is not greater than the maximum continuous power output of your decoder/LED driver. If you need more power (e.g. for a larger layout), use multiple shorter strips connected to a decoder/driver each, all with teh same address. Failing to heed this instruction risks destroying the decoder/driver.
+- If using a DCC motor decoder, use 12v strips. If your track voltage is >14v, use a resistor on the output of your motor decoder to bring the voltage output down to around 12V. Make sure that the resistor is rated for at least the wattage (14v x the decoder's maximum output current) that might be drawn, or else the resistor may get extremely hot.
+- If using a DCC motor decoder, disable ALL back-EMF settings in the decoder or your lights will flicker.
+- If using an Arduino with an LED driver or similar, 24v LED strips may be used with a suitable 24v power supply and 24v rated driver.
 - The LEDs will only work with current flowing in one direction. This means that you will only get light either if the decoder is set to run "forward" or "backward" but not both. Make sure that the LEDs always light in "forward" direction as this is what the Timetable Automation System expects. You can change this either by reversing the connexions between the orange/grey wires or by changing a CV in DecoderPro.
 - Use one DCC address for the decoder(s) powering all the 2,700K LED strips and another DCC address forthe decoder(s) powering the 6,500K LED strips.
 
@@ -26,4 +26,4 @@ The day/night cycle tab of the Setup window will give you various options to cho
 
 ## Time-warp blackout and other lights
 
-A time-warp blackout switches off the two day/night lighting throttles for the configured number of seconds. Any JMRI Lights listed in the street-light configuration (Setup>Day/night cycle, street lights; these may be street lights, platform lights, building lights or any other JMRI Light) are switched off for the same period and return to their normal dusk/dawn state afterwards. Lights that are not listed in the street-light configuration are not affected by the blackout. 
+A time-warp blackout switches off the two day/night lighting throttles and any street/scene lights configured for the configured number of seconds. Any JMRI Lights listed in the street-light configuration (Setup>Day/night cycle, street lights; these may be street lights, platform lights, building lights or any other JMRI Light) are switched off for the same period and return to their normal dusk/dawn state afterwards. Lights that are not listed in the street-light configuration are not affected by the blackout. 

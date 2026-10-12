@@ -2,24 +2,27 @@
 
 ## Overview
 
-This tab lists the roster and decides, for each entry, whether its decoder supports RailCom and whether RailCom is switched on. Nothing is listed by name. The decision is taken from the JMRI decoder definition for the entry's decoder family and model, so a decoder this system has not seen before is handled the same way as a known one.
+This tab shows what entries in the roster are capable of working with RailCom and which entries currently have RailCom enabled, allowing easy enabling/disabling of RailCom. One of the main reasons temporarily to disable RailCom is for double heading: two RailCom compatible locomotives in one section confuse the RailCom reader, so it is advisable to disable RailCom on one locomotive of the two before starting double heading. Enabling/disabling RailCom dynamically is only possible if your command station supports programming on main.
 
-## Upper half: the two lists
+## The window
 
-The upper pane is split in two. RailCom capable entries are on the left, the rest on the right. Each entry shows its roster ID and its DCC address.
+The upper pane is split into two halves. RailCom capable roster entries are on the left, the others are shown on the right.
 
-The colour of an entry in the left-hand list tells you its state.
+The colour of an entry shows its state. Each colour means the same in both lists.
 
-- Dark blue: the decoder supports RailCom, RailCom is switched off, and this layout can program on main, so the entry can be enabled from here.
-- Black: the decoder supports RailCom but RailCom is switched off and this layout cannot program on main, or you have marked the entry as not RailCom capable.
-- Dark grey: the decoder does not support RailCom at all. These entries are on the right.
-- Near black: RailCom is switched on for this entry.
+- Cyan: the decoder supports RailCom, RailCom is switched off, and this layout can program on main, so RailCom can be enabled on this item of rolling stock using this interface.
+- Dark purple: the decoder supports RailCom but RailCom is switched off and this layout cannot program on main.
+- Dark blue: RailCom is switched on for this entry.
+- Orange: you have marked the entry as not RailCom capable. These entries are on the right.
+- Brown: the decoder does not support RailCom at all. These entries are on the right.
 
-## Enabling RailCom
+## Enabling and disabling RailCom
 
 Select an entry in the left-hand list and choose "Enable RailCom on selected". This writes the RailCom switch through programming on main, so the entry must be on the track with power applied. JMRI does not report a read of the present value during a programming on main write, so the value written is the decoder definition's own default for that switch with RailCom set on. The entry's roster values are not changed by this; the decoder itself is written.
 
-Programming on main support is tested when the tab opens. If your layout cannot program on main, the enable button is disabled and RailCom must be enabled in DecoderPro instead.
+To switch RailCom off again, for example before double heading, select the entry and choose "Disable RailCom on selected". This writes the RailCom switch off through programming on main in the same way; the entry must be on the track with power applied. The entry can be enabled again afterwards with "Enable RailCom on selected".
+
+Programming on main support is tested when the tab opens. If your layout cannot program on main, the enable and disable buttons are disabled and RailCom must be enabled on the programming track using DecoderPro or using a different command station.
 
 ## Marking an entry as not RailCom capable
 
@@ -27,11 +30,11 @@ Some decoders report RailCom capability that the layout does not use, or a decod
 
 ## Lower half: the RailCom initialisation fix
 
-Some RailCom decoders have an error in that they will not broadcast their address until they have been addressed by the command station. This enables a workaround to this error by sending a brief command to the decoder on startup. Choose to which roster entries to apply this fix. You can choose a different function for each.
+Some RailCom decoders have an error in that they will not broadcast their address using RailCom until they have been addressed by the command station. This setting enables a workaround to this error by sending a brief command to the decoder on startup. Choose to which roster entries to apply this fix. You can choose a different function for each. Choose a function that is not used or should be off at startup.
 
 The table repeats the roster entries whose RailCom is fully switched on, with the decoder make, model and firmware version alongside each, so entries with decoders known to need the fix can be picked out. Tick "Apply fix" for each entry that needs it. Select a row and set "Function for selected roster entry" to choose which function is sent to that entry; the input follows whichever row is selected. The default is F4.
 
-There is no separate start-up switch. Ticking the first entry runs the fix at once and sets RailComFix.py to run at start-up, so the fix applies each time JMRI starts. Unticking the last entry removes it from start-up again. You can also apply the fix at any time by running RailComFix.py with Scripting, Run script.
+Ticking the first entry runs the fix at once and sets RailComFix.py to run at start-up, so the fix applies each time JMRI starts. Unticking the last entry removes it from start-up again. You can also apply the fix at any time by running RailComFix.py with Scripting, Run script.
 
 For each entry ticked, the fix acquires a throttle for that entry's DCC address, sends one function-off command, and releases the throttle. No speed setting is touched and no function is left on.
 

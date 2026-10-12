@@ -2,22 +2,8 @@
 
 ## Overview
 
-This is an optional startup script. It is off by default. Enable it in Setup, General tab, with "Enable occupancy sensor flicker monitor (requires restart)". Restart JMRI after changing the setting.
+This is an optional setting. It is off by default. Enable it in Setup, General tab, with "Enable occupancy sensor flicker monitor (requires restart)". Restart JMRI after changing the setting.
 
-When enabled, the script watches all Blocks for a double flicker: occupied, then unoccupied, then occupied again, or unoccupied, then occupied, then unoccupied again, all within 3 seconds. A double flicker often means dirty track or loose wiring. A single brief drop is not reported.
+When enabled, the script watches all blocks for a double flicker: occupied, then unoccupied, then occupied again, or unoccupied, then occupied, then unoccupied again, all within 3 seconds. A double flicker often means dirty track or loose wiring and can cause automation failures that are otherwise difficult to trace. A single brief drop is not reported.
 
-When a drop is seen, the script writes a line to the system console and shows a warning window. The window has a red warning triangle at the top and messages below on a black background. Text is light grey, with the name of the occupancy sensor in red.
-
-Each message reads:
-
-```
-Flickering occupancy sensor detected at: <name of occupancy sensor>: check for dirty track or loose wiring
-```
-
-All messages go in the same window, one message per line. No second window is opened while the window is open. Text wraps to the width of the window, and the window grows as messages are added. Each message is separated by vertical space.
-
-If the same Block flickers again, no second message is added. The existing message flashes to show that the Block has flickered again.
-
-The window is non-modal. It can stay open while the layout keeps running. Close it at any time. If a new Block flickers after the window was closed, a new window is opened.
-
-The monitor reports even when Dispatcher shows no error.
+Whenever a flicker is detected, this is logged in the system console and a warning window is shown.

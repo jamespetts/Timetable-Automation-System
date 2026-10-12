@@ -2,8 +2,6 @@
 
 ## Overview
 
-This is an optional startup script. It is off by default. Enable it in Setup, General tab, with "Turn DCC power off at close-down (requires restart)". Restart JMRI after changing the setting.
+This is an optional setting and is off by default. Enable it in Setup, General tab, with "Turn DCC power off at close-down (requires restart)". Restart JMRI after changing the setting.
 
-When enabled, the script registers a JMRI shutdown task that turns the DCC track power off when JMRI closes. The next start of JMRI then begins from a power-cycle, so the input modules re-report their states and the occupancy sensors start from a known state.
-
-The script writes its findings to the system console, each line starting with [TAS].
+When enabled, the setting will turn off the DCC power when JMRI is shut down. This can be useful in case detection equipment needs a fresh power on at JMRI startup to give correct detection indications.

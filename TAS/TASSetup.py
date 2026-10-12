@@ -4310,16 +4310,22 @@ class TASSetupFrame(jmri.util.JmriJFrame):
                 pass
         try:
             self.TrainDetectionCapable.setToolTipText(_RcTip(
-                "Entries whose decoder offers RailCom. Blue: switched off, can be "
-                "enabled here. Near-black: switched on. Black: marked not capable."))
+                "Entries whose decoder offers RailCom. Cyan: switched off, can be "
+                "enabled here. Dark blue: switched on, can be disabled here. "
+                "Dark purple: switched off with no programming on main."))
             self.TrainDetectionNotCapable.setToolTipText(_RcTip(
-                "Entries with no RailCom support, plus entries marked as not capable."))
+                "Entries with no RailCom support (brown), plus entries marked "
+                "as not capable (orange)."))
         except:
             pass
 
-        # Colours: dark grey for no support, the orientation sensing blue for support
-        # but switched off and enableable, black when the entry has been marked not
-        # capable by the user, and near-black for capable and switched on.
+        # Colours match the Orientation tab for the closest meaning: dark blue for
+        # fully switched on (fully set up), cyan for switched off and enableable
+        # here (awaiting action), dark purple for switched off with no
+        # programming on main (unresolved here). Marked entries are orange and
+        # entries with no RailCom support are brown; neither state occurs in
+        # orientation, so those two colours are new. One colour keeps one meaning
+        # in both lists.
         def _RcRow(rec):
             # One display row: roster ID plus its DCC address, so the list is readable.
             try:
@@ -4330,14 +4336,14 @@ class TASSetupFrame(jmri.util.JmriJFrame):
 
         def _CapableColour(rec, pomAvailable):
             if rec.notCapable:
-                return Color(0, 0, 0)
+                return Color(200, 110, 0)
             if not rec.detectedCapable:
-                return Color(90, 90, 90)
+                return Color(140, 80, 40)
             if rec.storedOn:
-                return Color(30, 30, 30)
-            if pomAvailable:
                 return Color(0, 51, 102)
-            return Color(0, 0, 0)
+            if pomAvailable:
+                return Color(0, 200, 200)
+            return Color(76, 0, 153)
 
         pomAvailable = False
         try:
@@ -4401,16 +4407,22 @@ class TASSetupFrame(jmri.util.JmriJFrame):
         gbc.fill = GridBagConstraints.HORIZONTAL
         actionRow = Box.createHorizontalBox()
         self.BtnRailComEnable = _TipButton("Enable RailCom on selected")
+        self.BtnRailComDisable = _TipButton("Disable RailCom on selected")
         self.BtnRailComToggle = _TipButton("Mark selected as not RailCom capable")
         try:
             self.BtnRailComEnable.setToolTipText(_RcTip(
                 "Switches RailCom on for the selected entry over programming on "
+                "main. The entry must be on powered track."))
+            self.BtnRailComDisable.setToolTipText(_RcTip(
+                "Switches RailCom off for the selected entry over programming on "
                 "main. The entry must be on powered track."))
             self.BtnRailComToggle.setToolTipText(_RcTip(
                 "Marks the selected entry as not RailCom capable, or clears the mark."))
         except:
             pass
         actionRow.add(self.BtnRailComEnable)
+        actionRow.add(Box.createHorizontalStrut(10))
+        actionRow.add(self.BtnRailComDisable)
         actionRow.add(Box.createHorizontalStrut(10))
         actionRow.add(self.BtnRailComToggle)
         actionRow.add(Box.createHorizontalGlue())
@@ -4640,6 +4652,12 @@ class TASSetupFrame(jmri.util.JmriJFrame):
             except:
                 return None
 
+        def SelectedNotCapable():
+            try:
+                return self.TrainDetectionNotCapable.getSelectedValue()
+            except:
+                return None
+
         def SelectedFixRow():
             try:
                 viewRow = int(self.TrainDetectionFixTable.getSelectedRow())
@@ -4714,6 +4732,7 @@ class TASSetupFrame(jmri.util.JmriJFrame):
                             "RailCom switched on for " + str(record.rosterId) + ".")
                         record.storedOn = True
                         RefreshLists()
+                        RefreshFixTable()
                     else:
                         self.LblTrainDetectionAction.setText(
                             "JMRI reported a failure writing to " + str(record.rosterId) + ".")
@@ -4724,11 +4743,60 @@ class TASSetupFrame(jmri.util.JmriJFrame):
             except Exception as ex:
                 self.LblTrainDetectionAction.setText("Could not write to the decoder: " + str(ex))
 
-        def OnToggle(e=None):
-            # Marks a RailCom capable entry as not RailCom capable, or clears the mark.
+        def OnDisable(e=None):
+            # Marked entries live in the right-hand list, and their decoders can
+            # still have RailCom on, so the right-hand selection is a fallback.
             rec = SelectedCapable()
             if rec is None:
-                self.LblTrainDetectionAction.setText("Select an entry in the left-hand list first.")
+                rec = SelectedNotCapable()
+            if rec is None:
+                self.LblTrainDetectionAction.setText("Select an entry first.")
+                return
+            if not rec.detectedCapable:
+                self.LblTrainDetectionAction.setText("That decoder does not offer RailCom.")
+                return
+            if not rec.storedOn:
+                self.LblTrainDetectionAction.setText(
+                    "RailCom is already switched off for " + str(rec.rosterId) + ".")
+                return
+            if not pomAvailable:
+                self.LblTrainDetectionAction.setText(
+                    "This layout cannot program on main, so RailCom cannot be disabled here.")
+                return
+            mgr = RCD.PomManager()
+            if mgr is None:
+                self.LblTrainDetectionAction.setText("No programming on main available.")
+                return
+            self.LblTrainDetectionAction.setText("Writing CV" + RCD.RC_CV + " to " +
+                                                 str(rec.rosterId) + ", please wait...")
+
+            def _Done(record, ok):
+                def _Apply():
+                    if ok:
+                        self.LblTrainDetectionAction.setText(
+                            "RailCom switched off for " + str(record.rosterId) + ".")
+                        record.storedOn = False
+                        RefreshLists()
+                        RefreshFixTable()
+                    else:
+                        self.LblTrainDetectionAction.setText(
+                            "JMRI reported a failure writing to " + str(record.rosterId) + ".")
+                SwingUtilities.invokeLater(RunnableAdapter(_Apply))
+
+            try:
+                RCD.DisableRailCom(rec, mgr, _Done)
+            except Exception as ex:
+                self.LblTrainDetectionAction.setText("Could not write to the decoder: " + str(ex))
+
+        def OnToggle(e=None):
+            # Marks a RailCom capable entry as not RailCom capable, or clears the mark.
+            # Marked entries live in the right-hand list, so clearing needs the
+            # right-hand selection as a fallback.
+            rec = SelectedCapable()
+            if rec is None:
+                rec = SelectedNotCapable()
+            if rec is None:
+                self.LblTrainDetectionAction.setText("Select an entry first.")
                 return
             record = RecordConfig(rec)
             record["notCapable"] = not bool(record.get("notCapable"))
@@ -4780,6 +4848,7 @@ class TASSetupFrame(jmri.util.JmriJFrame):
 
         try:
             self.BtnRailComEnable.addActionListener(OnEnable)
+            self.BtnRailComDisable.addActionListener(OnDisable)
             self.BtnRailComToggle.addActionListener(OnToggle)
             self.TrainDetectionFixFunction.addChangeListener(OnFunctionChanged)
             self.TrainDetectionFixTable.getSelectionModel().addListSelectionListener(
@@ -4817,6 +4886,7 @@ class TASSetupFrame(jmri.util.JmriJFrame):
                 self.LblTrainDetectionStatus.setText(summary)
                 if not pomAvailable:
                     self.BtnRailComEnable.setEnabled(False)
+                    self.BtnRailComDisable.setEnabled(False)
                 capableModel.clear()
                 notCapableModel.clear()
                 for rec in capable:

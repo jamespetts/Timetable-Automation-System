@@ -517,11 +517,9 @@ def _RcPlaceBits(byteValue, mask, value):
     return result & 0xFF
 
 
-def _RcSwitchOnValue(switchVar):
-    # The numeric value that switches RailCom on for one switch variable. The switch is
-    # an on/off list, so this counts its enumChoice entries (resolving one include level
-    # for the shared disabled/enabled list) and takes the position of the first entry
-    # whose name reads as enabled, defaulting to 1.
+def _RcSwitchChoices(switchVar):
+    # The on/off choice names of one RailCom switch variable, resolving one
+    # include level for the shared disabled/enabled list. Empty when none read.
     choices = []
     try:
         for choice in switchVar.getChildren("enumChoice"):
@@ -558,16 +556,35 @@ def _RcSwitchOnValue(switchVar):
                         continue
     except Exception:
         pass
+    return choices
+
+
+def _RcSwitchOnValue(switchVar):
+    # The numeric value that switches RailCom on for one switch variable. The switch is
+    # an on/off list, so this takes the position of the first entry whose name
+    # reads as enabled, defaulting to 1.
+    choices = _RcSwitchChoices(switchVar)
     for index in range(len(choices)):
         if choices[index].lower().find("enabl") >= 0:
             return index
     return 1
 
 
-def _RcCv29WriteValue(variables, values, switchItem, onValue):
+def _RcSwitchOffValue(switchVar):
+    # The numeric value that switches RailCom off for one switch variable: the
+    # position of the first entry whose name does not read as enabled,
+    # defaulting to 0.
+    choices = _RcSwitchChoices(switchVar)
+    for index in range(len(choices)):
+        if choices[index].lower().find("enabl") < 0:
+            return index
+    return 0
+
+
+def _RcCv29WriteValue(variables, values, switchItem, forcedValue):
     # Builds the full CV 29 byte to write: every CV 29 variable contributes its stored
     # entry value, else its definition default, placed through its mask, with the RailCom
-    # switch forced to its on value. Starting from zero means an unknown bit reads as
+    # switch forced to the given value (on or off). Starting from zero means an unknown bit reads as
     # the variable default, never as the present decoder value, because POM cannot read.
     byteValue = 0
     for var in variables:
@@ -580,7 +597,7 @@ def _RcCv29WriteValue(variables, values, switchItem, onValue):
         if cv != RC_CV or len(mask) == 0:
             continue
         if item == switchItem:
-            contributed = onValue
+            contributed = forcedValue
         elif item in values:
             try:
                 contributed = int(_RcSafe(values[item]).strip())
@@ -900,6 +917,57 @@ def EnableRailCom(rec, mgr, callback=None):
         RCLog("RailCom: could not re-read " + _RcSafe(rec.rosterId) + ": " + _RcSafe(ex))
     value = _RcCv29WriteValue(variables, values, _RcSafe(rec.enableItem),
                               _RcSwitchOnValue(switchVar))
+    RCLog("RailCom: writing CV" + RC_CV + "=" + _RcSafe(value) + " to " + _RcSafe(rec.rosterId) +
+          " (address " + _RcSafe(address) + ")")
+    try:
+        prog = mgr.getAddressedProgrammer(bool(rec.longAddress), address)
+    except Exception as ex:
+        RCLog("Could not get a programmer for " + _RcSafe(rec.rosterId) + ": " + _RcSafe(ex))
+        return False
+    if prog is None:
+        RCLog("No programmer available for " + _RcSafe(rec.rosterId))
+        return False
+    try:
+        prog.writeCV(RC_CV, value, _RcPomListener(rec, callback, None))
+    except Exception as ex:
+        RCLog("Could not write CV" + RC_CV + " to " + _RcSafe(rec.rosterId) + ": " + _RcSafe(ex))
+        return False
+    return True
+
+
+def DisableRailCom(rec, mgr, callback=None):
+    # Switches RailCom off for one roster entry over programming on main. Mirrors
+    # EnableRailCom: the full CV 29 byte is rebuilt with the RailCom switch forced
+    # to its off value, so the other CV 29 bits are preserved.
+    if rec is None or mgr is None:
+        return False
+    try:
+        address = int(_RcSafe(rec.address).strip())
+    except Exception:
+        RCLog("No DCC address for " + _RcSafe(rec.rosterId) + "; RailCom not disabled")
+        return False
+    variables = _RcDecoderVariables(rec.decoderFamily, rec.decoderModel)
+    switchVar = None
+    for var in variables:
+        try:
+            if _RcSafe(var.getAttributeValue("item")) == _RcSafe(rec.enableItem):
+                switchVar = var
+                break
+        except Exception:
+            continue
+    if switchVar is None:
+        RCLog("RailCom: no RailCom switch in the decoder definition for " + _RcSafe(rec.rosterId))
+        return False
+    values = {}
+    try:
+        roster = jmri.jmrit.roster.Roster.getDefault()
+        found = roster.getEntryForId(_RcSafe(rec.rosterId)) if roster is not None else None
+        if found is not None:
+            values = _RcEntryVarValues(found)
+    except Exception as ex:
+        RCLog("RailCom: could not re-read " + _RcSafe(rec.rosterId) + ": " + _RcSafe(ex))
+    value = _RcCv29WriteValue(variables, values, _RcSafe(rec.enableItem),
+                              _RcSwitchOffValue(switchVar))
     RCLog("RailCom: writing CV" + RC_CV + "=" + _RcSafe(value) + " to " + _RcSafe(rec.rosterId) +
           " (address " + _RcSafe(address) + ")")
     try:

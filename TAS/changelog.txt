@@ -52,6 +52,10 @@ Version 1.5
 
 * Added the Train detection tab to Setup, before Orientation. The roster is split into RailCom capable and not RailCom capable entries, detected from each entry's decoder definition rather than a fixed list. RailCom capable entries with RailCom switched off can be enabled through programming on main where the layout supports it. Entries detected as capable can be marked as not capable by hand for the benefit of later automatic working. The lower half lists the entries whose RailCom is switched on, with a tick box each for the RailCom initialisation fix and a function number that follows the selected entry.
 
+* The Train detection tab can now also switch RailCom off in the decoder over programming on main, so one locomotive of a double-headed pair can have RailCom disabled and re-enabled from the interface.
+
+* The Train detection lists now use the Orientation tab colours for the closest meaning in both lists: dark blue for switched on, cyan for switched off and enableable here, dark purple for switched off with no programming on main. Marked entries are orange and entries with no RailCom support are brown.
+
 * Fixed a data erasure bug in the orientation registers: a failed read of normalDirectionRegister.json or OrientationRegister.json wiped the in-memory data, and the shutdown save then wrote the empty state over the stored file. Failed reads now keep existing memory, an unreadable stored file is never overwritten at shutdown, and all three direction registers write atomically through temporary files.
 
 * Fixed three start-up bugs: RailComFix used a function as a Runnable, the Workings setup tab referenced an undefined `baseDir` during the extra-script scan, and the orientation register save could escape an AccessDeniedException from the atomic move.
