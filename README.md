@@ -16,7 +16,7 @@ Requires JMRI 5.16 or later. For automatic running of trains, the layout must al
 
 ## Installation
 
-1. Download the latest release zip (see the download link above).
+1. Download the `TAS.zip` asset from the latest release (see the download link above). Do not use the "Source code" zip: that contains the whole development project, not just TAS.
 2. Unzip it. You will see a single `TAS` folder containing `.py` files and subfolders (`tashelp/`, `config/`, `Example timetables/`). A `workings/` subfolder is created later, when you first save a working script.
 3. Find your JMRI profile's `jython` folder. In JMRI, open Help > Locations, open the profile location, then open the `jython` folder inside it. It looks like `.../JMRI/<YourProfileName>.jmri/jython`.
 4. Copy the `TAS` folder into that `jython` folder, so that you have `.../jython/TAS/TimetableAutomation.py`.
@@ -34,7 +34,7 @@ You can ignore this section if this is a fresh install.
 
 Updating is automatic:
 
-1. Download the new release zip and unzip it anywhere (for example Downloads).
+1. Download the new release zip (the `TAS.zip` asset, not "Source code") and unzip it anywhere (for example Downloads).
 2. In JMRI, run the new copy's `TimetableAutomation.py` (Scripting > Run Script). TAS detects that it is newer than your installed copy and offers "Update installed copy".
 3. Click "Update installed copy". Your workings, configuration and settings are kept; replaced files are backed up under `_TAS-migration-backup/update` in the profile `jython` folder. Restart JMRI when prompted.
 
