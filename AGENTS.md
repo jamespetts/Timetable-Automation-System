@@ -71,6 +71,7 @@ Jython 2.7 scripts for JMRI (Java Model Railroad Interface). Provides timetable 
 - **Changelog:** Update `changelog.txt` under the current version for significant features or user-facing changes.
 - **Release procedure (follow exactly, in order):** 1. Verify `VERSION` in TimetableAutomation.py equals the top `changelog.txt` heading. 2. Commit everything; push `ai/tas-devel`; fast-forward `devel` to it and push. 3. `git tag <version>` at that commit and push the tag; the workflow (`.github/workflows/release.yml`) runs only on tag pushes and builds `TAS.zip` from the `TAS/` folder and creates the GitHub release. 4. Point `master` at the tag: `git push Origin <tag>:refs/heads/master` (add `--force` if master has moved ahead by mistake); never push a branch tip to master. 5. Verify with `git ls-remote Origin` that `master` and the tag are the same commit. 6. Only after step 5, bump `VERSION` and add a new changelog heading for the next version.
 - **SecretScriptDoNotRun.py:** This is an Easter egg game. Do not execute it unless explicitly asked to run it; execution opens a game window and may write a high-score file.
+- **Easter eggs:** Never refer to Easter eggs in any user-facing documentation: not in README.md, tashelp/, changelog.txt, or the installation instructions.
 
 ## Testing & Verification
 - **No automated test suite** - verify by running in JMRI
