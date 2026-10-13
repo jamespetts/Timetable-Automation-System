@@ -70,6 +70,7 @@ Jython 2.7 scripts for JMRI (Java Model Railroad Interface). Provides timetable 
 - **Help:** Update the relevant `tashelp/` text when adding or changing user-facing behaviour.
 - **Changelog:** Update `changelog.txt` under the current version for significant features or user-facing changes.
 - **Releases must be tagged:** Every release requires a git tag (for example `1.5`) pushed to GitHub. The release workflow (`.github/workflows/release.yml`) runs only on tag pushes: it builds `TAS.zip` from the `TAS/` folder and creates the GitHub release. A release without a pushed tag produces no downloadable zip, and the README download link depends on that zip.
+- **Releases must update master:** After tagging a release, fast-forward `master` to the release commit (for example `git push Origin devel:master`). GitHub renders the repository front page, including README.md, from the default branch `master`; a release that skips this step leaves the front page showing stale code and documentation.
 - **SecretScriptDoNotRun.py:** This is an Easter egg game. Do not execute it unless explicitly asked to run it; execution opens a game window and may write a high-score file.
 
 ## Testing & Verification
