@@ -19,7 +19,7 @@
 # JMRI 5.12 / Jython 2.7. ASCII only. Thread-safe. No absolute paths.
 
 # NOTE: Increment the version in devel *just after* publishing a new version on master.
-VERSION = "1.5"
+VERSION = "1.6"
 from javax.swing import JFrame
 from javax.swing import JPanel
 from javax.swing import JButton
