@@ -1,5 +1,16 @@
 # This file is part of the Timetable Automation System by James E. Petts
 #
+# The Timetable Automation System is free software: you can redistribute it and/or modify it under the terms of the
+# GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# The Timetable Automation System is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY;
+# without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General
+# Public License for more details.
+
+# You should have received a copy of the GNU General Public License along with the Timetable Automation System.
+# If not, see <https://www.gnu.org/licenses/>.
+#
 # Helper functions for deciding whether the JMRI scripts path needs changing.
 # Pure Python/Jython 2.7 code so that it can be unit tested outside JMRI.
 import os
