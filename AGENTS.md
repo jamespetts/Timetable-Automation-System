@@ -1,9 +1,9 @@
-# Timetable Automation System (TAS) — Agent Guide
+# Timetable Automation System (TAS) ??? Agent Guide
 
 ## Project Overview
 Jython 2.7 scripts for JMRI (Java Model Railroad Interface). Provides timetable automation, public/signaller displays, weather, day/night cycle, disruption generation, and time warp.
 
-**Entry point:** `TimetableAutomation.py` — run via JMRI "Scripting > Run Script..."
+**Entry point:** `TimetableAutomation.py` ??? run via JMRI "Scripting > Run Script..."
 
 **License:** GPL v3. All code files must have the standard GPL v. 3 header.
 
@@ -36,7 +36,7 @@ Jython 2.7 scripts for JMRI (Java Model Railroad Interface). Provides timetable 
 | `TimetableAutomation.py` | Entry point (self-installs, migrates flat installs, loads TASMainMenu) |
 | `TASMainMenu.py` | Main menu UI loaded by TimetableAutomation.py |
 | `TASBeanLookup.py` | Prefix-independent JMRI Memory lookup and access across connections |
-| `TASPathResolver.py` | Portable path resolution (profile:jython/TAS → profile:jython → scripts:) |
+| `TASPathResolver.py` | Portable path resolution (profile:jython/TAS ??? profile:jython ??? scripts:) |
 | `TASSetup.py` | Multi-tab configuration UI (General, Displays, Day/Night) |
 | `TASWiz.py` | Setup wizard |
 | `RunWTT.py` | Working timetable runner |
@@ -56,10 +56,10 @@ Jython 2.7 scripts for JMRI (Java Model Railroad Interface). Provides timetable 
 
 ## Development Conventions
 - **Single authoritative source of truth** - for every value being represented, there should be a single authoritative source of truth. Do not create competing authoritative stores for the same value; use shared utilities and derive or snapshot state where needed. Before adding a Memory, file, or register entry, verify that no existing Memory, file, or register already represents the same value.
-- **ASCII only** — no non-ASCII chars in source
-- **No hard-coded absolute paths** — use JMRI path schemes through FileUtil or TASPathResolver and resolve them at runtime
-- **Thread-safe** — treat JMRI as threaded; protect shared state and perform Swing UI access on the Event Dispatch Thread
-- **Jython 2.7 syntax** — no f-strings, type hints, or Python 3 features
+- **ASCII only** ??? no non-ASCII chars in source
+- **No hard-coded absolute paths** ??? use JMRI path schemes through FileUtil or TASPathResolver and resolve them at runtime
+- **Thread-safe** ??? treat JMRI as threaded; protect shared state and perform Swing UI access on the Event Dispatch Thread
+- **Jython 2.7 syntax** ??? no f-strings, type hints, or Python 3 features
 - **Imports:** Use Jython-compatible imports for JMRI and Java classes, following existing local patterns
 - **Startup script names:** JMRI runs every Start-Up script through one shared Jython JSR-223 context, so top-level names collide between start-up scripts and a later script silently replaces an earlier script's object. Give every top-level name in a start-up script a per-script prefix (for example `FLICKER_` / `_Flicker`, `DCCPOWER_` / `_DccPower`), and bind any object a function uses later as a default argument. See `ai/details/startup-power-warnings.md`.
 - **Window icons:** Use `TASIcon.SetFrameClockIcon()` for new TAS top-level windows; do not duplicate the clock-icon drawing code
@@ -73,9 +73,9 @@ Jython 2.7 scripts for JMRI (Java Model Railroad Interface). Provides timetable 
 - **SecretScriptDoNotRun.py:** This is an Easter egg game. Do not execute it unless explicitly asked to run it; execution opens a game window and may write a high-score file.
 
 ## Testing & Verification
-- **No automated test suite** — verify by running in JMRI
+- **No automated test suite** ??? verify by running in JMRI
 - **Static validation** - Use static validation as below specified for every changed script
-- Manual verification: Start JMRI → Scripting → Run `TimetableAutomation.py` → exercise menus. NOTE: when configured, TimetableAutomation.py is a startup script.
+- Manual verification: Start JMRI ??? Scripting ??? Run `TimetableAutomation.py` ??? exercise menus. NOTE: when configured, TimetableAutomation.py is a startup script.
 - Check console for `[TAS]` prefixed logs
 
 ### Static Validation
@@ -101,45 +101,45 @@ Jython 2.7 scripts for JMRI (Java Model Railroad Interface). Provides timetable 
 - **Single development copy:** develop TAS only in the `TAS devel` working copy on branch `ai/tas-devel`. A JMRI profile folder (for example a layout folder such as `Maesteg/jython`) may contain a separate checkout used only to run TAS; do not edit TAS code there. If a change is made in a profile copy by mistake, backport it to `TAS devel` at once and verify with `git status` and `git log` that the working copy is the expected one before further edits.
 - **Entry script size limit:** JMRI runs TimetableAutomation.py through the JSR-223 script engine, which parses the file twice and can only reset the parser up to 100000 bytes. Keep the entry script below that size; put new code in imported modules such as TASMainMenu.py
 - **Install location:** canonical home is `profile:jython/TAS/` (since 1.5); `TimetableAutomation.py` auto-migrates flat installs and self-installs from elsewhere with an explanatory dialogue
-- **Copies outside the profile TAS folder:** TAS warns about TAS files in the program folder or a foreign scripts folder — delete those copies (program folder needs admin rights)
+- **Copies outside the profile TAS folder:** TAS warns about TAS files in the program folder or a foreign scripts folder ??? delete those copies (program folder needs admin rights)
 - **Startup script path mismatch:** TAS detects if Start-Up actions point to wrong copy; offers auto-fix
-- **Scripts directory must be writable** — first-run check enforces this
-- **Memory prefixes vary by connection** — always use `TASBeanLookup` (`SafeGetOrCreateMemoryValue`, etc.)
-- **No pip/venv** — dependencies are JMRI core only
+- **Scripts directory must be writable** ??? first-run check enforces this
+- **Memory prefixes vary by connection** ??? always use `TASBeanLookup` (`SafeGetOrCreateMemoryValue`, etc.)
+- **No pip/venv** ??? dependencies are JMRI core only
 
 ## File Layout
 ```
 TAS devel/
-├── README.md                     # Github front page (install instructions, links, features)
-├── TAS/                          # Everything TAS (installed as profile:jython/TAS)
-│   ├── TimetableAutomation.py    # Entry point (self-installs, migrates flat installs)
-│   ├── TASMainMenu.py            # Main menu UI (kept separate: entry must stay under 100000 bytes)
-│   ├── TASBeanLookup.py          # Bean lookup utility
-│   ├── TASPathResolver.py        # Path resolution (TAS_SUBDIR = 'TAS')
-│   ├── TASSetup.py               # Configuration UI
-│   ├── TASWiz.py                 # Setup wizard
-│   ├── RunWTT.py                 # Timetable runner
-│   ├── WTTDisplay.py             # Timetable display
-│   ├── WeatherGenerator.py       # Weather engine
-│   ├── WeatherForecastUI*.py     # Weather UIs
-│   ├── DayTracker.py / DayNight.py # Day/night cycle
-│   ├── DisruptionGenerator.py    # Disruptions
-│   ├── TimeWarp*.py              # Time warp
-│   ├── PID*.py                   # Public displays (20+ variants)
-│   ├── TASScriptsPathGuard.py    # Startup path logic
-│   ├── TASWindowRegistry.py      # Main menu window toggles
-│   ├── TASHelp.py                # Help system
-│   ├── tashelp/*.md             # Help topics
-│   ├── config/daynight.csv       # Day/night config
-│   ├── config/climate.csv        # Climate config
-│   ├── Example timetables/*.csv  # Sample timetables
-│   ├── changelog.txt             # Version history
-│   ├── Licence.txt               # GPL v3
-│   └── Timetable Automation System installation instructions.txt
-├── ai/index.md                   # Knowledge base entry point
-├── ai/*.md                       # Head-topic files
-├── ai/details/*.md               # Detailed-topic files
-└── ai/temp/                      # AI scratch files; preserve only handoff.md
+|-- README.md                     # Github front page (install instructions, links, features)
+|-- TAS/                          # Everything TAS (installed as profile:jython/TAS)
+|   |-- TimetableAutomation.py    # Entry point (self-installs, migrates flat installs)
+|   |-- TASMainMenu.py            # Main menu UI (kept separate: entry must stay under 100000 bytes)
+|   |-- TASBeanLookup.py          # Bean lookup utility
+|   |-- TASPathResolver.py        # Path resolution (TAS_SUBDIR = 'TAS')
+|   |-- TASSetup.py               # Configuration UI
+|   |-- TASWiz.py                 # Setup wizard
+|   |-- RunWTT.py                 # Timetable runner
+|   |-- WTTDisplay.py             # Timetable display
+|   |-- WeatherGenerator.py       # Weather engine
+|   |-- WeatherForecastUI*.py     # Weather UIs
+|   |-- DayTracker.py / DayNight.py # Day/night cycle
+|   |-- DisruptionGenerator.py    # Disruptions
+|   |-- TimeWarp*.py              # Time warp
+|   |-- PID*.py                   # Public displays (20+ variants)
+|   |-- TASScriptsPathGuard.py    # Startup path logic
+|   |-- TASWindowRegistry.py      # Main menu window toggles
+|   |-- TASHelp.py                # Help system
+|   |-- tashelp/*.md             # Help topics
+|   |-- config/daynight.csv       # Day/night config
+|   |-- config/climate.csv        # Climate config
+|   |-- Example timetables/*.csv  # Sample timetables
+|   |-- changelog.txt             # Version history
+|   |-- Licence.txt               # GPL v3
+|   `-- Timetable Automation System installation instructions.txt
+|-- ai/index.md                   # Knowledge base entry point
+|-- ai/*.md                       # Head-topic files
+|-- ai/details/*.md               # Detailed-topic files
+`-- ai/temp/                      # AI scratch files; preserve only handoff.md
 ```
 
 ## Deprecated
