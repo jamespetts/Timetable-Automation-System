@@ -8,7 +8,7 @@ Requires JMRI 5.16 or later. For automatic running of trains, the layout must al
 
 ## Links
 
-- Download (latest release): https://github.com/jamespetts/Timetable-Automation-System/releases
+- Download (latest release): https://github.com/jamespetts/Timetable-Automation-System/releases/latest
 - Source code: https://github.com/jamespetts/Timetable-Automation-System
 - Licence: GPL version 3, see [TAS/Licence.txt](TAS/Licence.txt) and https://www.gnu.org/licenses/
 - Support: ask on the [JMRI users group](https://groups.io/g/jmriusers) with the `#timetableautomationsystem` tag
