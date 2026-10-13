@@ -36,7 +36,7 @@ Jython 2.7 scripts for JMRI (Java Model Railroad Interface). Provides timetable 
 | `TimetableAutomation.py` | Entry point (self-installs, migrates flat installs, loads TASMainMenu) |
 | `TASMainMenu.py` | Main menu UI loaded by TimetableAutomation.py |
 | `TASBeanLookup.py` | Prefix-independent JMRI Memory lookup and access across connections |
-| `TASPathResolver.py` | Portable path resolution (profile:jython/TAS - profile:jython - scripts:) |
+| `TASPathResolver.py` | Portable path resolution (profile:jython/TAS -> profile:jython -> scripts:) |
 | `TASSetup.py` | Multi-tab configuration UI (General, Displays, Day/Night) |
 | `TASWiz.py` | Setup wizard |
 | `RunWTT.py` | Working timetable runner |
@@ -75,7 +75,7 @@ Jython 2.7 scripts for JMRI (Java Model Railroad Interface). Provides timetable 
 ## Testing & Verification
 - **No automated test suite** - verify by running in JMRI
 - **Static validation** - Use static validation as below specified for every changed script
-- Manual verification: Start JMRI - Scripting - Run `TimetableAutomation.py` - exercise menus. NOTE: when configured, TimetableAutomation.py is a startup script.
+- Manual verification: Start JMRI -> Scripting -> Run `TimetableAutomation.py` -> exercise menus. NOTE: when configured, TimetableAutomation.py is a startup script.
 - Check console for `[TAS]` prefixed logs
 
 ### Static Validation
