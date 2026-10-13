@@ -31,8 +31,11 @@
    automatically with JMRI.
 
 5. Create a timetable. For more information, click "Help" in the main menu
-   and select "Timetable". There is an example timetable included. Create
-   your timetable in the same folder as this example.
+   and select "Timetable". Example timetables are included in the
+   "Example timetables" folder; copy one into your profile's "timetable"
+   folder (the "timetable" folder next to the profile's "jython" folder)
+   and edit it there. The timetable selector in Setup only accepts files
+   in the profile's "timetable" folder.
 
 6. In the main menu, click "Setup". Allow the wizard to run (or click
    "Setup wizard..."). Follow all instructions.
