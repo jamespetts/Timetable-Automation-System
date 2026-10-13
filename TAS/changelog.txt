@@ -1,5 +1,7 @@
 Version 1.5
 
+* Removed the deprecated CheckTimetable.py script, which was not referenced by any other TAS code and used hard-coded IM-prefixed Memory names.
+
 * Corrected and condensed the README and installation instructions: the release zip does not contain a workings folder (it is created when the first working script is saved), the update instructions now lead with the automatic update offered when a newer copy is run (workings, configuration and settings are kept, replaced files backed up under _TAS-migration-backup/update) with the manual folder replacement as fallback, the timetable instructions now state that timetable CSV files must be placed in the profile timetable folder, which is the only location the timetable selector accepts, and the feature list is shorter and includes the working script wizard, the working timetable display and the teleprinter and message notebook signallers' displays.
 
 * All TAS files now live in one TAS subfolder of the profile jython folder (profile:jython/TAS) instead of sitting directly in the jython folder. This makes TAS easier to install, update (replace one folder, keeping your workings folder from the old copy) and delete, lets it coexist with other script suites, and removes clutter from the shared jython folder. Reading TAS files still falls back to the old flat locations, so nothing breaks during the transition.

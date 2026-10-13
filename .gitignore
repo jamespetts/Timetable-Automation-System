@@ -1,4 +1,5 @@
 old code dump/
+config/
 *.class
 *.~lock*
 **/__pycache__/
